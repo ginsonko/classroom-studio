@@ -183,7 +183,8 @@ function macExtras() {
     `       codesign --force --deep --sign - "/Applications/${NAME}.app"`,
     '',
     'macOS 版和 Windows 版的差别：',
-    '  · PPT / Word 课件请先在 Keynote、PowerPoint 或 WPS 里「导出为 PDF」再打开；',
+    '  · PPT / Word 课件直接打开：.pptx / .docx / .rtf 用内置排版显示；旧版 .ppt / .doc 会请 Keynote、Pages、',
+    '    PowerPoint 或 Word 帮忙导出（第一次会询问「是否允许控制」，请点「好」）；',
     '  · 录课暂时只录画面和麦克风，不录电脑播放的声音；',
     '  · 第一次录课时系统会询问「屏幕录制」权限，请在 系统设置 → 隐私与安全性 里允许。',
     '',
@@ -205,7 +206,9 @@ function patchPlist(file) {
   set('CFBundleIconFile', 'icon.icns');
   set('CFBundleShortVersionString', version);
   set('CFBundleVersion', version);
-  p = p.replace('</dict>\n</plist>', `  <key>CFBundleURLTypes</key>
+  p = p.replace('</dict>\n</plist>', `  <key>NSAppleEventsUsageDescription</key>
+  <string>打开 PPT / Word 课件时，请 Keynote、Pages、PowerPoint 或 Word 帮忙导出成 PDF。</string>
+  <key>CFBundleURLTypes</key>
   <array><dict><key>CFBundleURLName</key><string>一键导入</string><key>CFBundleURLSchemes</key><array><string>classroom-studio</string></array></dict></array>
   <key>CFBundleDocumentTypes</key>
   <array><dict><key>CFBundleTypeName</key><string>一键导入配置</string><key>CFBundleTypeExtensions</key><array><string>yzimport</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
@@ -245,7 +248,7 @@ async function finishPlatform(key, root, defs, { zipRoot, mode, links = [], extr
     await writeZip(zipFile, items.map(toEntry), {
       onBytes: (n) => { if (n - last > 200 * 1048576) { last = n; log(key, d.name, Math.round(n / 1048576) + ' MB'); } },
     });
-    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), urls: [MIRROR + `${key}-${d.name}.zip`, GITHUB + `${key}-${d.name}.zip`], paths: d.paths };
+    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), urls: [GITHUB + `${key}-${d.name}.zip`, MIRROR + `${key}-${d.name}.zip`], paths: d.paths };
   }
   const full = path.join(OUT, `${NAME}-${version}-${key === 'win32-x64' ? 'win-x64' : 'mac-' + key.split('-')[1]}.zip`);
   log(key, '整包…');
@@ -293,12 +296,11 @@ async function main() {
 }
 
 const NOTES = [
-  '正式版：改名「最强网课教辅系统」，内置说明书和在线帮助',
-  '自动更新：只下载变了的部分，随时可以跳过，从不强制',
-  '画笔增加「超细」档和自由粗细滑块',
-  '临时加入的课件可以单个移除、一键清空（不动电脑上的文件）',
-  '没选学生时下课后也能在「窗口、录课与回放」找到录像',
-  '新增 macOS 版（未实测，遇到问题请到 QQ 群 1035471769 反馈）',
+  'macOS：PPT / Word / RTF 课件可以直接打开（不装 Office 也行，内置排版；装了 Keynote、Pages 或 Office 会优先用它们）',
+  'macOS：修复数位板（如高漫）写字时笔迹偶尔消失、断线的问题',
+  'Word 里的 MathType 公式、旧版嵌入对象能正常显示',
+  'Windows：PowerPoint / Word 转换失败时自动改用内置排版，不再直接报错',
+  '下载与更新改为 GitHub 优先，国内慢时自动切到官网镜像',
 ];
 
 main().catch((e) => { console.error('打包失败：', e.stack || e); process.exit(1); });

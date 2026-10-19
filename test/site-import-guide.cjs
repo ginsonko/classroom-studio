@@ -57,7 +57,7 @@ const app = { h, ui, qpu: 500000, currency: { sym: '¥', rate: 1, code: 'CNY' },
   prefs: { get: (_k, d) => d, set() {} }, ensureKeys: async () => app.state.keys,
   async request(method, p, o = {}) {
     if (p === '/api/smart-router/options') return { enabled: true, default_for_new_keys: true, default_policy: { strategy: 'price' }, groups: GROUPS, model_count: 128, route_count: 36, max_attempts: 8, max_failure_threshold: 10, absolute_max_effective_ratio_ppm: 5000000, default_max_effective_ratio_ppm: 2000000, max_queue_wait_ms: 1000 }
-    if (p === '/api/user/models') return ['gpt-6.1-sol', 'gpt-5.4', 'gpt-6.1-mini', 'claude-opus-5-5', 'gemini-3-pro']
+    if (p === '/api/user/models') return ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-5.4', 'gpt-6.1-mini', 'claude-opus-5-5', 'gemini-3-pro']
     if (method === 'POST' && p === '/api/token/') { __site.posted.push(o.json); app.state.keys.push({ id: 7, name: o.json.name, smart: o.json.group === 'auto', status: 'on', group: o.json.group }); return {} }
     throw new Error('stub: ' + method + ' ' + p)
   },
@@ -96,7 +96,7 @@ const server = http.createServer((req, res) => {
     const m = /^\/site\/(hub|import)\.js$/.exec(req.url);
     if (m) { res.setHeader('Content-Type', 'text/javascript; charset=utf-8'); return res.end(fs.readFileSync(path.join(FIX, m[1] + '.js'))); }
     res.setHeader('Content-Type', 'application/json');
-    if (req.url.endsWith('/models')) return res.end(JSON.stringify({ data: ['gpt-6.1-sol', 'gpt-5.4', 'gpt-6.1-mini', 'claude-opus-5-5', 'smart-image', 'smart-video', 'text-embedding-3-large'].map((id) => ({ id })) }));
+    if (req.url.endsWith('/models')) return res.end(JSON.stringify({ data: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-5.4', 'gpt-6.1-mini', 'claude-opus-5-5', 'smart-image', 'smart-video', 'text-embedding-3-large'].map((id) => ({ id })) }));
     const j = JSON.parse(body || '{}');
     res.end(JSON.stringify({ model: j.model, choices: [{ message: { role: 'assistant', content: '在线' } }], usage: { prompt_tokens: 10, completion_tokens: 2 } }));
   });
@@ -141,7 +141,7 @@ app.whenReady().then(async () => {
     await S(`[...document.querySelectorAll('input[name=qsi-target]')].find(i=>i.value==='classroom-studio').click();return 1`);
     await until(() => S(`return document.querySelectorAll('.qsi-slot').length===4`), 4000, 'classroom slots');
     const picked = await S(`return [...document.querySelectorAll('.qsi-slot select')].map(s=>s.getAttribute('aria-label')+'='+s.value)`);
-    assert.deepEqual(picked, ['文本模型=gpt-6.1-sol', '看图模型=gpt-6.1-sol', 'Codex 智能体=gpt-6.1-sol', 'Claude 智能体=claude-opus-5-5'], 'site recommends gpt-6.1-sol');
+    assert.deepEqual(picked, ['文本模型=gpt-6.1-sol', '看图模型=gpt-6.1-sol', 'Codex 智能体=gpt-6-astra', 'Claude 智能体=claude-opus-5-5'], 'site defaults: gpt-6.1-sol, Codex gpt-6-astra');
     if (shots) {
       site.setContentSize(1180, 1240); await sleep(300);
       await S(`document.querySelector('.qs-imp').style.maxHeight='none';__mark([document.querySelector('input[value=classroom-studio]').closest('label'),__btn('导入到软件')]);return 1`);

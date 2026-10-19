@@ -47,7 +47,7 @@
   }
   const firstMatch = (list, patterns) => { for (const p of patterns) { const f = list.filter((m) => p.test(m)).sort(byNewest); if (f.length) return f[0] } return list[0] || '' }
   // Site-recommended models; each is used only when the key can call it, otherwise the slot falls back to the rules below.
-  const RECOMMENDED = { text: 'gpt-6.1-sol', vision: 'gpt-6.1-sol', image: 'smart-image', video: 'smart-video', codex: 'gpt-6.1-sol', claude: 'claude-opus-5-5' }
+  const RECOMMENDED = { text: 'gpt-6.1-sol', vision: 'gpt-6.1-sol', image: 'smart-image', video: 'smart-video', codex: 'gpt-6-astra', claude: 'claude-opus-5-5' }
   const recommended = (list, field) => list.find((m) => m.toLowerCase() === RECOMMENDED[field].toLowerCase())
   function defaults(g) {
     const text = firstMatch(g.chat, [/^gpt-5(\.\d+)?-mini$/i, /^gpt-4\.1-mini$|^gpt-4o-mini$/i, /deepseek-(chat|v3)/i, /gemini-[\d.]+-flash$/i, /claude-.*(sonnet|haiku)/i])
@@ -56,7 +56,7 @@
       vision: recommended(g.chat, 'vision') || text,
       image: recommended(g.image, 'image') || firstMatch(g.image, [/^smart-image/i, /gpt-image/i]),
       video: recommended(g.video, 'video') || firstMatch(g.video, [/^smart-video/i]),
-      codex: recommended(g.codex, 'codex') || firstMatch(g.codex, [/^gpt-5(\.\d+)?-codex$/i, /^gpt-5(\.\d+)?$/i, /^gpt-4\.1$/i]),
+      codex: recommended(g.codex, 'codex') || recommended(g.codex, 'text') || firstMatch(g.codex, [/^gpt-5(\.\d+)?-codex$/i, /^gpt-5(\.\d+)?$/i, /^gpt-4\.1$/i]),
       claude: recommended(g.claude, 'claude') || firstMatch(g.claude, [/^claude-sonnet-\d/i, /^claude-opus-\d/i, /sonnet/i]),
     }
   }

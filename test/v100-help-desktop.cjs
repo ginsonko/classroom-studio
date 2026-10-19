@@ -6,15 +6,16 @@
 // 用法：npm run build 后 npx electron test/quiet.cjs test/v100-help-desktop.cjs   （CS_SHOW=1 显示窗口）
 const fs = require('node:fs'); const path = require('node:path'); const http = require('node:http'); const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
+const CUR = require('../package.json').version, NEXT = CUR.replace(/\d+$/, (n) => String(+n + 1)); // 当前版本 / 假清单里的新版本
 const out = path.join(process.env.CS_TEST_OUT || path.join(__dirname, '../.out/A'), 'v100-help-' + Date.now()); fs.mkdirSync(out, { recursive: true });
 process.env.CS_TEST = '1'; process.env.CS_DATA_DIR = path.join(out, 'data');
 fs.mkdirSync(path.join(process.env.CS_DATA_DIR, 'updates'), { recursive: true });
-fs.writeFileSync(path.join(process.env.CS_DATA_DIR, 'updates', 'result.json'), JSON.stringify({ ok: true, from: '0.9.2', to: '1.0.0' }));
+fs.writeFileSync(path.join(process.env.CS_DATA_DIR, 'updates', 'result.json'), JSON.stringify({ ok: true, from: '0.9.2', to: CUR }));
 
 // 本地假更新源：清单用测试密钥签名
 const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
 const sign = (m) => { const signed = JSON.stringify(m); return JSON.stringify({ signed, sig: crypto.sign(null, Buffer.from(signed), privateKey).toString('base64') }); };
-const manifest = { version: '1.0.1', date: '2026-10-25', notes: ['录课可以暂停', '说明书补充了常见问题'], platforms: { 'win32-x64': { components: { app: { hash: 'h', size: 30e6, sha256: 'x', urls: ['https://example.invalid/app.zip'], paths: ['resources/app/dist'] } } } } };
+const manifest = { version: NEXT, date: '2026-10-25', notes: ['录课可以暂停', '说明书补充了常见问题'], platforms: { 'win32-x64': { components: { app: { hash: 'h', size: 30e6, sha256: 'x', urls: ['https://example.invalid/app.zip'], paths: ['resources/app/dist'] } } } } };
 let feedBody = sign(manifest); let hits = 0;
 const server = http.createServer((req, res) => { hits++; res.writeHead(200, { 'content-type': 'application/json' }); res.end(feedBody); });
 server.listen(0, '127.0.0.1');
@@ -47,7 +48,7 @@ async function main() {
 
     // ── 1. 上次更新的结果 ──
     const done = await until(() => T(`const t=$('.up-toast.ok');return t&&t.innerText`), 8000, 'update result toast');
-    assert.match(done, /已更新到 1\.0\.0/);
+    assert.ok(done.includes('已更新到 ' + CUR), done);
     await shot('help-1-updated-toast.png');
     await T(`return click(byText('.up-toast button','关闭'))`);
     await until(() => T(`return !$('.up-toast')`), 3000, 'toast closed');
@@ -76,15 +77,15 @@ async function main() {
     // ── 3. 关于与更新 ──
     await T(`return click(byText('.help-tabs button','关于与更新'))`);
     const ver = await until(() => T(`const v=$('.ab-ver');return v&&v.innerText`), 3000, 'about');
-    assert.match(ver, /1\.0\.0/);
+    assert.ok(ver.includes(CUR), ver);
     await T(`return click(byText('.ab-row button','检查更新'))`);
-    const avail = await until(() => T(`const c=$('.ab-update');return c.innerText.includes('1.0.1')&&{text:c.innerText,notes:$$('.ab-notes li').map(l=>l.innerText),btn:$('.ab-acts .go')?.innerText}`), 8000, 'update found');
+    const avail = await until(() => T(`const c=$('.ab-update');return c.innerText.includes('${NEXT}')&&{text:c.innerText,notes:$$('.ab-notes li').map(l=>l.innerText),btn:$('.ab-acts .go')?.innerText}`), 8000, 'update found');
     assert.deepEqual(avail.notes, manifest.notes);
     assert.match(avail.btn, /去官网下载/, 'a development build cannot replace itself');
     assert.match(avail.text, /开发版不能自动更新/);
     assert.ok(hits >= 1);
     await shot('help-4-about-available.png');
-    mark('about: version, manual check finds 1.0.1, dev build links to the website', { button: avail.btn });
+    mark('about: version, manual check finds the next version, dev build links to the website', { button: avail.btn });
 
     feedBody = feedBody.replace('录课可以暂停', '录课可以暂停!');
     api.updater.state = { phase: 'idle' };
@@ -100,13 +101,13 @@ async function main() {
     api.updater.state = { phase: 'idle' };
     await api.updater.check();
     const toast = await until(() => T(`const t=$('.up-toast');return t&&!t.classList.contains('ok')&&t.innerText`), 5000, 'silent check toast');
-    assert.match(toast, /发现新版本 1\.0\.1/); assert.match(toast, /等 2 项/);
+    assert.ok(toast.includes('发现新版本 ' + NEXT), toast); assert.match(toast, /等 2 项/);
     const dot = await T(`return !!$('.rail-b[aria-label="帮助"] .help-dot')`);
     assert.ok(dot, 'help button shows a dot');
     await shot('help-5-new-version-toast.png');
     await T(`return click(byText('.up-toast button','跳过这个版本'))`);
     await until(() => T(`return !$('.up-toast')`), 3000, 'toast gone');
-    await until(() => api.settings.updateSkip === '1.0.1', 3000, 'skip saved');
+    await until(() => api.settings.updateSkip === NEXT, 3000, 'skip saved');
     api.updater.state = { phase: 'idle' };
     await api.updater.check();
     await sleep(800);

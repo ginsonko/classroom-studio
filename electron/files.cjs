@@ -34,13 +34,15 @@ class Files{
    */
   async slideTexts(input){
   const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
-  if(!['.ppt','.pptx'].includes(ext)||process.platform!=='win32')return null;
+  if(!['.ppt','.pptx'].includes(ext))return null;
   const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|slides-v3').digest('hex');const dir=path.join(this.cache,'documents',key,'slides'),file=path.join(dir,'texts.json'),ocrFile=path.join(dir,'ocr.json');
   const lines=x=>(Array.isArray(x)?x:x&&typeof x==='object'?[x]:[]).filter(l=>l&&typeof l.t==='string').slice(0,120).map(l=>({t:l.t.slice(0,300),y:Number.isFinite(Number(l.y))?Number(l.y):undefined}));
   const readTexts=async()=>{const v=await readJSON(file,null);return Array.isArray(v)?v.map(x=>({lines:lines(x)})):null;};
   const readOcr=async()=>{const v=await readJSON(ocrFile,null);if(!v||typeof v!=='object')return null;return new Map((Array.isArray(v)?v:[v]).map(x=>[Number(x?.p),lines(x?.lines)]));};
   const merge=(pages,ocr)=>pages.map((p,i)=>p.lines.length?p:{lines:ocr?.get(i+1)??[]});
   const ps=(script,args,timeout)=>runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,script),...args],{timeout});
+  // 其他系统没有 PowerPoint 自动化和系统 OCR：只用内置排版转换时顺手写下的 texts.json
+  if(process.platform!=='win32')return readTexts();
   const pages=await readTexts(),ocr=await readOcr();if(pages&&(ocr||pages.every(p=>p.lines.length)))return merge(pages,ocr);
   const job=this.queue.catch(()=>{}).then(async()=>{
    let pages=await readTexts();
@@ -56,13 +58,23 @@ class Files{
   const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
   if(['.pdf','.zml'].includes(ext)){const h=await fs.promises.open(actual,'r');try{const buf=Buffer.alloc(1024);const {bytesRead}=await h.read(buf,0,buf.length,0);if(!buf.subarray(0,bytesRead).includes(Buffer.from('%PDF-')))throw Error('这份文件不是有效 PDF');}finally{await h.close();}return {render:'pdf',pdf:normal(actual),cached:true,engine:'passthrough'};}
   if(!['.ppt','.pptx','.doc','.docx','.rtf'].includes(ext))throw Error('此格式暂不能转换为文档');
-  // PPT / Word 转换靠 Windows 上的 Office / WPS 自动化
-  if(process.platform!=='win32')throw Error('macOS 版暂时不能直接打开 PPT / Word：请在 Keynote、PowerPoint 或 WPS 里「导出为 PDF」后再打开。');
   const mode=['.ppt','.pptx'].includes(ext)?'slides':'pdf';
   const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|'+mode+'-v3').digest('hex');const folder=path.join(this.cache,'documents',key),pdf=path.join(folder,'document.pdf');
-  const existing=await readJSON(path.join(folder,'manifest.json'),null);if(existing&&(mode==='slides'?existing.images?.length&&existing.images.every(x=>fs.existsSync(x.path)):fs.existsSync(pdf)))return {...existing,pdf:existing.pdf?normal(existing.pdf):undefined,images:existing.images?.map(x=>({...x,path:normal(x.path)})),cached:true};
+  const out=r=>({...r,pdf:r.pdf?normal(r.pdf):undefined,images:r.images?.map(x=>({...x,path:normal(x.path)}))});
+  const existing=await readJSON(path.join(folder,'manifest.json'),null);if(existing&&(existing.render==='images'?existing.images?.length&&existing.images.every(x=>fs.existsSync(x.path)):existing.pdf&&fs.existsSync(existing.pdf)))return {...out(existing),cached:true};
   progress({stage:'queued',message:'等待本机文档转换'});
+  // Windows 用 Office / WPS 自动化；其他系统（或 Windows 上没装 Office / WPS）交给 office.cjs 的多级转换
+  const fallback=async()=>{const r={...await this.office.convert({input:actual,ext,folder,progress}),cached:false};await atomicJSON(path.join(folder,'manifest.json'),r);progress({stage:'done',done:r.images?.length??1,total:r.images?.length??1});return out(r);};
+  if(process.platform!=='win32'){
+   if(!this.office)throw Error('当前系统还不能转换 PPT / Word，请先另存为 PDF 后再打开。');
+   const job=this.queue.catch(()=>{}).then(async()=>{await fs.promises.mkdir(folder,{recursive:true});return fallback();});this.queue=job;return job;
+  }
   const job=this.queue.catch(()=>{}).then(async()=>{await fs.promises.mkdir(folder,{recursive:true});progress({stage:'opening',message:'只读打开文档'});
+   try{return await this.windowsOffice(actual,mode,folder,pdf,progress);}
+   catch(e){if(!this.office)throw e;try{return await fallback();}catch{throw e;}}
+  });this.queue=job;return job;
+ }
+ async windowsOffice(actual,mode,folder,pdf,progress){
    if(mode==='slides'){
     const imageDir=path.join(folder,'slides');await fs.promises.mkdir(imageDir,{recursive:true});
     await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'ppt-export.ps1'),'-InputFile',actual,'-OutputDir',imageDir],{timeout:240000});
@@ -72,7 +84,7 @@ class Files{
     if(images.length!==expected)throw Error(`PowerPoint 仅导出了 ${images.length}/${expected} 张有效幻灯片。请检查 Office/WPS 转换状态，或另存为 PDF 后打开。`);
     const result={render:'images',images,cached:false,engine:'local-office-slides'};await atomicJSON(path.join(folder,'manifest.json'),result);progress({stage:'done',done:images.length,total:images.length});return result;
    }
-   await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'office-export.ps1'),'-InputFile',actual,'-OutputFile',pdf],{timeout:240000});const s=await fs.promises.stat(pdf);if(s.size<1000)throw Error('文档转换没有生成有效 PDF 页面。');const result={render:'pdf',pdf:normal(pdf),cached:false,engine:'local-office'};await atomicJSON(path.join(folder,'manifest.json'),result);progress({stage:'done',done:1,total:1});return result;});this.queue=job;return job;
+   await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'office-export.ps1'),'-InputFile',actual,'-OutputFile',pdf],{timeout:240000});const s=await fs.promises.stat(pdf);if(s.size<1000)throw Error('文档转换没有生成有效 PDF 页面。');const result={render:'pdf',pdf:normal(pdf),cached:false,engine:'local-office'};await atomicJSON(path.join(folder,'manifest.json'),result);progress({stage:'done',done:1,total:1});return result;
  }
 }
 module.exports={Files,EXT,normal,pathToFileURL};

@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const { closeWindow } = require('./office.cjs');
 
 // ── 最小 zip 写入器（docx / pptx 都是 zip） ──
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -228,7 +229,7 @@ async function exportMarkdown(file, formats, makeWindow) {
         fs.writeFileSync(base + '.png', img.toPNG()); out.push(base + '.png');
       } catch (e) { errors.push('长图：' + e.message); }
     }
-  } finally { if (!w.isDestroyed()) w.destroy(); }
+  } finally { await closeWindow(w); }
   return { out, errors };
 }
 

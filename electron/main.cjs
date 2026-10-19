@@ -1,6 +1,6 @@
 const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
-const {Files,normal}=require('./files.cjs');const {atomicJSON,readJSON,within,cleanTemps}=require('./core.cjs');
+const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,readJSON,within,cleanTemps}=require('./core.cjs');
 const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
@@ -50,13 +50,14 @@ function exportWindow(){
 }
 let exportQueue=Promise.resolve();
 function exportDoc(file,formats){const job=exportQueue.then(()=>exporter.exportMarkdown(file,formats,exportWindow));exportQueue=job.catch(()=>{});return job;}
+files.office=new OfficeConverter({makeWindow:exportWindow,url:p=>files.url(p),log});
 const dockManager=createDock({
  settings:()=>settings, save:()=>scheduleSave(), log,
  getStudent:()=>windows.get('student'),
  makeOptions:()=>{
   const ses=session.fromPartition('persist:studio-private');
   if(!ses.csReady){guardSession(ses);ses.csReady=true;}
-  return {webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}};
+  return {acceptFirstMouse:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}};
  },
  load:win=>win.loadURL('studio://app/index.html?w=dock'),
  onCreate:w=>{
@@ -77,7 +78,8 @@ async function makeWindow(role){
  const ses=session.fromPartition(role==='student'?'persist:studio-public':role==='recorder'?'studio-recorder':'persist:studio-private');
  if(!ses.csReady){guardSession(ses);ses.csReady=true;}
  const options=role==='teacher'?{width:1600,height:960,minWidth:1050,minHeight:640,title:'最强网课教辅系统 · 教师端'}:role==='student'?{width:1280,height:760,minWidth:640,minHeight:400,title:'课堂展示 · 请共享这个窗口'}: {width:320,height:180,title:'课堂录制组件'};
- const w=new BrowserWindow({...options,show:false,backgroundColor:'#101217',webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}});
+ // acceptFirstMouse：macOS 上窗口不在前台时，第一下落笔 / 点击也直接生效，而不是只用来激活窗口
+ const w=new BrowserWindow({...options,show:false,acceptFirstMouse:true,backgroundColor:'#101217',webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}});
  const contentId=w.webContents.id;windows.set(role,w);roles.set(contentId,role);
  if(role==='teacher'){w.setContentProtection(!!settings.captureGuard);w.webContents.setAudioMuted(true);}
  w.webContents.setWindowOpenHandler(()=>({action:'deny'}));
