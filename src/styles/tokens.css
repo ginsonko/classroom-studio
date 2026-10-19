@@ -1,0 +1,171 @@
+/* ───────────────────────────────────────────────────────────
+   设计变量 · 教师端 4 套皮肤 + 学生画面 9 套黑板皮肤
+   命名原则：语义优先（surface / ink / live / cue），不写死颜色
+   ─────────────────────────────────────────────────────────── */
+
+:root {
+  --font-ui: "Inter Variable", "Noto Sans SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+  --font-board: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 14px;
+
+  --ease-spring: cubic-bezier(.2, .9, .25, 1.15);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur: 220ms;
+
+  --row: 30px;
+  --rail: 46px;
+  --bar: 44px;
+}
+
+/* ── 1 · 石墨导播台（默认）────────────────────────────────
+   参照演播室：深石墨控制台 + 演播红 tally 灯 + 青色监看光 */
+[data-skin="graphite"] {
+  --bg-0: #0c0e12;      /* 最底层：窗口 */
+  --bg-1: #13161c;      /* 面板 */
+  --bg-2: #1a1e26;      /* 抬升：卡片、输入框 */
+  --bg-3: #232833;      /* 悬停 */
+  --bg-4: #2d3340;      /* 按下 / 选中 */
+  --line: #262b35;
+  --line-strong: #363d4b;
+  --fg-0: #eef1f6;
+  --fg-1: #b7bfcc;
+  --fg-2: #7c8596;
+  --fg-3: #535b6a;
+  --live: #ff3b30;      /* PGM / REC：学生正在看 */
+  --live-glow: rgba(255, 59, 48, .38);
+  --cue: #3dd9eb;       /* PVW / 交互焦点 */
+  --cue-soft: rgba(61, 217, 235, .14);
+  --ok: #3ccf91;
+  --warn: #ffb547;
+  --private: #b58cff;   /* 老师私有，学生看不到 */
+  --private-soft: rgba(181, 140, 255, .14);
+  --shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, .7), 0 0 0 1px rgba(255, 255, 255, .05);
+  color-scheme: dark;
+}
+
+/* ── 2 · 午夜蓝 ─────────────────────────────────────────── */
+[data-skin="midnight"] {
+  --bg-0: #0a1020;
+  --bg-1: #0f1830;
+  --bg-2: #15203d;
+  --bg-3: #1d2a4d;
+  --bg-4: #27365f;
+  --line: #1d2948;
+  --line-strong: #2c3b63;
+  --fg-0: #eaf0ff;
+  --fg-1: #aeb9d6;
+  --fg-2: #7584a8;
+  --fg-3: #4d5a7c;
+  --live: #ff5a4e;
+  --live-glow: rgba(255, 90, 78, .35);
+  --cue: #e8c46a;
+  --cue-soft: rgba(232, 196, 106, .14);
+  --ok: #4fd6a0;
+  --warn: #ffb547;
+  --private: #9db4ff;
+  --private-soft: rgba(157, 180, 255, .14);
+  --shadow-pop: 0 18px 50px -12px rgba(0, 0, 20, .8), 0 0 0 1px rgba(160, 190, 255, .07);
+  color-scheme: dark;
+}
+
+/* ── 3 · 纸感工作室（浅色）──────────────────────────────── */
+[data-skin="paper"] {
+  --bg-0: #e9e6df;
+  --bg-1: #f5f3ee;
+  --bg-2: #fffefb;
+  --bg-3: #ebe7de;
+  --bg-4: #dfd9cc;
+  --line: #dcd6ca;
+  --line-strong: #c7bfaf;
+  --fg-0: #1d1b18;
+  --fg-1: #4a463f;
+  --fg-2: #7d776b;
+  --fg-3: #a8a194;
+  --live: #d6352b;
+  --live-glow: rgba(214, 53, 43, .28);
+  --cue: #1a7f86;
+  --cue-soft: rgba(26, 127, 134, .12);
+  --ok: #2f8f5b;
+  --warn: #b7791f;
+  --private: #6f4cc4;
+  --private-soft: rgba(111, 76, 196, .1);
+  --shadow-pop: 0 18px 40px -14px rgba(60, 45, 20, .35), 0 0 0 1px rgba(60, 45, 20, .08);
+  color-scheme: light;
+}
+
+/* ── 4 · 高对比 ─────────────────────────────────────────── */
+[data-skin="contrast"] {
+  --bg-0: #000;
+  --bg-1: #070707;
+  --bg-2: #121212;
+  --bg-3: #1f1f1f;
+  --bg-4: #333;
+  --line: #3a3a3a;
+  --line-strong: #6a6a6a;
+  --fg-0: #fff;
+  --fg-1: #e6e6e6;
+  --fg-2: #b3b3b3;
+  --fg-3: #8a8a8a;
+  --live: #ff2d2d;
+  --live-glow: rgba(255, 45, 45, .5);
+  --cue: #00f0ff;
+  --cue-soft: rgba(0, 240, 255, .18);
+  --ok: #33ff99;
+  --warn: #ffd000;
+  --private: #d9a6ff;
+  --private-soft: rgba(217, 166, 255, .2);
+  --shadow-pop: 0 0 0 2px #fff;
+  color-scheme: dark;
+}
+
+/* ───────────────────────────────────────────────────────────
+   学生画面 · 黑板皮肤
+   --paper 纸面底色 · --ink 默认笔色 · --rule 底纹线色
+   --pen-* 皮肤自适配笔色（\"黑\"在黑板上自动变成粉笔白）
+   ─────────────────────────────────────────────────────────── */
+[data-board="white"]   { --paper: #ffffff; --ink: #1b1d22; --rule: rgba(30, 60, 120, .09); --rule-strong: rgba(30, 60, 120, .2); --dim: 0; }
+[data-board="ivory"]   { --paper: #fbf7ee; --ink: #22201b; --rule: rgba(120, 90, 30, .1); --rule-strong: rgba(120, 90, 30, .22); --dim: 0; }
+[data-board="wheat"]   { --paper: #f4ecd2; --ink: #2b261a; --rule: rgba(110, 80, 20, .12); --rule-strong: rgba(110, 80, 20, .24); --dim: 0; }
+[data-board="bean"]    { --paper: #c7edcc; --ink: #1b2c1f; --rule: rgba(20, 80, 40, .12); --rule-strong: rgba(20, 80, 40, .24); --dim: 0; }
+[data-board="chalk"]   { --paper: #23392f; --ink: #f2f0e6; --rule: rgba(240, 240, 220, .07); --rule-strong: rgba(240, 240, 220, .16); --dim: 0; }
+[data-board="slate"]   { --paper: #2b2f36; --ink: #eef0f2; --rule: rgba(255, 255, 255, .06); --rule-strong: rgba(255, 255, 255, .14); --dim: 0; }
+[data-board="space"]   { --paper: #0f1a33; --ink: #e8eeff; --rule: rgba(150, 180, 255, .08); --rule-strong: rgba(150, 180, 255, .18); --dim: 0; }
+[data-board="night"]   { --paper: #0d0d0f; --ink: #cfcfd4; --rule: rgba(255, 255, 255, .05); --rule-strong: rgba(255, 255, 255, .11); --dim: .1; }
+[data-board="sepia"]   { --paper: #efe3c8; --ink: #3a2c18; --rule: rgba(90, 60, 20, .12); --rule-strong: rgba(90, 60, 20, .24); --dim: 0; }
+
+/* ── 全局基础 ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+  overflow: hidden;
+  user-select: none;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--cue); outline-offset: 1px; }
+::selection { background: var(--cue-soft); }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--line-strong); }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+[data-motion="off"] *, [data-motion="off"] *::before, [data-motion="off"] *::after {
+  animation-duration: 1ms !important; transition-duration: 1ms !important;
+}

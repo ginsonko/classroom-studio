@@ -1,0 +1,43 @@
+/* ── 一键导入确认框 ─────────────────────────────────────── */
+.imp-back { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; background: rgba(4, 6, 10, .55); backdrop-filter: blur(3px); }
+.imp {
+  width: min(460px, calc(100vw - 32px)); padding: 18px 20px 16px; border-radius: 14px;
+  color: var(--fg-0); background: linear-gradient(160deg, var(--bg-2), var(--bg-1));
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.imp-h { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.imp-h svg { color: var(--cue); }
+.imp-kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 14px 0 6px; font-size: 13px; }
+.imp-kv dt { color: var(--fg-2); }
+.imp-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: "JetBrains Mono", "Cascadia Mono", monospace; font-size: 12.5px; }
+.imp-kv em { display: block; margin-top: 2px; font-family: inherit; font-style: normal; font-size: 11.5px; color: var(--warn); }
+.imp-note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: var(--fg-2); }
+.imp-msg { display: flex; align-items: flex-start; gap: 7px; margin-top: 12px; padding: 9px 11px; border-radius: 9px; font-size: 12.5px; line-height: 1.55; background: var(--bg-0); color: var(--fg-1); }
+.imp-msg svg { flex: none; margin-top: 2px; }
+.imp-msg.ok { color: var(--ok); }
+.imp-msg.bad { color: var(--live); }
+.imp-b { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.imp-b button { padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--fg-1); background: var(--bg-3); }
+.imp-b button.pri { color: #04161a; background: var(--cue); }
+
+/* AI 设置里的一键导入入口 */
+.ai-imp { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding: 10px 11px; border-radius: 10px; background: var(--bg-0); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); font-size: 12px; color: var(--fg-2); }
+.ai-imp b { color: var(--fg-0); font-size: 12.5px; }
+.ai-imp-row { display: flex; gap: 6px; }
+.ai-imp-row input { flex: 1; min-width: 0; }
+.ai-imp-row button { flex: none; padding: 0 10px; border-radius: 7px; font-weight: 600; color: #04161a; background: var(--cue); }
+.ai-imp-row button:disabled { opacity: .5; }
+.ai-imp a { color: var(--cue); cursor: pointer; }
+.ai-imp-alt { display: flex; gap: 6px; }
+.ai-imp-alt button { padding: 4px 10px; border-radius: 7px; font-size: 11.5px; color: var(--fg-1); background: var(--bg-3); }
+.imp-prof { margin-left: auto; font-size: 12px; color: var(--fg-2); }
+.imp-site { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding: 7px 10px; border-radius: 8px; font-size: 12px; background: var(--bg-0); color: var(--fg-1); }
+.imp-site svg { flex: none; }
+.imp-site span { line-height: 1.5; }
+.imp-site.ok svg { color: var(--ok); }
+.imp-site.warn { color: var(--warn); }
+.imp-dim { color: var(--fg-2); font-family: inherit; font-style: normal; }
+.imp-tag { margin-left: 6px; padding: 1px 6px; border-radius: 6px; font-style: normal; font-family: inherit; font-size: 11px; color: var(--cue); background: rgba(34, 211, 238, .12); }
+.imp-arrow { margin: 0 5px; vertical-align: -1px; color: var(--fg-2); }
+.imp-sure { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; color: var(--warn); }
+.imp-b button:disabled { opacity: .45; cursor: default; }

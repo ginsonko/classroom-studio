@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>物理预设视觉 QA</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #15181d; overflow: hidden; }
+  #root { position: fixed; inset: 0; }
+  .shot { position: absolute; inset: 0; }
+  .shot .tag { position: absolute; z-index: 30; left: 6px; bottom: 4px; font: 600 11px "JetBrains Mono", monospace; color: #fff; background: rgba(0,0,0,.55); padding: 1px 6px; border-radius: 4px; pointer-events: none; }
+  /* 网格模式：一次看多个时刻 */
+  #root.grid { position: static; display: flex; flex-wrap: wrap; }
+  #root.grid .shot { position: relative; inset: auto; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./sims.tsx"></script>
+</body>
+</html>

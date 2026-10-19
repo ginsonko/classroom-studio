@@ -1,0 +1,69 @@
+/* AI 自动处理 + 资料整理 */
+.ap-state { padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: var(--fg-2); background: var(--bg-2); }
+.ap-state.on { color: #04140d; background: var(--cue); }
+.rail-live { color: var(--cue); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--cue) 60%, transparent)); }
+
+.ap-switch { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--bg-1); }
+.ap-switch.on { border-color: color-mix(in srgb, var(--cue) 55%, var(--line)); background: color-mix(in srgb, var(--cue) 8%, var(--bg-1)); }
+.ap-switch > div { flex: 1; min-width: 0; }
+.ap-switch b { font-size: 14px; }
+.ap-switch p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--fg-2); }
+.sd-form label.sd-check i { font-style: normal; }
+/* 说明和选项文字连成一段自然换行，不再挤成一窄条 */
+.ap-check-t { min-width: 0; line-height: 1.5; }
+.ap-check-t .sd-note { display: inline-block; margin-left: 4px; font-weight: 400; white-space: nowrap; }
+.sd-form label.sd-check:has(.ap-check-t) { align-items: flex-start; }
+.sd-form label.sd-check:has(.ap-check-t) input { margin-top: 3px; flex: none; }
+.ap .sd-form select { width: 100%; padding: 8px 10px; border-radius: var(--r-md); font: inherit; font-size: 13px; font-weight: 400; color: var(--fg-0); background: var(--bg-1); border: 1px solid var(--line); outline: none; }
+.ap .sd-form select:focus { border-color: var(--cue); }
+
+.ap-log { display: flex; flex-direction: column; gap: 8px; }
+.ap-ev { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-1); border: 1px solid var(--line); }
+.ap-ev > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ap-ev p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--fg-0); }
+.ap-ev i { font-style: normal; font-size: 11.5px; color: var(--fg-3); }
+.ap-k { flex: none; align-self: flex-start; padding: 1px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; color: var(--fg-1); background: var(--bg-3); }
+.ap-ev.k-lesson .ap-k, .ap-ev.k-prep .ap-k { color: #04140d; background: var(--cue); }
+.ap-ev.k-homework .ap-k { color: #fff; background: #5b7be0; }
+.ap-ev.k-error { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+.ap-ev.k-error .ap-k { color: #1a1204; background: var(--warn); }
+
+.ap-ask { max-width: 560px; }
+.ap-ask p, .ap-ask li { font-size: 13px; line-height: 1.7; }
+.ap-ask ul { margin: 0; padding-left: 20px; }
+
+.ap-next { display: flex; flex-direction: column; gap: 6px; }
+.ap-slot { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-2); }
+.ap-slot > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ap-slot b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-slot i { font-style: normal; font-size: 11.5px; color: var(--fg-2); }
+.ap-prep, .ap-note { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--bg-1); }
+.ap-prep header, .ap-note header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ap-prep header i, .ap-note header i { font-style: normal; font-size: 11.5px; color: var(--fg-2); }
+.ap-note p { margin: 0; font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; color: var(--fg-1); }
+.ap-note header button { color: var(--fg-2); }
+.ap-mats { display: flex; flex-wrap: wrap; gap: 6px; }
+.ags-seg .sd-btn.on { color: #04140d; background: var(--cue); }
+
+/* 资料整理 */
+.cat { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.cat-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cat-shelves { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--bg-2); flex-wrap: wrap; }
+.cat-shelves button { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; color: var(--fg-1); }
+.cat-shelves button.on { background: var(--bg-0); color: var(--fg-0); font-weight: 650; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+.cat-shelves em { font-style: normal; font-size: 11px; color: var(--fg-3); }
+.cat-filter { display: flex; gap: 8px; align-items: center; }
+.cat-filter .lib-search { flex: 1; margin: 0; }
+.cat-list { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; }
+.cat-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 8px; }
+.cat-row:hover { background: var(--bg-2); }
+.cat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 6px; text-align: left; }
+.cat-main b { max-width: 100%; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-main span { max-width: 100%; font-size: 11.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-row select { flex: none; max-width: 110px; padding: 3px 6px; border-radius: 6px; font-size: 12px; background: var(--bg-2); color: var(--fg-1); border: 1px solid var(--line); }
+.cat-group h5 { margin: 10px 4px 4px; font-size: 12px; color: var(--fg-1); }
+.cat-group h5 i { font-style: normal; color: var(--fg-3); font-weight: 500; }
+.cat.compact { flex: 1; padding: 6px 10px 0; overflow: hidden; }
+.cat.compact .cat-tools .sd-btn { padding: 5px 8px; font-size: 12px; }
+.cat.compact .cat-filter { flex-direction: column; align-items: stretch; }
+.cat.compact .cat-shelves button { padding: 4px 7px; font-size: 12px; }

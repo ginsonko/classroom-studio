@@ -1,0 +1,43 @@
+最强网课教辅系统 许可协议（1.0 版）
+Copyright (c) 2026 ginsonko（yinziapi.top）
+
+本软件（包括源代码、安装包、界面、文档与示例素材）开放源代码，但不是「随便商用」的开源协议。
+使用、复制、修改或分发本软件，即表示你同意以下条款。
+
+一、个人老师：免费
+  1. 以个人身份教学的老师（包括你自己开的收费家教课、一对一网课）可以免费使用本软件。
+  2. 可以阅读、学习、修改源代码，修改后的版本只供自己使用。
+  3. 可以把官方原版安装包或本仓库的链接免费分享给其他老师，但需保留本许可协议和作者信息。
+
+二、单位：需要授权
+  公司、学校、培训机构、教育平台、工作室等任何组织，在其经营、教学或内部办公中使用本软件
+  （包括让员工或签约老师使用、部署到单位电脑、集成进自己的产品或服务），需要事先获得作者的书面授权。
+  授权方式：在 QQ 群 1035471769 联系作者。
+
+三、禁止的行为
+  1. 出售本软件、它的修改版或其中的任何部分，或把它作为付费产品/服务的一部分提供（单位获得授权的除外）。
+  2. 去掉、隐藏或修改软件中的作者信息、授权说明、更新来源，冒充自己的作品发布。
+  3. 以修改版冒充官方版本发布，或在修改版中加入恶意代码、窃取用户数据的功能。
+
+四、第三方组件
+  本软件附带或使用的第三方组件按其各自的许可协议授权，不受本协议限制，包括但不限于：
+  Electron（MIT）、Chromium（BSD 等）、OpenAI Codex CLI（Apache-2.0）、FFmpeg（GPL v3，独立程序调用）、
+  pdf.js（Apache-2.0）、React（MIT）、three.js（MIT）、KaTeX（MIT）、MathJax（Apache-2.0）等。
+  它们的许可文本随安装包和源码一起提供。
+
+五、免责声明
+  本软件按「现状」提供，不附带任何明示或暗示的担保。因使用本软件造成的任何直接或间接损失
+  （包括课件、录像、学生资料的丢失），作者不承担责任。请自行备份重要资料。
+  老师在使用 AI 功能时调用的第三方模型服务，其费用和内容由老师与服务方自行负责。
+
+六、其它
+  作者保留对本协议的解释权和后续版本的修改权；新版本协议只对之后发布的版本生效。
+  本协议未授予的权利均由作者保留。
+
+------------------------------------------------------------
+Summary in English (the Chinese text above prevails):
+Source-available. Free for individual teachers (including their own paid private tutoring).
+Organizations (companies, schools, training institutions, platforms) need written permission
+from the author before use. Selling the software or modified versions is not allowed.
+Third-party components keep their own licenses. Provided "as is", without warranty.
+Contact: QQ group 1035471769.

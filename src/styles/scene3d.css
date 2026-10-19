@@ -1,0 +1,18 @@
+/* 立体演示（S3DHost）：画布铺满页面，控制条与物理仿真共用 simctl 样式 */
+.s3dhost { position: absolute; inset: 0; overflow: hidden; user-select: none; container-type: size; background: #121827; touch-action: none; }
+.s3dhost[data-scope="preview"], .s3dhost[data-scope="program"] { cursor: grab; }
+.s3dhost:active { cursor: grabbing; }
+.s3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.s3d-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #94a3b8; font: 600 clamp(12px, 1.6cqw, 22px)/1.4 "Inter Variable", "Microsoft YaHei", sans-serif; }
+.s3dhost:not(:hover) .simctl { opacity: .3; }
+.s3d-ctl { cursor: default; }
+.s3d-ctl .simctl-params { width: min(46cqw, 560px); max-height: 56cqh; }
+.s3d-tick { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 0 2px rgba(18,21,27,.9); cursor: pointer; z-index: 2; }
+.s3d-steps { display: inline-flex; align-items: center; gap: .1em; padding: 2px; border-radius: 999px; background: rgba(96,165,250,.14); color: #bfdbfe; }
+.s3d-steps b { min-width: 2.6em; text-align: center; font-family: "JetBrains Mono", monospace; font-weight: 600; }
+.s3d-steps button:disabled { opacity: .35; cursor: default; }
+.s3d-cams { align-items: center; }
+.s3d-camicon { margin: 0 .3em 0 .45em; opacity: .6; }
+.simctl.compact .s3d-cams .s3d-camicon, .simctl.compact .simctl-live { display: none; }
+.simctl.compact .s3d-rates { display: none; }
+.simctl.tiny .s3d-cams, .simctl.tiny .s3d-steps { display: none; }

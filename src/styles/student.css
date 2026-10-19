@@ -1,0 +1,182 @@
+/* ── 学生窗口（腾讯会议共享它） ─────────────────────────── */
+.sw { position: fixed; inset: 0; background: #000; overflow: hidden; }
+.sw-stage { position: absolute; inset: 0; transition: filter .4s; }
+.sw-stage .stage:not(.board-fill) { background: #111318; }
+/* TAKE 切换时的一道红光：从边缘向内收 */
+.sw.take::after {
+  content: ""; position: absolute; inset: 0; z-index: 50;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 4px var(--live), inset 0 0 80px var(--live-glow);
+  animation: take-flash .7s var(--ease-out) forwards;
+}
+@keyframes take-flash { from { opacity: 1; } to { opacity: 0; } }
+.sw.take .page { animation: take-in .45s var(--ease-out); }
+@keyframes take-in { from { opacity: .3; filter: blur(4px); } }
+
+.sw-foot {
+  position: absolute; right: 14px; bottom: 12px; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  max-width: 46vw;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(12, 14, 18, .55);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, .78);
+  font-size: 12px;
+  pointer-events: none;
+  opacity: .7;
+}
+.sw-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-foot b { font-weight: 500; color: #fff; white-space: nowrap; }
+.sw-foot b:empty { display: none; }
+
+/* ── 老师浮层（正式版为防截屏独立窗口） ─────────────────── */
+.tdock {
+  position: fixed; z-index: 60;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-1) 90%, transparent);
+  backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong);
+  opacity: .78;
+  transition: opacity var(--dur), box-shadow var(--dur);
+}
+.tdock:hover, .tdock.active { opacity: 1; }
+.tdock.active { box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--private), 0 0 0 4px var(--private-soft); }
+.tdock-grip {
+  display: flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 2px;
+  color: var(--fg-3);
+  cursor: grab;
+  touch-action: none;
+}
+.tdock-grip:active { cursor: grabbing; }
+.tdock-grip button { margin-left: auto; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; color: var(--fg-2); }
+.tdock-grip button:hover { background: var(--bg-3); color: var(--fg-0); }
+.tdock-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 700;
+  color: var(--private); background: var(--private-soft);
+  white-space: nowrap;
+}
+.tdock-row { display: grid; grid-template-columns: repeat(2, 34px); gap: 3px; justify-items: center; padding-top: 4px; border-top: 1px solid var(--line); }
+.tdock-row:has(.tdock-page) { grid-template-columns: 26px 1fr 26px; align-items: center; }
+.tdock-row:has(.tdock-page) .tp-b { width: 26px; }
+.tdock-row:has(> :nth-child(3):last-child):not(:has(.tdock-page)) { grid-template-columns: repeat(3, 1fr); }
+.tdock-row:has(> :nth-child(3):last-child):not(:has(.tdock-page)) .tp-b { width: 22px; }
+.tdock-page { text-align: center; font-size: 13px; color: var(--fg-0); }
+.tdock-mini {
+  position: fixed; z-index: 60;
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--private);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--private);
+  opacity: .7;
+  transition: opacity var(--dur), transform var(--dur) var(--ease-spring);
+}
+.tdock-mini:hover { opacity: 1; transform: scale(1.08); }
+
+/* ── 学生工具条（远控时学生自己标注） ───────────────────── */
+.sdock {
+  position: fixed; left: 50%; bottom: 14px; z-index: 55;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 14px;
+  background: rgba(20, 22, 28, .78);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 14px 40px -12px rgba(0,0,0,.65), inset 0 0 0 1px rgba(255,255,255,.08);
+  color: #e8ebf1;
+  --bg-2: #1e2129; --bg-3: #2a2e38; --bg-4: #343947; --line-strong: #3d4351;
+  --fg-0: #f1f3f7; --fg-1: #c3c9d4; --fg-3: #687083;
+  --cue: #ff4fd8; --cue-soft: rgba(255, 79, 216, .16);
+  opacity: .75;
+  transition: opacity var(--dur), box-shadow var(--dur);
+}
+.sdock:hover, .sdock.active { opacity: 1; }
+.sdock.active { box-shadow: 0 14px 40px -12px rgba(0,0,0,.65), inset 0 0 0 1px #ff4fd8, 0 0 0 4px rgba(255, 79, 216, .18); }
+.sdock.locked { opacity: .5; }
+.sdock-who { display: inline-flex; align-items: center; gap: 6px; padding-right: 6px; margin-right: 2px; border-right: 1px solid rgba(255,255,255,.12); font-size: 12px; font-weight: 650; color: #ff8fe6; white-space: nowrap; }
+.sdock-who i { width: 8px; height: 8px; border-radius: 50%; background: #ff4fd8; box-shadow: 0 0 0 3px rgba(255, 79, 216, .25); }
+.sdock.locked .sdock-who { color: #9aa0ad; }
+.tp.student .tp-b.on { color: #fff; box-shadow: 0 4px 14px -4px #ff4fd8; }
+
+/* 锁定状态：一枚安静的小标记，不再用整条灰工具条挡画面 */
+.sdock-chip {
+  position: fixed; left: 14px; bottom: 14px; z-index: 55;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(16, 18, 23, .5);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, .55);
+  font-size: 11px; font-weight: 600;
+  pointer-events: none;
+}
+
+/* ── 学生工具条：可拖动的小圆钮 + 可收起的工具条（位置存在本机） ── */
+.sbar {
+  position: fixed; z-index: 56;
+  display: flex; align-items: center; gap: 8px;
+  --pink: #ff4fd8; --pink-soft: rgba(255, 79, 216, .18);
+  --bg-2: #1e2129; --bg-3: #2a2e38; --bg-4: #343947; --line-strong: #3d4351;
+  --fg-0: #f1f3f7; --fg-1: #c3c9d4; --fg-3: #687083;
+  --cue: #ff4fd8; --cue-soft: rgba(255, 79, 216, .16);
+  color: #e8ebf1;
+}
+.sbar.to-left { flex-direction: row-reverse; }
+.sbar-fab {
+  position: relative; flex: none;
+  display: grid; place-items: center;
+  width: 44px; height: 44px; border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(120% 120% at 30% 20%, #ff7be3, #c2189b 70%);
+  box-shadow: 0 10px 28px -8px rgba(194, 24, 155, .75), inset 0 0 0 1px rgba(255, 255, 255, .28), inset 0 1px 0 rgba(255, 255, 255, .35);
+  cursor: grab; touch-action: none;
+  opacity: .9;
+  transition: transform .18s var(--ease-spring), opacity var(--dur), box-shadow var(--dur), filter var(--dur);
+}
+.sbar-fab:hover { opacity: 1; transform: scale(1.06); }
+.sbar-fab:active { cursor: grabbing; }
+.sbar.s-locked .sbar-fab { background: radial-gradient(120% 120% at 30% 20%, #5b6170, #2b2f39 70%); box-shadow: 0 10px 26px -10px rgba(0, 0, 0, .7), inset 0 0 0 1px rgba(255, 255, 255, .14); opacity: .7; }
+.sbar.s-writing .sbar-fab::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--pink);
+  animation: sbar-pulse 1.8s var(--ease-out) infinite;
+}
+@keyframes sbar-pulse { from { opacity: .9; transform: scale(.92); } to { opacity: 0; transform: scale(1.25); } }
+.sbar-caret {
+  position: absolute; right: -3px; bottom: -3px;
+  display: grid; place-items: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #15171d; color: #ffb3ef;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.sbar.to-left .sbar-caret { right: auto; left: -3px; }
+.sbar-panel {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 14px;
+  background: rgba(20, 22, 28, .84);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .65), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  white-space: nowrap;
+  animation: sbar-in .2s var(--ease-out);
+  transform-origin: left center;
+}
+.sbar.to-left .sbar-panel { transform-origin: right center; }
+@keyframes sbar-in { from { opacity: 0; transform: scaleX(.85); } }
+.sbar.s-writing .sbar-panel { box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .65), inset 0 0 0 1px var(--pink), 0 0 0 4px var(--pink-soft); }
+.sbar-who { display: inline-flex; align-items: center; gap: 6px; padding-right: 8px; margin-right: 2px; border-right: 1px solid rgba(255, 255, 255, .12); font-size: 12px; font-weight: 650; color: #ff8fe6; }
+.sbar-who i { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 3px rgba(255, 79, 216, .25); }
+.sbar.s-idle .sbar-who { color: #c3c9d4; }
+.sbar.s-idle .sbar-who i { background: #8b93a3; box-shadow: none; }
+.sbar.s-locked .sbar-who { color: #9aa0ad; }
+.sbar.s-locked .sbar-who i { background: #5b6170; box-shadow: none; }
+.sbar .tp { background: none; box-shadow: none; padding: 0; }

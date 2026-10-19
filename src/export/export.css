@@ -1,0 +1,129 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #fff; color: #1d2330; font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+/* ── 配色：按学科大类换主题色（Markdown 第一行 <!-- cs:theme=chem -->） ── */
+body { --c1: #16336b; --c2: #2f6fd6; --c3: #1b4ea8; --c4: #eef4fd; --c5: #9db8e8; --ok: #1f8a4c; --ok-bg: #ecf8f1; --warn: #b4661a; --warn-bg: #fdf3e6; }
+body[data-theme="math"] { --c1: #252066; --c2: #5b54d6; --c3: #3f39b0; --c4: #f0effd; --c5: #b9b5f0; }
+body[data-theme="chem"] { --c1: #0b4440; --c2: #12a08f; --c3: #0d7c70; --c4: #e9f8f5; --c5: #96dacf; }
+body[data-theme="bio"] { --c1: #1b4720; --c2: #3a9a3f; --c3: #2b7a30; --c4: #eef8ee; --c5: #a8d8aa; }
+body[data-theme="chinese"] { --c1: #5e1515; --c2: #c0392b; --c3: #9b2a1f; --c4: #fcefed; --c5: #e8aaa2; }
+body[data-theme="english"] { --c1: #3f1a5c; --c2: #8e44ad; --c3: #6f2f8c; --c4: #f6eefa; --c5: #d2b0e2; }
+body[data-theme="history"] { --c1: #4f3310; --c2: #b5762a; --c3: #8d5a1c; --c4: #fbf3e8; --c5: #e2c193; }
+body[data-theme="geo"] { --c1: #0b3d55; --c2: #1f8fbf; --c3: #166f96; --c4: #eaf6fb; --c5: #9fd2e8; }
+body[data-theme="politics"] { --c1: #5c200e; --c2: #d35400; --c3: #a84300; --c4: #fdf1e9; --c5: #f0bb92; }
+body[data-theme="science"] { --c1: #234a1d; --c2: #6aa02b; --c3: #4f7d1d; --c4: #f2f8ea; --c5: #c3dd9e; }
+
+/* ── A4 文档（打印成 PDF） ── */
+@page { size: A4; margin: 16mm 16mm 18mm 16mm; }
+body.doc { font-size: 11pt; line-height: 1.75; }
+body.doc article { max-width: 178mm; margin: 0 auto; }
+body.doc h1 { font-size: 19pt; margin: 0 0 8pt; padding: 12pt 16pt; letter-spacing: .04em; color: #fff; border-radius: 8pt; background: linear-gradient(120deg, var(--c1), var(--c2)); }
+body.doc p.meta { display: flex; flex-wrap: wrap; gap: 6pt; margin: 0 0 10pt; color: var(--c3); font-size: 10pt; }
+body.doc p.meta .chip { padding: 1pt 8pt; border-radius: 10pt; background: var(--c4); border: .75pt solid var(--c5); }
+body.doc h2 { font-size: 13.5pt; margin: 16pt 0 8pt; padding: 4pt 10pt; color: var(--c1); background: var(--c4); border-left: 4pt solid var(--c2); border-radius: 0 6pt 6pt 0; page-break-after: avoid; }
+body.doc h3 { font-size: 12pt; margin: 12pt 0 4pt; color: var(--c3); page-break-after: avoid; }
+body.doc h4, body.doc h5, body.doc h6 { font-size: 11pt; margin: 10pt 0 3pt; }
+body.doc p { margin: 4pt 0; orphans: 3; widows: 3; }
+body.doc p.li { display: flex; gap: 6pt; margin: 3pt 0; }
+body.doc p.li .bullet { flex: none; min-width: 1.4em; color: var(--c2); font-weight: 600; }
+body.doc p.li .dot { flex: none; width: 5pt; height: 5pt; margin: .62em 4pt 0 2pt; border-radius: 50%; background: var(--c2); }
+body.doc p.li.d1 { padding-left: 1.6em; } body.doc p.li.d2 { padding-left: 3.2em; } body.doc p.li.d3 { padding-left: 4.8em; }
+body.doc p.quote { border-left: 3pt solid var(--c5); background: var(--c4); padding: 4pt 10pt; color: #3a4558; border-radius: 0 6pt 6pt 0; }
+body.doc p.quote.warn { border-color: var(--warn); background: var(--warn-bg); color: #6d3f0f; }
+body.doc p.q { display: flex; gap: 8pt; margin: 12pt 0 4pt; page-break-inside: avoid; }
+body.doc p.q .qn { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 18pt; height: 18pt; margin-top: 1pt; padding: 0 4pt; border-radius: 9pt; background: var(--c2); color: #fff; font-weight: 700; font-size: 10pt; line-height: 1; }
+body.doc p.q .qb { flex: 1; min-width: 0; }
+body.doc .ans p.q { margin: 10pt 0 2pt; }
+body.doc .ans p.q .qn { background: var(--ok); }
+body.doc .ans p.quote { border-color: #9fd3b4; background: var(--ok-bg); color: #24493a; margin-left: 26pt; }
+body.doc .ans p.quote::before { content: '解析'; display: inline-block; margin-right: 6pt; padding: 0 5pt; border-radius: 3pt; background: var(--ok); color: #fff; font-size: 8.5pt; font-weight: 700; }
+body.doc .ans p.quote.warn::before { content: '注意'; background: var(--warn); }
+body.doc p.opts { margin: 2pt 0 4pt 26pt; line-height: 1.9; }
+body.doc p.ans, body.card p.ans { padding: 4pt 10pt; background: var(--ok-bg); border: .75pt solid #b5e0c6; border-radius: 6pt; color: #1f4d33; }
+body.doc .gap { height: 34mm; border: .75pt dashed #d3d9e3; border-radius: 6pt; margin: 4pt 0 6pt 26pt; }
+body.doc table { border-collapse: collapse; width: 100%; margin: 6pt 0; page-break-inside: avoid; }
+body.doc th, body.doc td { border: .75pt solid #b8c2d2; padding: 3pt 6pt; text-align: left; vertical-align: top; }
+body.doc th { background: var(--c4); color: var(--c1); white-space: nowrap; }
+body.doc .dm { margin: 6pt 0; text-align: center; page-break-inside: avoid; }
+body.doc pre { font-family: Consolas, monospace; font-size: 9.5pt; background: #f5f6f8; padding: 6pt 8pt; border-radius: 4pt; white-space: pre-wrap; }
+body.doc hr { border: 0; border-top: .75pt dashed #b7c0cc; margin: 10pt 0; }
+body.doc code { font-family: Consolas, monospace; background: #f1f3f6; padding: 0 2pt; border-radius: 2pt; }
+body.doc .foot { margin-top: 18pt; padding-top: 6pt; border-top: .75pt solid #dfe4ec; color: #98a2b3; font-size: 8.5pt; text-align: right; }
+
+/* ── 单个公式截图 ── */
+body.sheet .cell { padding: 20px; }
+body.sheet .f { display: inline-block; font-size: 48px; line-height: 1.25; color: #111; }
+body.sheet .f .katex-display { margin: 0; }
+body.sheet .bl { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
+
+/* ── 16:9 幻灯片 ── */
+body.slide, body.slide #root { width: 1600px; height: 900px; overflow: hidden; }
+.sl { position: relative; width: 1600px; height: 900px; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+.sl::before { content: ''; position: absolute; right: -170px; top: -170px; width: 420px; height: 420px; border-radius: 50%; background: var(--c4); }
+.sl::after { content: ''; position: absolute; left: 0; bottom: 0; width: 100%; height: 10px; background: linear-gradient(90deg, var(--c1), var(--c2) 60%, var(--c5)); }
+.sl header { position: relative; flex: none; display: flex; align-items: center; gap: 22px; padding: 46px 90px 18px 80px; font-size: 48px; font-weight: 700; color: var(--c1); }
+.sl header .no { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 64px; height: 64px; padding: 0 12px; border-radius: 18px; background: var(--c2); color: #fff; font-size: 30px; }
+.sl header .tag { flex: none; padding: 4px 16px; border-radius: 22px; background: var(--c4); color: var(--c3); font-size: 24px; font-weight: 600; border: 2px solid var(--c5); }
+.sl header .tt { min-width: 0; }
+.sl header.empty { display: none; }
+.sl .rule { position: relative; flex: none; height: 4px; margin: 0 80px; background: linear-gradient(90deg, var(--c2), transparent); border-radius: 2px; }
+.sl .body { position: relative; flex: 1; min-height: 0; overflow: hidden; padding: 28px 96px 52px; font-size: 34px; line-height: 1.6; }
+.sl .body h1, .sl .body h2, .sl .body h3 { font-size: 1.12em; color: var(--c3); margin: .5em 0 .25em; }
+.sl .body p { margin: .3em 0; }
+.sl .body p.li { display: flex; gap: .5em; }
+.sl .body p.li .bullet { flex: none; color: var(--c2); font-weight: 700; min-width: 1.1em; }
+.sl .body p.li .dot { flex: none; width: .42em; height: .42em; margin: .6em .25em 0 .1em; border-radius: 3px; background: var(--c2); transform: rotate(45deg); }
+.sl .body p.li.d1 { padding-left: 1.4em; } .sl .body p.li.d2 { padding-left: 2.8em; }
+.sl .body p.quote { position: relative; margin: .5em 0; padding: .55em .9em .55em 1em; background: var(--c4); border-left: 8px solid var(--c2); border-radius: 0 16px 16px 0; color: #24304a; }
+.sl .body p.quote.ex::before { content: '例题'; display: inline-block; margin-right: .5em; padding: 0 .45em; border-radius: 8px; background: var(--c2); color: #fff; font-size: .72em; font-weight: 700; vertical-align: .12em; }
+.sl .body p.ans { margin: .45em 0; padding: .45em .9em; background: var(--ok-bg); border: 2px solid #b5e0c6; border-radius: 14px; color: #1f4d33; }
+.sl .body p.ans b:first-child { color: var(--ok); }
+.sl .body .dm { margin: .45em auto; padding: .25em .8em; text-align: center; font-size: 1.1em; background: #fff; border: 2px solid var(--c5); border-radius: 16px; width: fit-content; max-width: 100%; box-shadow: 0 6px 18px rgba(20, 40, 80, .06); }
+.sl .body table { border-collapse: collapse; margin: .4em auto; font-size: .85em; }
+.sl .body th, .sl .body td { border: 2px solid var(--c5); padding: .2em .6em; }
+.sl .body th { background: var(--c4); color: var(--c1); white-space: nowrap; }
+.sl .body pre { font-size: .7em; background: #f2f4f8; padding: .5em; border-radius: 8px; white-space: pre-wrap; }
+.sl footer { position: absolute; left: 80px; right: 40px; bottom: 26px; display: flex; justify-content: space-between; font-size: 20px; color: #8a96aa; }
+.sl footer .pg { padding: 2px 14px; border-radius: 14px; background: var(--c4); color: var(--c3); font-weight: 600; }
+/* 页面类型：例题 / 答案 / 小结 / 目标 */
+.sl.k-ex header .tag { background: var(--c2); color: #fff; border-color: var(--c2); }
+.sl.k-ans header .no { background: var(--ok); }
+.sl.k-sum .body { background: linear-gradient(180deg, transparent, var(--c4) 140%); }
+.sl.k-sum .body p.li { padding: .2em .5em; margin: .25em 0; background: #fff; border: 2px solid var(--c5); border-radius: 14px; }
+.sl.k-goal .body p.li .dot { border-radius: 50%; transform: none; }
+/* 封面 */
+body.cover .sl { justify-content: center; background: linear-gradient(135deg, var(--c1) 0%, var(--c2) 100%); }
+body.cover .sl::before { right: -120px; top: -160px; width: 560px; height: 560px; background: rgba(255, 255, 255, .08); }
+body.cover .sl::after { left: -140px; bottom: -220px; width: 520px; height: 520px; border-radius: 50%; background: rgba(255, 255, 255, .07); }
+body.cover .sl header { justify-content: center; color: #fff; text-align: center; font-size: 76px; padding: 0 120px 18px; }
+body.cover .sl .rule { width: 160px; margin: 0 auto 26px; background: rgba(255, 255, 255, .7); }
+body.cover .sl .body { flex: none; color: #e3ebfb; text-align: center; font-size: 36px; padding: 0 140px; }
+body.cover .sl footer { left: 0; right: 0; justify-content: center; color: rgba(255, 255, 255, .7); }
+body.cover .sl footer .pg { display: none; }
+
+/* ── 题图 ── */
+body.doc figure { margin: 6pt 0; text-align: center; page-break-inside: avoid; }
+body.doc figure img { max-width: 100%; max-height: 120mm; }
+.sl .body figure { margin: .3em 0; text-align: center; }
+.sl .body figure img { max-width: 100%; max-height: 520px; border-radius: 10px; }
+
+/* ── 分享长图（750px 宽，手机竖屏） ── */
+body.card { width: 750px; background: var(--c4); }
+body.card article { width: 750px; padding: 0 0 28px; font-size: 26px; line-height: 1.75; }
+body.card h1 { position: relative; overflow: hidden; margin: 0; padding: 60px 44px 46px; font-size: 44px; color: #fff; background: linear-gradient(135deg, var(--c1), var(--c2)); }
+body.card h1::after { content: ''; position: absolute; right: -90px; top: -90px; width: 260px; height: 260px; border-radius: 50%; background: rgba(255, 255, 255, .1); }
+body.card h2 { display: flex; align-items: center; gap: 12px; margin: 26px 28px 0; padding: 24px 26px 6px; font-size: 30px; color: var(--c1); background: #fff; border-radius: 22px 22px 0 0; }
+body.card h2::before { content: ''; width: 10px; height: 30px; border-radius: 5px; background: var(--c2); }
+body.card h2 + * { margin-top: 0; }
+body.card p, body.card table, body.card figure, body.card .dm { margin: 0 28px; padding: 6px 26px; background: #fff; }
+body.card p.li { display: flex; gap: 10px; }
+body.card p.li .bullet { flex: none; color: var(--c2); font-weight: 700; }
+body.card p.li .dot { flex: none; width: 12px; height: 12px; margin-top: 18px; border-radius: 50%; background: var(--c2); }
+body.card p.quote { color: #3a4558; border-left: 6px solid var(--c5); }
+body.card hr { border: 0; height: 18px; margin: 0 28px 0; background: #fff; border-radius: 0 0 22px 22px; }
+body.card table { border-collapse: collapse; width: calc(100% - 56px); font-size: 22px; }
+body.card th, body.card td { border: 1px solid var(--c5); padding: 4px 10px; text-align: left; }
+body.card figure img { max-width: 100%; }
+body.card footer { margin-top: 26px; text-align: center; font-size: 20px; color: #8a96aa; }
+body.doc .pb { page-break-after: always; break-after: page; height: 0; }
+.sl .pb, body.card .pb { display: none; }

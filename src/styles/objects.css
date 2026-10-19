@@ -1,0 +1,59 @@
+/* Claude's semantic graphite console palette, shared by all four teacher skins. */
+.obj-pop { position: fixed; z-index: 120; width: min(336px, calc(100vw - 16px)); color: var(--fg-1); background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow-pop); overflow: hidden; font-size: 12px; animation: pop-in .14s var(--ease-out); }
+.obj-library header, .obj-inspector header { display: flex; align-items: center; gap: 10px; min-height: 39px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.obj-library header b, .obj-inspector header b { color: var(--fg-0); font-weight: 600; }
+.obj-library header span, .obj-inspector header span { font-size: 10px; color: var(--fg-2); }
+.obj-library header button, .obj-inspector header button { margin-left: auto; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 5px; }
+.obj-library header button:hover, .obj-inspector header button:hover { background: var(--bg-4); }
+.obj-search { display: flex; gap: 7px; align-items: center; margin: 10px 10px 8px; padding: 7px 9px; background: var(--bg-0); border: 1px solid var(--line); border-radius: 6px; color: var(--fg-2); }
+.obj-search input { width: 100%; outline: none; background: transparent; border: 0; color: var(--fg-0); font-size: 12px; }
+.obj-tabs { display: flex; gap: 4px; padding: 0 10px 9px; }
+.obj-tabs button { flex: 1; padding: 6px; border-radius: 5px; color: var(--fg-2); }
+.obj-tabs button.on { color: var(--cue); background: var(--cue-soft); }
+.obj-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 0 10px 10px; overflow: auto; max-height: min(355px, calc(100vh - 230px)); overscroll-behavior: contain; }
+.obj-tile { display: flex; align-items: center; flex-direction: column; padding: 4px 2px 7px; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-1); }
+.obj-tile canvas { width: 84px; max-width: 100%; height: 48px; pointer-events: none; }
+.obj-tile span { font-size: 10px; color: var(--fg-1); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-tile:hover { background: var(--bg-3); border-color: var(--line-strong); }
+.obj-tile.on { border-color: var(--cue); background: var(--cue-soft); }
+.obj-tile.on span { color: var(--cue); }
+.obj-empty { grid-column: 1 / -1; text-align: center; padding: 30px 4px; color: var(--fg-2); }
+.obj-library footer, .obj-inspector footer { padding: 8px 12px; line-height: 1.65; border-top: 1px solid var(--line); color: var(--fg-2); font-size: 10px; }
+.obj-editor-scroll { padding: 4px 12px 10px; overflow: auto; max-height: min(390px, calc(100vh - 185px)); overscroll-behavior: contain; }
+.obj-section { margin: 11px 0 7px; color: var(--fg-2); font-size: 10px; letter-spacing: .06em; }
+.obj-field { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 6px 0; min-height: 27px; }
+.obj-field > span { flex-shrink: 0; font-size: 11px; }
+.obj-field > div { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.obj-field input { min-width: 0; width: 108px; height: 27px; padding: 3px 6px; color: var(--fg-0); background: var(--bg-0); border: 1px solid var(--line-strong); border-radius: 4px; font-family: var(--font-num); font-size: 11px; outline: none; }
+.obj-field input:focus { border-color: var(--cue); }
+.obj-field small { min-width: 30px; color: var(--fg-2); font-size: 10px; }
+.obj-label input { width: 180px; font-family: var(--font-ui); }
+.obj-check { display: flex; align-items: center; gap: 7px; padding: 6px 0; font-size: 11px; }
+.obj-check input { accent-color: var(--cue); }
+.obj-colors { display: flex; gap: 10px; padding: 5px 2px; }
+.obj-colors button { width: 21px; height: 21px; border-radius: 50%; border: 2px solid transparent; }
+.obj-colors button.on { outline: 2px solid var(--cue); outline-offset: 2px; }
+.obj-actions { display: flex; gap: 5px; padding: 8px 10px; border-top: 1px solid var(--line); }
+.obj-actions button { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; min-height: 29px; border: 1px solid var(--line-strong); border-radius: 5px; font-size: 11px; }
+.obj-actions button:hover { background: var(--bg-4); }
+.obj-actions .danger { color: var(--live); }
+.obj-tool-hint { font-size: 9px; position: absolute; bottom: 1px; right: 3px; }
+.obj-private-editor { position: fixed; right: 12px; top: 56px; z-index: 120; width: 320px; color: var(--fg-1); background: var(--bg-2); border: 1px solid var(--private); border-radius: 8px; box-shadow: var(--shadow-pop); }
+.ink:focus { outline: none; }
+.ink:focus-visible { outline: 1px solid var(--cue); outline-offset: -2px; }
+.ink-hint { position: absolute; left: 10px; bottom: 10px; pointer-events: none; padding: 4px 7px; border-radius: 4px; background: rgba(15,22,30,.76); color: #e8f4f7; font: 11px var(--font-ui); }
+.ink-options { padding: 7px 10px; border-top: 1px solid var(--line); color: var(--fg-1); font-size: 11px; }
+.ink-options label { display: flex; align-items: center; gap: 7px; padding: 5px 0; }
+.ink-options input { accent-color: var(--cue); }
+.eraser-options { display: grid; gap: 8px; border-top: 0; padding: 6px; min-width: 240px; }
+.eo-row { display: flex; align-items: center; gap: 4px; }
+.eo-row > button { flex: 1; display: grid; gap: 2px; padding: 7px 9px; border-radius: var(--r-sm); text-align: left; color: var(--fg-1); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
+.eo-row > button b { font-size: 12.5px; font-weight: 600; color: var(--fg-0); }
+.eo-row > button small { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; }
+.eo-row > button:hover { background: var(--bg-3); }
+.eo-row > button.on { background: var(--cue-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cue) 55%, transparent); }
+.eo-row > button.on b { color: var(--cue); }
+.eo-size > span { margin-right: 4px; font-size: 11.5px; color: var(--fg-2); }
+.eo-size > button { flex: 0 0 38px; height: 32px; display: grid; place-items: center; padding: 0; }
+.eo-size > button i { display: block; border-radius: 50%; border: 1.5px solid var(--fg-2); }
+.eo-size > button.on i { border-color: var(--cue); background: color-mix(in srgb, var(--cue) 20%, transparent); }

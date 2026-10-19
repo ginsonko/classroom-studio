@@ -1,0 +1,78 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const crypto=require('node:crypto');
+const {pathToFileURL}=require('node:url');
+const {within,atomicJSON,readJSON}=require('./core.cjs');
+const {runProcess}=require('./recording.cjs');
+const EXT={'.pdf':'pdf','.zml':'pdf','.ppt':'slides','.pptx':'slides','.doc':'word','.docx':'word','.rtf':'word','.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.bmp':'image','.gif':'image','.svg':'image','.html':'html','.htm':'html','.mp4':'video','.webm':'video','.m4v':'video','.mov':'video','.wmv':'video','.avi':'video','.asf':'video','.mpg':'video','.flv':'video','.rm':'video','.rmvb':'video','.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.swf':'flash','.zip':'archive','.rar':'archive'};
+const normal=p=>path.resolve(p).replaceAll('\\','/');
+class Files{
+ constructor(cache){this.cache=cache;this.roots=new Set();this.tokens=new Map();this.urls=new Map();this.scans=new Map();this.queue=Promise.resolve();}
+ authorize(p,dir=false){const actual=fs.realpathSync(p);this.roots.add(dir?actual:path.dirname(actual));return normal(actual);}
+ allowed(p){const actual=fs.realpathSync(p);if(![...this.roots].some(root=>within(root,actual))&&!within(this.cache,actual))throw Error('请先在资料库选择这个文件或所在目录');return actual;}
+ url(p){
+  if(/^https?:\/\//i.test(p))return new URL(p).href;
+  if(/^lesson:/i.test(p))return p;
+  const actual=this.allowed(p);if(this.urls.has(actual))return this.urls.get(actual);
+  const root=path.dirname(actual),token=crypto.randomBytes(18).toString('hex');this.tokens.set(token,root);
+  const url='lesson://'+token+'/'+encodeURIComponent(path.basename(actual));this.urls.set(actual,url);return url;
+ }
+ resolve(url){const u=new URL(url),root=this.tokens.get(u.hostname);if(!root)throw Error('资源入口已失效');const rel=decodeURIComponent(u.pathname).replace(/^\//,'');if(rel.includes('\0')||rel.includes('\\')||rel.includes(':'))throw Error('资源路径不正确');const file=path.resolve(root,rel);if(!within(root,file))throw Error('超出课件目录');const real=fs.realpathSync(file);if(!within(root,real))throw Error('文件链接超出课件目录');return real;}
+ async listDir(folder){const actual=this.allowed(folder),out=[];for(const e of await fs.promises.readdir(actual,{withFileTypes:true})){if(e.isSymbolicLink())continue;try{const file=path.join(actual,e.name),s=await fs.promises.stat(file);out.push({name:e.name,path:normal(file),dir:e.isDirectory(),size:s.size,mtime:s.mtimeMs});}catch{}}return out;}
+ /** 一批文件的修改时间（资料整理按文件时间归档用）；没授权或不存在的跳过 */
+ async stat(list){const out=[];for(const p of (Array.isArray(list)?list:[]).slice(0,2000)){try{const actual=this.allowed(String(p)),s=await fs.promises.stat(actual);if(s.isFile())out.push({path:String(p),mtime:s.mtimeMs,size:s.size});}catch{}}return out;}
+ /** 读小的纯文本文件（家长聊天记录、要求清单）：只限 txt / md / csv，200KB 以内 */
+ async readText(p){const actual=this.allowed(String(p||''));if(!/\.(txt|md|csv)$/i.test(actual))throw Error('只能读取 txt / md / csv 文本文件');const s=await fs.promises.stat(actual);if(s.size>200*1024)throw Error('文本文件超过 200KB，请只保留需要的部分');const buf=await fs.promises.readFile(actual);const utf8=buf.toString('utf8');if(utf8.includes('\uFFFD')){try{return new TextDecoder('gbk').decode(buf);}catch{}}return utf8.replace(/^\uFEFF/,'');}
+ async scan(root,{force=false}={}){
+  const actual=this.authorize(root,true);if(!force&&this.scans.has(actual))return this.scans.get(actual);
+  let visited=0;const read=async folder=>{const result={n:path.basename(folder),d:[],f:[]};const entries=await fs.promises.readdir(folder,{withFileTypes:true});for(const e of entries){if(e.isSymbolicLink()||e.name.startsWith('.')||['node_modules','$RECYCLE.BIN','System Volume Information'].includes(e.name))continue;const file=path.join(folder,e.name);try{if(e.isDirectory()){const child=await read(file);if(child.d.length||child.f.length)result.d.push(child);}else if(e.isFile()){const kind=EXT[path.extname(e.name).toLowerCase()];if(kind){const st=await fs.promises.stat(file);result.f.push([e.name,kind,st.size]);}}}catch{}if(++visited%250===0)await new Promise(r=>setImmediate(r));}return result;};
+  const promise=read(actual);this.scans.set(actual,promise);try{return await promise;}catch(e){this.scans.delete(actual);throw e;}
+ }
+  /**
+   * PPT 每页文字及位置（用来识别答案页）。先取文本框文字；整页是图片的幻灯片再用 Windows 自带 OCR 读已导出的图片。
+   * 旧缓存没有 texts.json 时只读打开一次补齐，不重新导出图片。结果缓存在同一个转换目录里。
+   */
+  async slideTexts(input){
+  const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
+  if(!['.ppt','.pptx'].includes(ext)||process.platform!=='win32')return null;
+  const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|slides-v3').digest('hex');const dir=path.join(this.cache,'documents',key,'slides'),file=path.join(dir,'texts.json'),ocrFile=path.join(dir,'ocr.json');
+  const lines=x=>(Array.isArray(x)?x:x&&typeof x==='object'?[x]:[]).filter(l=>l&&typeof l.t==='string').slice(0,120).map(l=>({t:l.t.slice(0,300),y:Number.isFinite(Number(l.y))?Number(l.y):undefined}));
+  const readTexts=async()=>{const v=await readJSON(file,null);return Array.isArray(v)?v.map(x=>({lines:lines(x)})):null;};
+  const readOcr=async()=>{const v=await readJSON(ocrFile,null);if(!v||typeof v!=='object')return null;return new Map((Array.isArray(v)?v:[v]).map(x=>[Number(x?.p),lines(x?.lines)]));};
+  const merge=(pages,ocr)=>pages.map((p,i)=>p.lines.length?p:{lines:ocr?.get(i+1)??[]});
+  const ps=(script,args,timeout)=>runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,script),...args],{timeout});
+  const pages=await readTexts(),ocr=await readOcr();if(pages&&(ocr||pages.every(p=>p.lines.length)))return merge(pages,ocr);
+  const job=this.queue.catch(()=>{}).then(async()=>{
+   let pages=await readTexts();
+   if(!pages){await fs.promises.mkdir(dir,{recursive:true});await ps('ppt-export.ps1',['-InputFile',actual,'-OutputDir',dir,'-TextOnly'],120000);pages=await readTexts();if(!pages)return null;}
+   let ocr=await readOcr();
+   const need=pages.map((_,i)=>i+1).filter(n=>!pages[n-1].lines.length&&fs.existsSync(path.join(dir,`slide-${String(n).padStart(4,'0')}.png`)));
+   if(!ocr&&need.length){try{await ps('ocr-slides.ps1',['-Dir',dir,'-Pages',need.join(','),'-OutputFile',ocrFile],240000);}catch{}ocr=await readOcr();}
+   return merge(pages,ocr);
+  });
+  this.queue=job;return job;
+ }
+  async convert(input,progress){
+  const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
+  if(['.pdf','.zml'].includes(ext)){const h=await fs.promises.open(actual,'r');try{const buf=Buffer.alloc(1024);const {bytesRead}=await h.read(buf,0,buf.length,0);if(!buf.subarray(0,bytesRead).includes(Buffer.from('%PDF-')))throw Error('这份文件不是有效 PDF');}finally{await h.close();}return {render:'pdf',pdf:normal(actual),cached:true,engine:'passthrough'};}
+  if(!['.ppt','.pptx','.doc','.docx','.rtf'].includes(ext))throw Error('此格式暂不能转换为文档');
+  // PPT / Word 转换靠 Windows 上的 Office / WPS 自动化
+  if(process.platform!=='win32')throw Error('macOS 版暂时不能直接打开 PPT / Word：请在 Keynote、PowerPoint 或 WPS 里「导出为 PDF」后再打开。');
+  const mode=['.ppt','.pptx'].includes(ext)?'slides':'pdf';
+  const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|'+mode+'-v3').digest('hex');const folder=path.join(this.cache,'documents',key),pdf=path.join(folder,'document.pdf');
+  const existing=await readJSON(path.join(folder,'manifest.json'),null);if(existing&&(mode==='slides'?existing.images?.length&&existing.images.every(x=>fs.existsSync(x.path)):fs.existsSync(pdf)))return {...existing,pdf:existing.pdf?normal(existing.pdf):undefined,images:existing.images?.map(x=>({...x,path:normal(x.path)})),cached:true};
+  progress({stage:'queued',message:'等待本机文档转换'});
+  const job=this.queue.catch(()=>{}).then(async()=>{await fs.promises.mkdir(folder,{recursive:true});progress({stage:'opening',message:'只读打开文档'});
+   if(mode==='slides'){
+    const imageDir=path.join(folder,'slides');await fs.promises.mkdir(imageDir,{recursive:true});
+    await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'ppt-export.ps1'),'-InputFile',actual,'-OutputDir',imageDir],{timeout:240000});
+    const manifest=await readJSON(path.join(imageDir,'manifest.json'),null);const expected=Number(manifest?.count||0),images=[];
+    if(!Number.isInteger(expected)||expected<1)throw Error('PowerPoint 没有可导出的幻灯片。请检查文件是否为空，或在 PowerPoint/WPS 中另存为 PDF 后打开。');
+    for(let i=1;i<=expected;i++){const file=path.join(imageDir,`slide-${String(i).padStart(4,'0')}.png`);if(fs.existsSync(file)&&(await fs.promises.stat(file)).size>=100)images.push({path:normal(file),w:Number(manifest.width)||1600,h:Number(manifest.height)||900});}
+    if(images.length!==expected)throw Error(`PowerPoint 仅导出了 ${images.length}/${expected} 张有效幻灯片。请检查 Office/WPS 转换状态，或另存为 PDF 后打开。`);
+    const result={render:'images',images,cached:false,engine:'local-office-slides'};await atomicJSON(path.join(folder,'manifest.json'),result);progress({stage:'done',done:images.length,total:images.length});return result;
+   }
+   await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'office-export.ps1'),'-InputFile',actual,'-OutputFile',pdf],{timeout:240000});const s=await fs.promises.stat(pdf);if(s.size<1000)throw Error('文档转换没有生成有效 PDF 页面。');const result={render:'pdf',pdf:normal(pdf),cached:false,engine:'local-office'};await atomicJSON(path.join(folder,'manifest.json'),result);progress({stage:'done',done:1,total:1});return result;});this.queue=job;return job;
+ }
+}
+module.exports={Files,EXT,normal,pathToFileURL};
