@@ -18,6 +18,9 @@ const { openManifest } = require('../electron/updater.cjs');
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const { version } = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
+// 写进 ClassroomStudio.exe 和 Info.plist 的版本号。如果用软件版本号，runtime 分块每次发版都会变，老师每次更新都要重下 150 MB；
+// 只在换 Electron 版本时改它。软件自己显示和比较的版本来自 resources/app/package.json，不看这里。
+const RUNTIME_VERSION = '1.0.1';
 const NAME = '最强网课教辅系统';
 const CODEX_VER = fs.readFileSync(path.join(appRoot, 'bin/codex/VERSION'), 'utf8').trim();
 const CACHE = process.env.CS_RELEASE_CACHE || path.join(os.tmpdir(), 'cs-release-cache');
@@ -91,7 +94,7 @@ async function buildWin() {
   const { rcedit } = await import('rcedit');
   await rcedit(path.join(root, 'ClassroomStudio.exe'), {
     icon: path.join(appRoot, 'build/icon.ico'),
-    'file-version': version + '.0', 'product-version': version + '.0',
+    'file-version': RUNTIME_VERSION + '.0', 'product-version': RUNTIME_VERSION + '.0',
     'version-string': { ProductName: NAME, FileDescription: NAME + '：一对一网课上课、录课、备课一体化', CompanyName: 'yinziapi.top', LegalCopyright: '开放源代码；个人老师免费，单位使用需授权' },
   });
   const appDir = path.join(root, 'resources/app');
@@ -204,8 +207,8 @@ function patchPlist(file) {
   set('CFBundleName', NAME);
   set('CFBundleDisplayName', NAME);
   set('CFBundleIconFile', 'icon.icns');
-  set('CFBundleShortVersionString', version);
-  set('CFBundleVersion', version);
+  set('CFBundleShortVersionString', RUNTIME_VERSION);
+  set('CFBundleVersion', RUNTIME_VERSION);
   p = p.replace('</dict>\n</plist>', `  <key>NSAppleEventsUsageDescription</key>
   <string>打开 PPT / Word 课件时，请 Keynote、Pages、PowerPoint 或 Word 帮忙导出成 PDF。</string>
   <key>CFBundleURLTypes</key>
@@ -296,6 +299,9 @@ async function main() {
 }
 
 const NOTES = [
+  'Windows：PPT 答案页识别更准，答案从页面中间开始时只遮住下半页（修复了文字位置读取错误）',
+  'AI 设置：点「保存并测试」后面板不再立刻收起，能看清测试结果',
+  '更新更省流量：以后只要运行环境没换，每次更新只下载几 MB 的程序部分',
   'macOS：PPT / Word / RTF 课件可以直接打开（不装 Office 也行，内置排版；装了 Keynote、Pages 或 Office 会优先用它们）',
   'macOS：修复数位板（如高漫）写字时笔迹偶尔消失、断线的问题',
   'Word 里的 MathType 公式、旧版嵌入对象能正常显示',

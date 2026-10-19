@@ -43,9 +43,13 @@ class Files{
   const ps=(script,args,timeout)=>runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,script),...args],{timeout});
   // 其他系统没有 PowerPoint 自动化和系统 OCR：只用内置排版转换时顺手写下的 texts.json
   if(process.platform!=='win32')return readTexts();
-  const pages=await readTexts(),ocr=await readOcr();if(pages&&(ocr||pages.every(p=>p.lines.length)))return merge(pages,ocr);
+  // 1.0.2 之前 ppt-export.ps1 误用整数版 Math.Min，y 只会是 0 或 1；这类旧缓存只重读文字，不重新导出图片
+  const fixed=path.join(dir,'texts-y.ok');
+  const stale=p=>!!p&&!fs.existsSync(fixed)&&p.some(x=>x.lines.length>1)&&p.every(x=>x.lines.every(l=>l.y===undefined||l.y===0||l.y===1));
+  const pages=await readTexts(),ocr=await readOcr();if(pages&&!stale(pages)&&(ocr||pages.every(p=>p.lines.length)))return merge(pages,ocr);
   const job=this.queue.catch(()=>{}).then(async()=>{
    let pages=await readTexts();
+   if(stale(pages)){try{await ps('ppt-export.ps1',['-InputFile',actual,'-OutputDir',dir,'-TextOnly'],120000);pages=await readTexts();}catch{}await fs.promises.writeFile(fixed,'').catch(()=>{});}
    if(!pages){await fs.promises.mkdir(dir,{recursive:true});await ps('ppt-export.ps1',['-InputFile',actual,'-OutputDir',dir,'-TextOnly'],120000);pages=await readTexts();if(!pages)return null;}
    let ocr=await readOcr();
    const need=pages.map((_,i)=>i+1).filter(n=>!pages[n-1].lines.length&&fs.existsSync(path.join(dir,`slide-${String(n).padStart(4,'0')}.png`)));

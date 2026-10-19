@@ -29,7 +29,7 @@ try {
   for($i=1;$i -le $count;$i++){
     $slide=$presentation.Slides.Item($i)
     if(!$TextOnly){$slide.Export((Join-Path $OutputDir ('slide-{0:D4}.png'-f $i)),'PNG',$width,$height)}
-    $items=@();foreach($shape in $slide.Shapes){foreach($l in (ShapeLines $shape)){$t=($l.t -replace "[`r`n`v]+"," ").Trim();if($t){$items+=[pscustomobject]@{t=$(if($t.Length -gt 200){$t.Substring(0,200)}else{$t});y=[math]::Round([math]::Max(0,[math]::Min(1,$l.top/$slideHeight)),3);left=$l.left}}}}
+    $items=@();foreach($shape in $slide.Shapes){foreach($l in (ShapeLines $shape)){$t=($l.t -replace "[`r`n`v]+"," ").Trim();if($t){$items+=[pscustomobject]@{t=$(if($t.Length -gt 200){$t.Substring(0,200)}else{$t});y=[math]::Round([math]::Max(0.0,[math]::Min(1.0,[double]$l.top/$slideHeight)),3);left=$l.left}}}}
     $sorted=@($items|Sort-Object y,left|Select-Object -First 80|ForEach-Object{[pscustomobject]@{t=$_.t;y=$_.y}})
     $texts.Add([object[]]$sorted)
     [Runtime.InteropServices.Marshal]::ReleaseComObject($slide)|Out-Null

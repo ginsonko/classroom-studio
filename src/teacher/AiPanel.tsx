@@ -163,7 +163,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
 
       <div className="ai-scroll">
         {showHist ? <AiHistory onBack={() => setShowHist(false)} onRestore={(c) => { setCards((all) => [{ id: uid(), action: c.action, ask: c.ask, at: c.at, out: c.out, meta: c.meta, subject: c.subject }, ...all.filter((x) => !(x.at === c.at && x.ask === c.ask))].slice(0, 30)); setShowHist(false); }} /> : <>
-        {showCfg && <Settings key={cfgGen} cfg={cfg} err={cfgErr} onSaved={(c) => { setCfg(c); if (c.hasKey && c.model) setShowCfg(false); }} />}
+        {showCfg && <Settings key={cfgGen} cfg={cfg} err={cfgErr} onSaved={(c, close) => { setCfg(c); if (close && c.hasKey && c.model) setShowCfg(false); }} />}
 
         <div className="ai-compose">
           <textarea
@@ -428,7 +428,7 @@ function QuickImport() {
   );
 }
 
-function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; onSaved: (c: AiConfig) => void }) {
+function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; onSaved: (c: AiConfig, close?: boolean) => void }) {
   const [base, setBase] = useState(cfg?.baseUrl ?? '');
   const [key, setKey] = useState('');
   const [model, setModel] = useState(cfg?.model ?? '');
@@ -439,10 +439,11 @@ function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; on
   const first = useRef(true);
   useEffect(() => { if (cfg && first.current) { first.current = false; setBase(cfg.baseUrl); setModel(cfg.model); setVision(cfg.visionModel ?? ''); } }, [cfg]);
 
-  const save = async (patch: Partial<{ model: string; visionModel: string }> = {}) => {
+  // 只有点「保存」才收起设置；「保存并测试」要留着显示测试结果
+  const save = async (patch: Partial<{ model: string; visionModel: string }> = {}, close = false) => {
     const c = await ai.save({ baseUrl: base, model, visionModel: vision, ...patch, ...(key ? { key } : {}) });
     if (key) { setKey(''); setListKey((k) => k + 1); void loadModels(true); }
-    onSaved(c); return c;
+    onSaved(c, close); return c;
   };
   const act = async (name: string, fn: () => Promise<void>) => {
     setBusy(name); setMsg(null);
@@ -464,7 +465,7 @@ function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; on
         <ModelPicker value={vision} placeholder="同上" onChange={(m) => { setVision(m); void act('save', async () => { await save({ visionModel: m }); }); }} />
       </div></label>
       <div className="ai-cfg-b">
-        <button disabled={!!busy} onClick={() => void act('save', async () => { const c = await save(); setMsg({ ok: true, t: c.hasKey ? '已保存' : '已保存，但还没有 API Key' }); })}>保存</button>
+        <button disabled={!!busy} onClick={() => void act('save', async () => { const c = await save({}, true); setMsg({ ok: true, t: c.hasKey ? '已保存' : '已保存，但还没有 API Key' }); })}>保存</button>
         <button className="pri" disabled={!!busy} onClick={() => void act('test', async () => { await save(); const r = await ai.test(); setMsg({ ok: true, t: `连接正常：${r.model}，${(r.ms / 1000).toFixed(1)} 秒，回复「${r.reply}」` }); })}>{busy === 'test' ? <Loader2 size={12} className="spin" /> : '保存并测试'}</button>
       </div>
       {msg && <div className={'ai-cfg-msg ' + (msg.ok ? 'ok' : 'bad')}>{msg.t}</div>}
