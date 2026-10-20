@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>随机抽取</title>
+<link rel="stylesheet" href="/__cs/ui.css">
+<style>
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tabs button.on { border-color: var(--cs-accent); color: var(--cs-accent); }
+  .result { min-height: 86px; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; text-align: center; border-radius: var(--cs-radius); background: var(--cs-bg-2); border: 1px solid var(--cs-line); padding: 8px; }
+  .result.spin { color: var(--cs-fg-3); }
+  textarea { width: 100%; height: 92px; resize: none; }
+  .pane[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="cs-wrap">
+  <div class="tabs"><button data-t="names" class="on">点名</button><button data-t="nums">抽题号</button><button data-t="groups">分组</button></div>
+  <div class="pane" id="p-names"><textarea id="names" placeholder="一行一个名字，或用逗号、空格隔开"></textarea><label class="cs-row cs-muted"><input type="checkbox" id="norepeat" checked> 抽过的这一轮不再抽到</label></div>
+  <div class="pane" id="p-nums" hidden><div class="cs-row">从 <input id="from" type="number" value="1" style="width:70px"> 到 <input id="to" type="number" value="20" style="width:70px"></div></div>
+  <div class="pane" id="p-groups" hidden><div class="cs-row">分成 <input id="gn" type="number" value="2" min="2" max="12" style="width:70px"> 组（用点名里的名单）</div></div>
+  <div id="result" class="result">准备好了</div>
+  <div class="cs-row"><button id="go" class="cs-primary cs-grow">抽一个</button><button id="board">写到黑板</button></div>
+  <p class="cs-muted" id="tip"></p>
+</div>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var tab = 'names', used = [], last = '';
+  function names() { return $('names').value.split(/[\n,，、\s]+/).map(function (s) { return s.trim(); }).filter(Boolean); }
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+  document.querySelectorAll('.tabs button').forEach(function (b) {
+    b.onclick = function () {
+      tab = b.dataset.t;
+      document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      ['names', 'nums', 'groups'].forEach(function (k) { $('p-' + k).hidden = k !== tab && !(tab === 'groups' && k === 'names'); });
+      $('go').textContent = tab === 'groups' ? '分组' : '抽一个';
+    };
+  });
+  function roll(final) {
+    // 先快速闪几下，再停在结果上
+    var n = 0, el = $('result');
+    el.classList.add('spin');
+    var t = setInterval(function () {
+      el.textContent = tab === 'nums' ? String(Math.floor(Math.random() * 99) + 1) : (pick(names()) || '…');
+      if (++n > 10) { clearInterval(t); el.classList.remove('spin'); el.textContent = final; last = final; }
+    }, 60);
+  }
+  $('go').onclick = function () {
+    $('tip').textContent = '';
+    if (tab === 'nums') {
+      var a = Math.round(Number($('from').value)), b = Math.round(Number($('to').value));
+      if (!(b >= a)) { $('tip').textContent = '范围不对'; return; }
+      roll('第 ' + (a + Math.floor(Math.random() * (b - a + 1))) + ' 题');
+      return;
+    }
+    var list = names();
+    if (!list.length) { $('tip').textContent = '先写名单'; return; }
+    if (tab === 'groups') {
+      var g = Math.max(2, Math.min(12, Number($('gn').value) || 2)), s = list.slice().sort(function () { return Math.random() - .5; }), out = [];
+      for (var i = 0; i < g; i++) out.push('第' + (i + 1) + '组：' + s.filter(function (_, k) { return k % g === i; }).join('、'));
+      $('result').style.fontSize = '15px'; $('result').textContent = out.join('\n'); $('result').style.whiteSpace = 'pre-line'; last = out.join('\n');
+      return;
+    }
+    $('result').style.fontSize = ''; $('result').style.whiteSpace = '';
+    var pool = $('norepeat').checked ? list.filter(function (x) { return used.indexOf(x) < 0; }) : list;
+    if (!pool.length) { used = []; pool = list; $('tip').textContent = '全部抽过一轮了，重新开始'; }
+    var who = pick(pool); used.push(who); roll(who);
+  };
+  $('board').onclick = function () {
+    if (!last) { $('tip').textContent = '还没有抽'; return; }
+    cs.board.addText(last, { size: 'l' }).then(function () { $('tip').textContent = '已写到黑板'; }, function (e) { $('tip').textContent = e.message; });
+  };
+  $('names').oninput = function () { cs.storage.set('names', $('names').value); };
+  cs.storage.get('names').then(function (v) {
+    if (v) { $('names').value = v; return; }
+    // 第一次打开：名单先填上当前学生
+    return cs.student.current().then(function (s) { if (s && s.name) $('names').value = s.name; }).catch(function () {});
+  });
+</script>
+</body>
+</html>

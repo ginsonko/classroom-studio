@@ -6,13 +6,15 @@ import { createPortal } from 'react-dom';
 import { PageThumb } from '../ui/PageThumb';
 import {
   ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, LayoutGrid, Lock, LockOpen,
-  Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Trash2, Undo2,
+  Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2,
 } from 'lucide-react';
+import { snipToBoard } from '../ink/pasteImage';
 import { addBoardPage, defaultView, inkKey, stepView, useStore } from '../lib/store';
 import { boardMaterial } from '../lib/library';
 import { answerKey, isAnswer, toggleAnswerPage, toggleReveal } from '../doc/answers';
 import { host } from '../lib/host';
 import { ToolPalette } from '../ui/ToolPalette';
+import { SubjectPicker } from '../ui/SubjectPicker';
 import { FormulaHost } from '../ink/FormulaSheet';
 import type { Material, Tool } from '../lib/types';
 import type { SimSync } from '../physics/model';
@@ -22,6 +24,7 @@ import type { ParamDef } from '../physics/sim/presetKit';
 import { demoById, pickPatch } from '../demos';
 import { clampDemo } from '../demos/kit';
 import { fmt } from '../physics/sim/text';
+import { DockPlugins } from '../plugins/DockPlugins';
 import '../styles/dock.css';
 
 declare global { interface Window { csDock?: { rail(w: number, h: number): void; shape(rects: { x: number; y: number; width: number; height: number }[]): void; drag(phase: 'start' | 'move' | 'end', x: number, y: number): void; focus(on: boolean): void; log?(text: string): void } } }
@@ -59,7 +62,7 @@ function bounds(el: HTMLElement) {
 }
 
 // 弹层里有这些输入控件时浮层保持键盘焦点（公式输入框是 textarea：之前漏了，点一下焦点就被还给学生窗口）
-const TYPING = '.obj-pop input, .obj-pop textarea, [data-ink-pop] input, [data-ink-pop] textarea, [data-ink-pop] [contenteditable="true"]';
+const TYPING = '.obj-pop input, .obj-pop textarea, [data-ink-pop] input, [data-ink-pop] textarea, [data-ink-pop] [contenteditable="true"], [data-ink-pop] iframe';
 
 /** 上报窗口形状：可见面板以外的区域点击穿透 */
 function useWindowShape(rail: React.RefObject<HTMLElement | null>, mini: boolean) {
@@ -178,7 +181,7 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
   const st = useStore.getState;
   const key = inkKey(pgm.materialId, pgm.page);
   const counter = useRef<HTMLButtonElement>(null);
-  const [grid, setGrid] = useState(false);
+  const [grid, setGrid] = useState(false), [snip, setSnip] = useState(false);
   const guard = useStore((s) => s.answerGuard !== false);
   useEffect(() => setGrid(false), [mat.id]);
   return (
@@ -209,6 +212,11 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
         >
           {studentTools === 'open' ? <LockOpen size={17} /> : <Lock size={17} />}
         </button>
+        <button className={'tp-b' + (snip ? ' on' : '')} disabled={snip} onClick={() => { setSnip(true); void snipToBoard().catch((e) => { host.call('notice', String((e as Error).message)).catch(() => {}); }).finally(() => setSnip(false)); }} data-tip="截屏：框选屏幕上任意区域，贴到黑板（微信 / QQ 截图后直接在学生画面按 Ctrl+V 也行）"><Scissors size={17} /></button>
+      </div>
+      <div className="tdock-row">
+        <SubjectPicker className="tdock-subj" vertical compact />
+        <DockPlugins />
         <button className="tp-b tdock-zoom" onClick={onZoom} data-tip="浮层大小：点一下放大，再点循环">
           <span className="num">{Math.round(zoom * 100)}</span>
         </button>
@@ -280,6 +288,7 @@ function AnswerRow({ mat, page }: { mat: Material; page: number }) {
         data-tip={open ? '学生现在能看到答案，点一下重新遮住' : '学生现在看到的是遮挡页，点一下揭晓答案'}>
         {open ? <Eye size={15} /> : <EyeOff size={15} />}<span>{open ? '收回' : '揭晓'}</span>
       </button>
+      {!open && <button className="tdock-ans-x" onClick={() => toggleAnswerPage(page)} data-tip="遮错了：这一页不是答案，以后打开这份课件也不遮这页（点页码可重新标记）">不遮</button>}
     </div>
   );
 }

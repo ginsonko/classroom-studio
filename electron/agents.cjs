@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const { stageCodex, latestVersion, cmpVersion, dirVersion, codexBin } = require('./codexDist.cjs');
 const kit = require('./agentKit.cjs');
+const spec = require('./pluginSpec.cjs');
 
 const ENGINES = { codex: 'Codex CLI', claude: 'Claude Code' };
 const PACKAGES = { codex: '@openai/codex', claude: '@anthropic-ai/claude-code' };
@@ -19,6 +20,12 @@ const PERMISSION_NAME = { safe: '安全模式', full: '常用权限', danger: '�
 const SAFE_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'TodoWrite'];
 const FULL_TOOLS = [...SAFE_TOOLS, 'Bash', 'WebSearch', 'WebFetch', 'NotebookEdit'];
 const KEY_ENV = 'CS_RELAY_API_KEY';
+// 思考档位：Codex 的 model_reasoning_effort；Claude 只在高档位时加思考预算
+const EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+const EFFORT_NAME = { low: '低', medium: '中', high: '高', xhigh: '极高' };
+const CLAUDE_THINK = { high: '16000', xhigh: '31999' };
+const ATTACH_MAX = 8, ATTACH_BYTES = 20 * 1024 * 1024, ASSETS_PER_TURN = 6, AUTO_FIX = 2;
+const IMAGE_FILE = /\.(png|jpe?g|webp|gif)$/i;
 const toml = (s) => JSON.stringify(String(s));
 
 const WIN = process.platform === 'win32';
@@ -212,8 +219,9 @@ function readClaude(j) {
 }
 
 class Agents {
-  constructor({ dir, ledger, credentials, log, emit, exporter, onCharge, toolsDir, fetch: fetchFn }) {
+  constructor({ dir, ledger, credentials, log, emit, exporter, onCharge, toolsDir, fetch: fetchFn, imageGen }) {
     this.dir = dir;
+    this.imageGen = imageGen || null;
     this.toolsDir = toolsDir || '';
     this.fetch = fetchFn || ((...a) => fetch(...a));
     this.onCharge = onCharge || (() => {});
@@ -315,7 +323,7 @@ class Agents {
   }
 
   public(t, withEvents = false) {
-    const { child, queue, events, pending, procUsd, sendNow, turnOk, watch, ...rest } = t;
+    const { child, queue, events, pending, procUsd, sendNow, turnOk, watch, nextImages, ...rest } = t;
     return { ...rest, queued: queue?.length || 0, ...(withEvents ? { events } : { last: events.at(-1) || null }) };
   }
 
@@ -324,7 +332,7 @@ class Agents {
   get(id) { const t = this.tasks.get(id); if (!t) throw new Error('找不到这个任务'); return this.public(t, true); }
 
   save(t) {
-    const { child, queue, events, pending, procUsd, sendNow, turnOk, watch, ...meta } = t;
+    const { child, queue, events, pending, procUsd, sendNow, turnOk, watch, nextImages, ...meta } = t;
     try { fs.writeFileSync(path.join(this.dir, t.id, 'task.json'), JSON.stringify(meta, null, 2)); } catch (e) { this.log?.warn('任务保存失败', e); }
   }
 
@@ -342,23 +350,63 @@ class Agents {
     this.emit({ type: 'task', task: this.public(t) });
   }
 
-  start({ engine, title, prompt, context, cap, useStudioKey, formats, model, permission, skill }) {
+  /**
+   * kind = 'plugin'：AI 工坊做插件。插件写在 成果/plugin 里（pluginFrom 给了就先复制一份已装的插件进来改），
+   * 每轮结束自动校验、按「素材需求.json」生成图片。attachments 是老师附上的文件路径。
+   */
+  start({ engine, title, prompt, context, cap, useStudioKey, formats, model, permission, skill, kind, effort, attachments, pluginFrom }) {
     if (!ENGINES[engine]) throw new Error('请选择 Codex 或 Claude Code');
     if (!locate(engine, this.toolsDir)) throw new Error(ENGINES[engine] + ' 还没有安装：在任务中心点「安装」');
     const text = String(prompt || '').trim();
     if (!text) throw new Error('请写下要 AI 做什么');
     this.ledger?.check();
+    const plugin = kind === 'plugin';
     const id = new Date().toISOString().slice(0, 10) + '-' + crypto.randomBytes(3).toString('hex');
     const work = path.join(this.dir, id, '成果');
     fs.mkdirSync(work, { recursive: true });
     if (context) fs.writeFileSync(path.join(work, '任务背景.md'), String(context).slice(0, 20000));
     const capTask = Math.max(0.1, Math.min(Number(cap) || this.ledger?.budget.caps.task || 5, 1000));
-    const t = { id, engine, title: clip(title || text.split('\n')[0], 60), prompt: text, cap: capTask, cny: 0, tokens: 0, turns: 0, status: 'running', created: Date.now(), updated: Date.now(), work, useStudioKey: !!useStudioKey, session: '', model: '', pick: clip(model || '', 120).trim(), permission: PERMISSIONS.includes(permission) ? permission : 'full', formats: cleanFormats(formats ?? ['docx', 'pdf']), skill: kit.skills().includes(skill) ? skill : '', events: [], queue: [] };
+    const t = { id, engine, title: clip(title || text.split('\n')[0], 60), prompt: text, cap: capTask, cny: 0, tokens: 0, turns: 0, status: 'running', created: Date.now(), updated: Date.now(), work, useStudioKey: !!useStudioKey, session: '', model: '', pick: clip(model || '', 120).trim(), permission: PERMISSIONS.includes(permission) ? permission : 'full', formats: plugin ? [] : cleanFormats(formats ?? ['docx', 'pdf']), skill: plugin ? 'plugin-dev' : kit.skills().includes(skill) ? skill : '', kind: plugin ? 'plugin' : '', effort: EFFORTS.includes(effort) ? effort : '', events: [], queue: [] };
+    let att;
+    try {
+      if (plugin) {
+        t.pluginDir = path.join(work, 'plugin');
+        if (pluginFrom) fs.cpSync(pluginFrom, t.pluginDir, { recursive: true });
+        fs.mkdirSync(t.pluginDir, { recursive: true });
+      }
+      att = this.attach(t, attachments);
+    } catch (e) { fs.rmSync(path.join(this.dir, id), { recursive: true, force: true }); throw e; }
     this.tasks.set(id, t);
     this.save(t);
-    this.push(t, { kind: 'user', text: clip(text, 2000) });
-    this.run(t, kit.skillLead(engine, t.skill) + text);
+    this.push(t, { kind: 'user', text: clip(text, 2000) + att.label });
+    this.run(t, kit.skillLead(engine, t.skill) + text + att.prompt);
     return this.public(t);
+  }
+
+  /** 老师附上的文件复制进任务的「附件」文件夹；图片下一轮直接附给 Codex（-i），其余让 AI 自己去读 */
+  attach(t, list) {
+    const src = (Array.isArray(list) ? list : []).map((p) => String(p || '')).filter(Boolean);
+    if (!src.length) return { label: '', prompt: '' };
+    if (src.length > ATTACH_MAX) throw new Error(`附件最多 ${ATTACH_MAX} 个`);
+    const dir = path.join(t.work, '附件'), names = [];
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of src) {
+      let st; try { st = fs.statSync(f); } catch { throw new Error('找不到附件：' + path.basename(f)); }
+      if (!st.isFile()) throw new Error('附件只能是文件：' + path.basename(f));
+      if (st.size > ATTACH_BYTES) throw new Error('附件太大（超过 20 MB）：' + path.basename(f));
+      const ext = path.extname(f), stem = path.basename(f, ext).replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '附件';
+      let name = stem + ext, k = 1;
+      while (fs.existsSync(path.join(dir, name))) name = `${stem}-${++k}${ext}`;
+      fs.copyFileSync(f, path.join(dir, name));
+      names.push('附件/' + name);
+    }
+    const imgs = names.filter((n) => IMAGE_FILE.test(n));
+    if (t.engine === 'codex') t.nextImages = [...(t.nextImages || []), ...imgs.map((n) => path.join(t.work, n))];
+    const how = imgs.length ? (t.engine === 'codex' ? '图片已经直接附在这条消息里；' : '图片可以用读取文件的工具直接查看；') : '';
+    return {
+      label: `\n附件：${names.map((n) => n.slice(3)).join('、')}`,
+      prompt: `\n\n老师附上了 ${names.length} 个文件：${names.join('、')}（在当前文件夹的「附件」里）。${how}请先看附件再动手。`,
+    };
   }
 
   args(t, text) {
@@ -372,14 +420,16 @@ class Agents {
         if (perm === 'full') c.push('-c', 'sandbox_workspace_write.network_access=true');
       }
       if (t.pick) c.push('-c', `model=${toml(t.pick)}`);
-      c.push('-c', `developer_instructions=${toml(kit.instructions())}`);
+      if (EFFORTS.includes(t.effort)) c.push('-c', `model_reasoning_effort=${toml(t.effort)}`);
+      c.push('-c', `developer_instructions=${toml(kit.instructions(t.kind))}`);
       if (t.useStudioKey && this.credentials) {
         // 用导播台的中转站：单独的 provider，Key 只通过环境变量传给 Codex
         const cred = this.credentials();
         c.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('最强网课教辅系统')}`, '-c', `model_providers.classroom.base_url=${toml(cred.baseUrl)}`,
           '-c', `model_providers.classroom.env_key=${toml(KEY_ENV)}`, '-c', 'model_providers.classroom.wire_api="responses"');
       }
-      const common = ['--json', '--skip-git-repo-check', ...c];
+      // 图片放在最前面：-i 能接多个值，紧跟在后面的 "-" 会被当成图片
+      const common = [...(t.nextImages || []).flatMap((p) => ['-i', p]), '--json', '--skip-git-repo-check', ...c];
       // 提示词走标准输入（"-"），避免命令行长度和引号问题
       return t.session ? ['exec', 'resume', ...common, t.session, '-'] : ['exec', ...common, '-C', t.work, '-'];
     }
@@ -387,7 +437,7 @@ class Agents {
     const left = Math.max(0.01, (t.cap - t.cny) / (this.ledger?.budget.usdRate || 7.2) / (this.ledger?.factorFor?.(t.pick || t.model || 'claude') || this.ledger?.factor() || 1));
     const access = perm === 'danger' ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'acceptEdits', '--allowedTools', (perm === 'full' ? FULL_TOOLS : SAFE_TOOLS).join(',')];
     return ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose', ...access, ...(t.pick ? ['--model', t.pick] : []),
-      '--append-system-prompt', kit.instructions(),
+      '--append-system-prompt', kit.instructions(t.kind),
       '--max-budget-usd', left.toFixed(2), ...(t.session ? ['--resume', t.session] : [])];
   }
 
@@ -399,15 +449,17 @@ class Agents {
       if (t.engine === 'codex') { env.OPENAI_BASE_URL = c.baseUrl; env.OPENAI_API_KEY = c.key; env.CODEX_API_KEY = c.key; env[KEY_ENV] = c.key; }
       else { env.ANTHROPIC_BASE_URL = c.baseUrl.replace(/\/v1$/, ''); env.ANTHROPIC_API_KEY = c.key; }
     }
+    if (t.engine === 'claude' && CLAUDE_THINK[t.effort]) env.MAX_THINKING_TOKENS = CLAUDE_THINK[t.effort];
     return env;
   }
 
   /** 对话中途换模型 / 权限：下一轮生效 */
-  configure(id, { model, permission } = {}) {
+  configure(id, { model, permission, effort } = {}) {
     const t = this.tasks.get(id); if (!t) throw new Error('找不到这个任务');
     const changes = [];
     if (model !== undefined && String(model).trim() !== (t.pick || '')) { t.pick = clip(String(model).trim(), 120); changes.push(t.pick ? `模型改为 ${t.pick}` : '模型改回默认'); }
     if (PERMISSIONS.includes(permission) && permission !== t.permission) { t.permission = permission; changes.push(`权限改为${PERMISSION_NAME[permission]}`); }
+    if (effort !== undefined && (effort === '' || EFFORTS.includes(effort)) && effort !== (t.effort || '')) { t.effort = effort; changes.push(effort ? `思考档位改为${EFFORT_NAME[effort]}` : '思考档位改回默认'); }
     if (changes.length) {
       this.push(t, { kind: 'note', text: changes.join('，') + (t.child ? '（下一轮生效）' : '') });
       this.save(t);
@@ -435,7 +487,9 @@ class Agents {
       if (t.cny >= t.cap) throw new Error(`本任务已花约 ¥${t.cny.toFixed(2)}，到了单任务上限 ¥${t.cap}`);
       this.ledger?.check();
       try { kit.installKit(t.work, t.engine); } catch (e) { this.log?.warn('技能文件写入失败', e); }
-      child = spawn(spec.cmd, [...spec.pre, ...this.args(t, text)], { cwd: t.work, env: { ...this.env(t), ...spec.env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      const argv = this.args(t, text);
+      t.nextImages = [];
+      child = spawn(spec.cmd, [...spec.pre, ...argv], { cwd: t.work, env: { ...this.env(t), ...spec.env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
       this.push(t, { kind: 'error', text: e.message });
       this.setStatus(t, /上限/.test(e.message) ? 'budget' : 'failed', e.message);
@@ -482,8 +536,68 @@ class Agents {
       t.turnOk = false;
       if (t.queue.length) { this.run(t, t.queue.shift()); return; }
       this.setStatus(t, 'done', t.overCap ? '已完成，花费超过上限' : '');
-      void this.autoExport(t);
+      if (t.kind === 'plugin') void this.afterPlugin(t); else void this.autoExport(t);
     });
+  }
+
+  /** 做插件的任务每轮结束：先按「素材需求.json」生成图片，再按插件协议校验；有问题自动让 AI 修（最多 AUTO_FIX 次） */
+  async afterPlugin(t) {
+    try { await this.makeAssets(t); } catch (e) { this.push(t, { kind: 'error', text: '生成素材图片失败：' + e.message }); }
+    if (t.child) return;
+    const r = this.checkPlugin(t);
+    if (!r.problems.length) {
+      t.fixes = 0; this.save(t);
+      this.push(t, { kind: 'out', text: `插件「${r.manifest.name}」v${r.manifest.version} 检查通过：右侧可以试用，满意了点「装上」` });
+      return;
+    }
+    if (!t.overCap && (t.fixes || 0) < AUTO_FIX && t.status === 'done' && t.cny < t.cap) {
+      t.fixes = (t.fixes || 0) + 1;
+      this.push(t, { kind: 'note', text: `插件检查发现 ${r.problems.length} 个问题，已让 AI 自动修正（第 ${t.fixes} 次）` });
+      this.run(t, '导播台按插件协议 cs-plugin/1 校验了 plugin 文件夹，发现下面的问题。请逐条修正，改完用一两句话说明：\n' + r.problems.slice(0, 20).map((p) => '- ' + p).join('\n'));
+      return;
+    }
+    this.push(t, { kind: 'error', text: '插件还没通过检查：' + r.problems.slice(0, 5).join('；') + (r.problems.length > 5 ? ` 等 ${r.problems.length} 个问题` : '') });
+  }
+
+  /** 按插件协议检查任务里的插件，结果记在任务上给界面显示 */
+  checkPlugin(t) {
+    if (!t.pluginDir) throw new Error('这个任务不是做插件的');
+    let r;
+    try { r = spec.checkFolder(t.pluginDir); } catch (e) { r = { manifest: null, problems: ['插件文件夹读不了：' + e.message] }; }
+    t.check = { at: Date.now(), ok: !!r.manifest && !r.problems.length, problems: r.problems.slice(0, 30), id: r.manifest?.id || '', name: r.manifest?.name || '', version: r.manifest?.version || '' };
+    this.save(t);
+    this.emit({ type: 'task', task: this.public(t) });
+    return r;
+  }
+
+  /** AI 在「素材需求.json」里列出的图片：用老师的 AI 接口生成，存进插件文件夹（已有的跳过） */
+  async makeAssets(t) {
+    const req = path.join(t.work, '素材需求.json');
+    if (!this.imageGen || !fs.existsSync(req)) return;
+    let list;
+    try { list = JSON.parse(fs.readFileSync(req, 'utf8').replace(/^\uFEFF/, '')); } catch { throw new Error('素材需求.json 不是合法的 JSON'); }
+    const todo = [];
+    for (const it of Array.isArray(list) ? list : Array.isArray(list?.images) ? list.images : []) {
+      const rel = spec.relPath(it?.file), prompt = String(it?.prompt || '').trim();
+      if (!rel || !prompt || !/\.(png|jpe?g|webp)$/i.test(rel)) continue;
+      const out = path.join(t.pluginDir, rel);
+      if (!fs.existsSync(out)) todo.push({ rel, out, prompt: prompt.slice(0, 2000), size: it.size });
+    }
+    if (!todo.length) return;
+    if (todo.length > ASSETS_PER_TURN) this.push(t, { kind: 'note', text: `素材需求里有 ${todo.length} 张新图，这一轮先生成前 ${ASSETS_PER_TURN} 张` });
+    t.exporting = true;
+    try {
+      for (const x of todo.slice(0, ASSETS_PER_TURN)) {
+        this.push(t, { kind: 'status', text: `正在生成素材图片 ${x.rel}…` });
+        const r = await this.imageGen({ prompt: x.prompt, size: x.size, feature: 'AI 工坊·插件素材' });
+        const m = /^data:image\/[\w+.-]+;base64,(.+)$/s.exec(String(r?.image || ''));
+        if (!m) throw new Error('生图服务没有返回图片');
+        fs.mkdirSync(path.dirname(x.out), { recursive: true });
+        fs.writeFileSync(x.out, Buffer.from(m[1], 'base64'));
+        this.push(t, { kind: 'file', text: '新建 plugin/' + x.rel });
+        if (r.cny) this.push(t, { kind: 'usage', text: `生成 ${x.rel} 约 ¥${Number(r.cny).toFixed(2)}（已记入账本）` });
+      }
+    } finally { t.exporting = false; this.save(t); this.emit({ type: 'task', task: this.public(t) }); }
   }
 
   /** 这一轮新写或改过的 Markdown 自动排成 Word / PDF / PPT（老师一般不直接用 .md） */
@@ -621,9 +735,9 @@ class Agents {
     return { factor: r.factor, task: this.public(t) };
   }
   /** 追加指令：Claude 运行中直接写进输入流；其他情况排队，本轮结束后接着上一轮继续 */
-  inject(id, text) {
+  inject(id, text, attachments) {
     const t = this.tasks.get(id); if (!t) throw new Error('找不到这个任务');
-    const msg = String(text || '').trim(); if (!msg) throw new Error('指令是空的');
+    let msg = String(text || '').trim(); if (!msg) throw new Error('指令是空的');
     const live = t.child && t.status === 'running';
     if (!live) {
       // 老师调高了单任务上限后，旧任务也按新上限继续
@@ -633,7 +747,10 @@ class Agents {
       this.ledger?.check();
       if (t.cap < capNow) t.cap = capNow;
     }
-    this.push(t, { kind: 'user', text: clip(msg, 2000) });
+    const att = this.attach(t, attachments);
+    t.fixes = 0;
+    this.push(t, { kind: 'user', text: clip(msg, 2000) + att.label });
+    msg += att.prompt;
     if (live && t.sendNow && t.pending > 0) { t.sendNow(msg); return this.public(t); }
     if (live) { t.queue.push(msg); this.emit({ type: 'task', task: this.public(t) }); return this.public(t); }
     this.run(t, msg);

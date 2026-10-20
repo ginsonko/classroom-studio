@@ -3,6 +3,7 @@ import { host } from './host';
 import { buildPreset, makePreset } from '../physics/sim/presets';
 import { sceneErrors } from '../physics/sim/domain';
 import type { Scene } from '../physics/model';
+import { libOfKind } from '../physics/catalog';
 import { recognize, type Recognized } from '../physics/sim/recognize';
 import { drawPrompt, explainPrompt, parseDraw, parseExplain, type Explain } from '../physics/sim/aiSchema';
 import { boardStroke, explainPages, flatText } from './explainBoard';
@@ -206,7 +207,7 @@ export async function explainToBoard(e: Explain): Promise<{ mat: Material; pages
 
 // ── 不用模型的物理演示入口（模板库 / 当前页器材）──────────────────────
 export function materialFromObjects(strokes: Stroke[], title = '当前器材物理演示'): Material {
-  const objs = strokes.filter(s => s.obj && s.layer !== 'private').map(s => structuredClone(s.obj!));
+  const objs = strokes.filter(s => s.obj && s.layer !== 'private' && libOfKind(s.obj.kind) === 'physics').map(s => structuredClone(s.obj!));
   const scene: Scene = { title, objs, world: { g: 10, ppm: .1 }, duration: 8, graphs: ['vt', 'xt', 'energy'] };
   const errors = sceneErrors(scene);
   if (errors.length) throw new Error(errors.join('\n'));

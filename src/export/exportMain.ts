@@ -19,6 +19,7 @@ function applyMeta(md: string) {
 function runs(rs: Run[]) {
   return rs.map((r) => {
     if (r.t === 'math') return `<span class="m">${tex(r.tex, false)}</span>`;
+    if (r.blank) return `<span class="blank" style="width:${Math.min(16, Math.max(3, [...r.text].length * 0.6)).toFixed(1)}em"></span>`;
     let h = esc(r.text);
     if (r.code) h = `<code>${h}</code>`;
     if (r.b) h = `<b>${h}</b>`;
@@ -35,12 +36,15 @@ function dropHead(rs: Run[], n: number): Run[] {
   return t ? [{ ...first, text: t }, ...rest] : rest;
 }
 
+/** 圆形题号里藏一个和底色同色的全角点：看不见，但 PDF 文字层是「1．」，再导入题库时认得出题号（答案是数字也不会当成小数） */
+const qn = (n: string) => `${esc(n)}<i>．</i>`;
+
 type Mode = 'doc' | 'slide' | 'card';
 function paragraph(b: Extract<Block, { type: 'p' }>, mode: Mode): string {
   const first = b.runs[0], text = plain(b.runs);
   // 题号：**3.** 题干 → 圆形编号
   if (mode === 'doc' && !b.quote && first?.t === 'text' && first.b && /^\d{1,3}[.、．]$/.test(first.text.trim())) {
-    return `<p class="q"><span class="qn">${esc(first.text.trim().replace(/[.、．]$/, ''))}</span><span class="qb">${runs(dropHead(b.runs.slice(1), 0))}</span></p>`;
+    return `<p class="q"><span class="qn">${qn(first.text.trim().replace(/[.、．]$/, ''))}</span><span class="qb">${runs(dropHead(b.runs.slice(1), 0))}</span></p>`;
   }
   if (b.quote) {
     if (/^注意[:：]/.test(text)) return `<p class="quote warn">${runs(b.runs)}</p>`;
@@ -49,7 +53,7 @@ function paragraph(b: Extract<Block, { type: 'p' }>, mode: Mode): string {
     return `<p class="quote">${runs(b.runs)}</p>`;
   }
   if (/^(答案|参考答案|解答|解析)[:：]/.test(text)) return `<p class="ans">${runs(b.runs)}</p>`;
-  if (mode === 'doc' && /^[（(]?A[)）]?\s*[.．、:：]/.test(text) && /\u3000\u3000[（(]?B/.test(text)) return `<p class="opts">${runs(b.runs)}</p>`;
+  if (mode === 'doc' && /^[（(]?A[)）]?\s*[.．、:：]/.test(text) && /[\u3000\s][（(]?B[)）]?\s*[.．、:：]/.test(text)) return `<p class="opts">${runs(b.runs)}</p>`;
   return `<p>${runs(b.runs)}</p>`;
 }
 
@@ -61,18 +65,40 @@ function block(b: Block, mode: Mode): string {
     case 'table': return `<table>${b.rows.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${runs(c)}</th>` : `<td>${runs(c)}</td>`)).join('')}</tr>`).join('')}</table>`;
     case 'math': return `<div class="dm">${tex(b.tex, true)}</div>`;
     case 'code': return `<pre>${esc(b.text)}</pre>`;
-    case 'img': return /^data:image\/(png|jpeg);base64,/.test(b.src) ? `<figure><img src="${esc(b.src)}" alt="${esc(b.alt)}"></figure>` : `<p class="quote">[图片缺失：${esc(b.alt || '题图')}]</p>`;
+    case 'img': {
+      if (!/^data:image\/(png|jpeg);base64,/.test(b.src)) return `<p class="quote">[图片缺失：${esc(b.alt || '题图')}]</p>`;
+      // 「题图 w=360」：原卷截图，按原卷上的宽度（pt）排，靠左接在题号后面
+      const w = Number(/\bw=(\d{2,4})\b/.exec(b.alt)?.[1]);
+      const alt = b.alt.replace(/\s*\bw=\d+/, '');
+      return w ? `<figure class="orig"><img src="${esc(b.src)}" alt="${esc(alt)}" style="width:${w}pt"></figure>` : `<figure><img src="${esc(b.src)}" alt="${esc(alt)}"></figure>`;
+    }
     case 'hr': return '<hr>';
     case 'break': return '<div class="pb"></div>';
     case 'gap': return mode === 'doc' ? '<div class="gap"></div>' : '';
+    case 'fields': return `<div class="fields">${b.items.map((f) => `<span class="fd${f.value ? ' v' : ''}"><b>${esc(f.label)}</b><span class="ln">${esc(f.value)}</span></span>`).join('')}</div>`;
   }
 }
+
+/** 练习卷、试卷：一级有序列表当成题号（和答案页一样的圆形编号） */
+const isSheet = (blocks: Block[]) => blocks.some((b) => b.type === 'gap' || b.type === 'fields')
+  || blocks.some((b) => b.type === 'h' && b.level === 1 && /练习|测验|试卷|作业|检测|小测|习题|考试|月考|周测/.test(plain(b.runs)));
 
 /** A4 文档：标题下第一段是信息栏（全角空格分隔）；「参考答案」这一节换成答案样式 */
 function docHtml(blocks: Block[]) {
   const out: string[] = [];
   let inAns = false;
+  const sheet = isSheet(blocks);
   blocks.forEach((b, i) => {
+    if (sheet && b.type === 'li' && b.ordered && b.depth === 0) {
+      out.push(`<p class="q"><span class="qn">${qn(String(b.n))}</span><span class="qb">${runs(b.runs)}</span></p>`);
+      return;
+    }
+    // 「5.（12 分）题干」：题号后没有空格，Markdown 不认成列表
+    const qm = sheet && b.type === 'p' && !b.quote && b.runs[0]?.t === 'text' && !b.runs[0].b ? /^(\d{1,3})[.．、](?=[（(【\[])/.exec(b.runs[0].text) : null;
+    if (qm && b.type === 'p') {
+      out.push(`<p class="q"><span class="qn">${qn(qm[1])}</span><span class="qb">${runs(dropHead(b.runs, qm[0].length))}</span></p>`);
+      return;
+    }
     if (b.type === 'h' && b.level <= 2) {
       if (inAns) { out.push('</div>'); inAns = false; }
       out.push(block(b, 'doc'));
@@ -80,6 +106,14 @@ function docHtml(blocks: Block[]) {
       return;
     }
     const prev = blocks[i - 1];
+    // 连着的几格作答区画成一个大框
+    if (b.type === 'gap') {
+      if (prev?.type === 'gap') return;
+      let n = 1;
+      while (blocks[i + n]?.type === 'gap') n++;
+      out.push(n > 1 ? `<div class="gap tall" style="height:${34 * n}mm"></div>` : block(b, 'doc'));
+      return;
+    }
     if (b.type === 'p' && !b.quote && prev?.type === 'h' && prev.level === 1 && /\u3000\u3000/.test(plain(b.runs))) {
       out.push(`<p class="meta">${plain(b.runs).split(/\u3000{2,}/).filter((s) => s.trim()).map((s) => `<span class="chip">${esc(s.trim())}</span>`).join('')}</p>`);
       return;
@@ -104,6 +138,13 @@ let slides: Block[][] = [], deckTitle = '';
 
 const api = {
   /** A4 文档：返回块结构和公式列表，主进程随后 printToPDF */
+  /** 插件导出模板的样式，排在内置样式后面（同优先级时覆盖内置） */
+  addCss(css: string) {
+    const el = document.createElement('style');
+    el.dataset.template = '1';
+    el.textContent = css;
+    document.head.appendChild(el);
+  },
   async renderDoc(md: string) {
     applyMeta(md);
     const p = parseMarkdown(md);

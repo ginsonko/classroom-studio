@@ -257,7 +257,7 @@ export async function prepareMaterial(f: FileEntry, onProgress?: (p: ConvertProg
   const pending = preparing.get(f.id); if (pending) return pending;
   const task = (async () => {
     const path = f.path!;
-    if (host.electron && !/^https?:/i.test(path) && !await host.exists(path)) throw new Error('找不到原文件，可能已经移动或删除。请刷新目录后重新选择。');
+    if (host.electron && !/^(https?|plugin):/i.test(path) && !await host.exists(path)) throw new Error('找不到原文件，可能已经移动或删除。请刷新目录后重新选择。');
     const base = { id: f.id, kind: f.kind, title: f.title, path, pairId: f.pairId, pairRole: f.pairRole };
     let mat: Material;
     if (f.kind === 'pdf') {

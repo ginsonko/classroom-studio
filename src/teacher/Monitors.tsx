@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { AppWindow, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, X } from 'lucide-react';
+import { AppWindow, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, Scissors, X } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { BASE, deskOrder, pageLabel } from '../lib/desk';
 import { Desk } from '../stage/Desk';
 import { readDroppedFiles, useLib } from '../lib/useLib';
 import { openMaterial, reportMaterialError } from '../doc/actions';
 import { Stage } from '../stage/Stage';
+import { pasteToBoard, snipToBoard } from '../ink/pasteImage';
 
 /** PGM：学生此刻看到的画面（矢量同源渲染，不是截图），老师也可以直接在上面写 */
 export function PgmMonitor({ onOpenStudent }: { onOpenStudent: () => void }) {
@@ -79,6 +80,7 @@ function DeskTabs() {
     </div>
     <div className="dtabs-acts">
       <button className="dtabs-act" onClick={() => st().newBoard()} data-tip="再开一块空白黑板"><Plus size={12} />黑板</button>
+      <button className="dtabs-act" onClick={() => void snipToBoard().catch((e) => reportMaterialError(e, '截屏', 'student'))} data-tip="框选屏幕上任意区域贴到黑板。也可以用微信 / QQ 截图后直接 Ctrl+V"><Scissors size={12} />截屏</button>
       {cur && cur.id !== BASE && <button className="dtabs-act" onClick={() => st().setWin(cur.id, { mode: cur.mode === 'normal' ? 'max' : 'normal' })} data-tip="当前课件在「占满画面」和「浮在黑板上的窗口」之间切换"><AppWindow size={12} />{cur.mode === 'normal' ? '占满' : '窗口'}</button>}
       <button className="dtabs-act" disabled={docs < 2} onClick={() => st().tileWins()} data-tip={docs < 2 ? '打开两个以上课件后可以并排' : '当前课件和最近用过的课件并排（最多 4 个）'}><Columns2 size={12} />并排</button>
       <select className="dtabs-limit" value={limit} onChange={(e) => st().setShared({ deskLimit: Number(e.target.value) })} data-tip="学生画面最多同时打开几个课件（不含黑板），超过时自动关掉最久没用的">
@@ -132,5 +134,10 @@ export function PvwMonitor() {
 export function dropExternal(e: React.DragEvent, target: 'student' | 'cue' | 'teacher') {
   const files = Array.from(e.dataTransfer.files);
   if (!files.length) return;
+  // 拖到学生画面上的截图 / 图片：贴到黑板上（不占满画面，周围照样能写）
+  if (target === 'student' && files.every((f) => /^image\/(png|jpeg|gif|webp|bmp)$/.test(f.type))) {
+    void (async () => { for (const f of files.slice(0, 6)) await pasteToBoard(f); })().catch((err) => reportMaterialError(err, '贴图', target));
+    return;
+  }
   void openMaterial(readDroppedFiles(files).then((entries) => entries[0] ?? null), target).catch((e) => reportMaterialError(e, '拖入课件', target));
 }

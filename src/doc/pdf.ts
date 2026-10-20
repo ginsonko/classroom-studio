@@ -13,7 +13,7 @@ const rasterPending = new Map<string, Promise<Blob>>();
 let rasterBytes = 0, active = 0;
 const waiters: (() => void)[] = [];
 
-export function assetUrl(path: string) { return /^(blob:|data:|https?:|cs-file:|classroom-file:|lesson:)/i.test(path) ? path : host.fileUrl(path); }
+export function assetUrl(path: string) { return /^(blob:|data:|https?:|cs-file:|classroom-file:|lesson:|plugin:)/i.test(path) ? path : host.fileUrl(path); }
 
 async function withDocument<T>(path: string, fn: (doc: PDFDocumentProxy) => Promise<T>): Promise<T> {
   let slot = documents.get(path);
@@ -65,26 +65,48 @@ export async function pdfPages(path: string): Promise<PageInfo[]> {
 
 /** 每页开头的文字（只取前 300 字，用于识别答案页等） */
 /** 每页按行的文字及行顶位置（占页高比例），用于找出「答案：」从哪里开始 */
-export async function pdfPageLines(path: string, max = 80): Promise<{ lines: { t: string; y?: number }[] }[]> {
+/**
+ * 每页按「视觉上的一行」聚合文字：Word 导出的 PDF 里，分式的分子分母、上下标是单独的文字块，
+ * 文字流的换行也常和视觉行对不上，所以按竖直位置重叠来归行，行内按 x 排序。y / b 是行的上沿 / 下沿。
+ */
+/** nx：行首是题号（「3．」）时，题号后面正文开始处占页宽的比例（题库导入截题图时把原题号涂掉） */
+export async function pdfPageLines(path: string, max = 80): Promise<{ w: number; lines: { t: string; y?: number; b?: number; nx?: number }[] }[]> {
   return withDocument(path, async (doc) => {
-    const out: { lines: { t: string; y?: number }[] }[] = [];
+    const out: { w: number; lines: { t: string; y?: number; b?: number; nx?: number }[] }[] = [];
     for (let i = 1; i <= Math.min(doc.numPages, max); i++) {
       const page = await doc.getPage(i), tc = await page.getTextContent(), vp = page.getViewport({ scale: 1 });
-      const lines: { t: string; y?: number }[] = [];
-      let cur: { t: string; y?: number } | null = null, chars = 0;
+      const items: { s: string; x: number; w: number; t: number; b: number }[] = [];
+      let chars = 0;
       for (const it of tc.items) {
-        if (!('str' in it)) continue;
-        if (!cur) {
-          const [, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
-          const h = Math.abs(it.height || it.transform[3] || 0);
-          cur = { t: '', y: Math.min(1, Math.max(0, (vy - h) / vp.height)) };
-        }
-        cur.t += it.str; chars += it.str.length;
-        if (it.hasEOL) { if (cur.t.trim()) lines.push(cur); cur = null; }
-        if (chars > 1500) break;
+        if (!('str' in it) || !it.str.trim()) continue;
+        const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+        const h = Math.abs(it.height || it.transform[3] || 0) || 10;
+        items.push({ s: it.str, x: vx, w: Math.abs(it.width || 0), t: (vy - h) / vp.height, b: (vy + h * 0.22) / vp.height });
+        chars += it.str.length;
+        if (chars > 4000) break;
       }
-      if (cur?.t.trim()) lines.push(cur);
-      out.push({ lines });
+      items.sort((a, b) => a.t - b.t);
+      const rows: { items: typeof items; t: number; b: number }[] = [];
+      for (const it of items) {
+        const mid = (it.t + it.b) / 2, row = rows.find((r) => mid > r.t && mid < r.b);
+        if (row) { row.items.push(it); row.t = Math.min(row.t, it.t); row.b = Math.max(row.b, it.b); }
+        else rows.push({ items: [it], t: it.t, b: it.b });
+      }
+      const clamp = (v: number) => Math.min(1, Math.max(0, v));
+      const numberEnd = (its: typeof items) => {
+        const s = its.map((x) => x.s).join(''), m = /^\s*(?:第\s*\d{1,3}\s*题|\d{1,3}\s*[.．、])\s*/.exec(s);
+        if (!m) return undefined;
+        let left = m[0].replace(/\s+$/, '').length;
+        for (const [k, it] of its.entries()) {
+          if (left <= 0) return it.x / vp.width;
+          if (left < it.s.length) return (it.x + it.w * (left / it.s.length)) / vp.width;
+          left -= it.s.length;
+          if (left <= 0) return (its[k + 1]?.x ?? it.x + it.w) / vp.width;
+        }
+        return undefined;
+      };
+      const lines = rows.sort((a, b) => a.t - b.t).map((r) => { const its = r.items.sort((a, b) => a.x - b.x); return { t: its.map((x) => x.s).join(''), y: clamp(r.t), b: clamp(r.b), nx: numberEnd(its) }; });
+      out.push({ w: vp.width, lines });
       page.cleanup();
     }
     return out;

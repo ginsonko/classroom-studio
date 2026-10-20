@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, X } from 'lucide-react';
-import { createObject, OBJECT_GROUPS, OBJECTS, type ObjGroup } from '../catalog';
+import { Puzzle, Search, X } from 'lucide-react';
+import { createObject, libOfFamily, libOfKind, OBJECT_CATALOG, OBJECT_GROUPS, OBJECT_LIBS, OBJECTS, type ObjGroup, type ObjLib } from '../catalog';
+import { familyOf } from '../../lib/subjects';
 import { drawObj } from '../drawObj';
 import type { ObjKind } from '../model';
 import { useStore } from '../../lib/store';
+import { activePlugins, loadPlugins, pluginUrl, usePlugins, type PluginItem, type ShapeGroup } from '../../plugins/pluginStore';
+import { imageToBoard } from '../../plugins/bridge';
 import '../../styles/objects.css';
+import '../../styles/plugins.css';
 
 export function ObjectPreview({ kind }: { kind: ObjKind }) {
   const ref = useRef<HTMLCanvasElement>(null), skin = useStore((s) => s.skin);
@@ -20,14 +24,49 @@ export function ObjectPreview({ kind }: { kind: ObjKind }) {
   return <canvas ref={ref} width={84} height={48} aria-hidden="true" />;
 }
 
+const HINT: Record<ObjLib, string> = { physics: '搜索小车、磁场、电阻…', math: '搜索圆锥、双曲线、坐标系…', chem: '搜索烧杯、酒精灯、冷凝管…' };
+let lastLib: { subject: string; lib: ObjLib } | null = null;
+
+/** 插件加的图形分组：学科对得上的放进对应的库，其它学科（生物、地理…）的每个库里都能看到 */
+function pluginGroups(items: PluginItem[], lib: ObjLib) {
+  const libs = OBJECT_LIBS.map((x) => x.id as string);
+  return items.flatMap((p) => p.contributes.shapes.map((g, i) => ({ key: `pl:${p.id}:${i}`, p, g })))
+    .filter(({ g }) => g.subject === lib || !libs.includes(g.subject));
+}
+
 export function ObjectLibrary({ current, onSelect, onClose }: { current: string; onSelect: (kind: ObjKind) => void; onClose: () => void }) {
-  const [group, setGroup] = useState<ObjGroup>('mechanics'), [query, setQuery] = useState('');
-  const list = OBJECTS.filter((o) => query.trim() ? `${o.name} ${o.kind}`.toLowerCase().includes(query.trim().toLowerCase()) : o.group === group);
-  return <div className="obj-library" role="dialog" aria-label="物理器材库">
-    <header><b>物理器材</b><span>{OBJECTS.length} 种矢量器材</span><button onClick={onClose} aria-label="关闭器材库"><X size={15} /></button></header>
-    <label className="obj-search"><Search size={14} /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索小车、磁场、电阻…" /></label>
-    <div className="obj-tabs">{OBJECT_GROUPS.map((g) => <button key={g.id} className={g.id === group && !query ? 'on' : ''} onClick={() => { setGroup(g.id); setQuery(''); }}>{g.name}</button>)}</div>
-    <div className="obj-grid">{list.map((o) => <button key={o.kind} className={'obj-tile' + (current === o.kind ? ' on' : '')} onClick={() => onSelect(o.kind)} title={o.name} aria-label={'放置' + o.name}><ObjectPreview kind={o.kind} /><span>{o.name}</span></button>)}{!list.length && <p className="obj-empty">没有匹配的器材，试试别的名称。</p>}</div>
-    <footer>单击画布放置 · 拖动设定大小<br />选择工具可移动、缩放与旋转</footer>
+  const subject = useStore((s) => s.subject);
+  const [lib, setLibState] = useState<ObjLib>(() => lastLib?.subject === subject ? lastLib.lib : libOfFamily(familyOf(subject)));
+  const groups = OBJECT_GROUPS.filter((g) => g.lib === lib);
+  const [group, setGroup] = useState<ObjGroup>(() => OBJECT_CATALOG[current as ObjKind] && libOfKind(current) === lib ? OBJECT_CATALOG[current as ObjKind].group : groups[0].id), [query, setQuery] = useState('');
+  const [pgroup, setPgroup] = useState('');
+  const [err, setErr] = useState('');
+  useEffect(() => { void loadPlugins(); }, []);
+  const plist = usePlugins((s) => s.list);
+  const pgroups = pluginGroups(activePlugins(plist), lib);
+  const setLib = (id: ObjLib) => { lastLib = { subject, lib: id }; setLibState(id); setGroup(OBJECT_GROUPS.find((g) => g.lib === id)!.id); setPgroup(''); setQuery(''); };
+  const q = query.trim().toLowerCase();
+  const list = OBJECTS.filter((o) => q ? `${o.name} ${o.kind}`.toLowerCase().includes(q) : !pgroup && o.group === group);
+  const shapes = pgroups.flatMap(({ key, p, g }) => g.items.filter(() => q || key === pgroup).filter((it) => !q || it.name.toLowerCase().includes(q)).map((it) => ({ key: key + it.file, p, g, it })));
+  const place = (p: PluginItem, g: ShapeGroup, file: string) => {
+    setErr('');
+    void imageToBoard(pluginUrl(p.id, file), `已放到黑板（${g.group}）：可以拖动、缩放，上面也能写字`).then(onClose, (e) => setErr((e as Error).message));
+  };
+  const meta = OBJECT_LIBS.find((x) => x.id === lib)!;
+  return <div className="obj-library" role="dialog" aria-label="绘图库">
+    <header><b>绘图库</b><span>{OBJECTS.filter((o) => libOfKind(o.kind) === lib).length + pgroups.reduce((a, x) => a + x.g.items.length, 0)} {meta.unit}</span><button onClick={onClose} aria-label="关闭绘图库"><X size={15} /></button></header>
+    <div className="obj-libs" role="tablist" aria-label="学科">{OBJECT_LIBS.map((x) => <button key={x.id} role="tab" aria-selected={x.id === lib} className={x.id === lib ? 'on' : ''} onClick={() => setLib(x.id)}>{x.title}</button>)}</div>
+    <label className="obj-search"><Search size={14} /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={HINT[lib]} /></label>
+    <div className="obj-tabs">
+      {groups.map((g) => <button key={g.id} className={g.id === group && !query && !pgroup ? 'on' : ''} onClick={() => { setGroup(g.id); setPgroup(''); setQuery(''); }}>{g.name}</button>)}
+      {pgroups.map((x) => <button key={x.key} className={'obj-tab-plugin' + (x.key === pgroup && !query ? ' on' : '')} onClick={() => { setPgroup(x.key); setQuery(''); }} data-tip={`来自插件「${x.p.name}」`}><Puzzle size={11} />{x.g.group}</button>)}
+    </div>
+    <div className="obj-grid">
+      {list.map((o) => <button key={o.kind} className={'obj-tile' + (current === o.kind ? ' on' : '')} onClick={() => onSelect(o.kind)} title={o.name} aria-label={'放置' + o.name}><ObjectPreview kind={o.kind} /><span>{o.name}</span></button>)}
+      {shapes.map(({ key, p, g, it }) => <button key={key} className="obj-tile obj-tile-plugin" onClick={() => place(p, g, it.file)} title={`${it.name}（插件「${p.name}」）`} aria-label={'放置' + it.name}><img src={pluginUrl(p.id, it.file)} alt="" draggable={false} className={/\.svg$/i.test(it.file) ? 'svg' : ''} /><span>{it.name}</span></button>)}
+      {!list.length && !shapes.length && <p className="obj-empty">没有匹配的器材，试试别的名称。</p>}
+    </div>
+    {err && <p className="obj-err">{err}</p>}
+    <footer>{pgroup && !query ? <>点一下放到黑板<br />放好后用选择工具移动、缩放</> : <>单击画布放置 · 拖动设定大小<br />选择工具可移动、缩放与旋转</>}</footer>
   </div>;
 }

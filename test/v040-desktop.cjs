@@ -112,7 +112,7 @@ async function makePdf(file, pages) {
   await T(`s.setShared({pgm:{...s.pgm,page:1}});return true`);
   await until(() => S(`return !!document.querySelector('.sw-stage .answer-cover.partial')&&!!document.querySelector('.sw-stage canvas')`), 8000, 'partial cover');
   await shot(student, 'student-answer-partial.png');
-  await until(() => T(`return !!document.querySelector('.answer-line')`), 5000, 'teacher answer line');
+  await until(() => T(`return !!document.querySelector('.answer-zone')`), 5000, 'teacher answer zone');
   await shot(teacher, 'teacher-answer-line.png');
   mark('answer below the question: student sees the question, only the answer part is covered', part);
 

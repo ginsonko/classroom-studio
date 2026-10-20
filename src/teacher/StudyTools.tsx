@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, Download, FolderPlus, ImageDown, Loader2, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { Copy, Download, FolderPlus, ImageDown, ListChecks, Loader2, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { PaperComposer } from './PaperComposer';
 import { useStore } from '../lib/store';
 import { host } from '../lib/host';
 import { addRoot } from '../lib/useLib';
@@ -23,8 +24,18 @@ const localDay = (iso: string | number) => { const d = new Date(iso), p = (n: nu
 function useOnline() { const [on, setOn] = useState<boolean | null>(null); useEffect(() => { void aiConfig().then((c) => setOn(online(c))); }, []); return on; }
 function NeedStudent() { return <div className="sd-pane"><div className="lib-empty">先在顶栏选择一位学生。</div></div>; }
 
-// ── 一键组作业 ─────────────────────────────────────────
+// ── 组作业：智能组卷（按条件从题库挑）/ 自己组卷（手动挑题、排序、配分） ──
+const MODE = 'cs.homework.mode';
 export function HomeworkTab() {
+  const [mode, setMode] = useState<'smart' | 'manual'>(() => (localStorage.getItem(MODE) === 'manual' ? 'manual' : 'smart'));
+  const pick = (m: 'smart' | 'manual') => { setMode(m); localStorage.setItem(MODE, m); };
+  return <div className="hw-wrap">
+    <div className="hw-mode ags-tabs"><button className={mode === 'smart' ? 'on' : ''} onClick={() => pick('smart')}><Wand size={13} />智能组卷</button><button className={mode === 'manual' ? 'on' : ''} onClick={() => pick('manual')}><ListChecks size={13} />自己组卷</button><span className="sd-note">{mode === 'smart' ? '按知识点、难度自动从题库挑题，题不够时 AI 出题补齐' : '自己从题库挑题、分大题、配分，导出学生版和答案版'}</span></div>
+    {mode === 'smart' ? <SmartHomework /> : <PaperComposer />}
+  </div>;
+}
+
+function SmartHomework() {
   const data = useStudy((s) => s.data);
   const studentId = useStore((s) => s.studentId), student = useStore((s) => s.students.find((x) => x.id === s.studentId));
   const ai = useOnline();

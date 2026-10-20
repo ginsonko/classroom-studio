@@ -53,6 +53,7 @@ const timer = setTimeout(() => { console.error('v100 desktop timed out'); app.ex
   await until(() => call(dock, `!!document.querySelector('.tdock .tp-sizes')`).catch(() => false), 8000, 'dock');
   if (process.env.CS_SHOW !== '1') dock.setPosition(left, 30);
   const D = run(dock, 'dock');
+  await until(() => call(dock, '!!window.__studioQA').catch(() => false), 15000, 'dock QA hook');
   const presets = await D(`return [...document.querySelectorAll('.tdock .tp-sizes > .tp-size:not(.tp-size-more)')].map(b=>b.getAttribute('aria-label'))`);
   assert.deepEqual(presets, ['粗细 超细', '粗细 细', '粗细 中', '粗细 粗']);
   await D(`document.querySelector('.tdock .tp-size[aria-label="粗细 超细"]').click();return true`);
@@ -115,23 +116,20 @@ const timer = setTimeout(() => { console.error('v100 desktop timed out'); app.ex
   };
   const free = await lesson('free', '自由课堂');
   assert.match(free.text, /没有绑定学生/);
-  assert.match(free.text, /窗口、录课与回放/);
+  assert.match(free.text, /「回放」页/);
   assert.equal(free.path, api.recording.status.path);
-  assert.deepEqual(free.buttons, ['播放', '打开文件夹', '全部录像', '关闭']);
+  assert.deepEqual(free.buttons, ['播放', '打开文件夹', '全部回放', '关闭']);
   await shot(teacher, 'v100-4-saved-free.png');
-  await T(`[...document.querySelectorAll('.saved-notice button')].find(b=>b.innerText==='全部录像').click();return true`);
-  const rows = await until(() => T(`const r=[...document.querySelectorAll('.desktop-panel .record-row')];return r.length?r.map(x=>x.innerText.replace(/\\s+/g,' ')):null`), 5000, 'recordings panel');
+  await T(`[...document.querySelectorAll('.saved-notice button')].find(b=>b.innerText==='全部回放').click();return true`);
+  const rows = await until(() => T(`const r=[...document.querySelectorAll('.rp-row')];return r.length?r.map(x=>x.innerText.replace(/\\s+/g,' ')):null`), 5000, 'replay page');
   assert.ok(!(await T(`return !!document.querySelector('.saved-notice')`)), 'notice closes after jumping');
   assert.match(rows[0], /自由课堂/); assert.match(rows[0], /未绑定学生/);
-  // 直接滚到「本地课堂回放」，不用在长面板里往下找
-  await until(() => T(`const b=document.querySelector('.desktop-body').getBoundingClientRect(),r=document.querySelector('.desktop-panel .record-row').getBoundingClientRect();return r.top>=b.top&&r.bottom<=b.bottom`), 3000, 'recordings scrolled into view');
   await shot(teacher, 'v100-5-panel-rows.png');
-  await T(`Q.useRecording.setState({panel:false});return true`);
   mark('unbound lesson: notice says where the video is and opens the full recordings list (rows marked 未绑定学生)', { free, rows });
 
   const bound = await lesson('stu-w', '小林 · 受力分析');
   assert.match(bound.text, /已归到「小林」的档案/);
-  assert.deepEqual(bound.buttons, ['播放', '打开文件夹', '去学生页', '关闭']);
+  assert.deepEqual(bound.buttons, ['播放', '打开文件夹', '全部回放', '去学生页', '关闭']);
   await T(`[...document.querySelectorAll('.saved-notice button')].find(b=>b.innerText==='去学生页').click();return true`);
   await until(() => T(`return s.page==='students'&&Q.useStore.getState().studentId==='stu-w'`), 3000, 'student page');
   await until(() => T(`return [...document.querySelectorAll('.rec')].some(r=>r.innerText.includes('受力分析'))`), 5000, 'recording on student page');

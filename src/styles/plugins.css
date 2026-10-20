@@ -1,0 +1,114 @@
+/* 插件：顶栏菜单、浮动面板、插件页、绘图库里的插件图形、浮层里的插件弹层 */
+.pl-ico { display: inline-block; flex: none; border-radius: 5px; object-fit: contain; }
+.pl-ico.fallback { display: inline-grid; place-items: center; background: var(--cue-soft); color: var(--cue); font-weight: 700; }
+.plugin-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--bg-1); color-scheme: normal; }
+
+/* 顶栏菜单 */
+.pop.pl-menu { position: fixed; width: 300px; max-height: min(70vh, 560px); overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.pl-menu header { font-size: 11px; color: var(--fg-2); padding: 6px 8px 2px; letter-spacing: .04em; }
+.pl-menu .pl-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: var(--r-sm); text-align: left; font-size: 13px; color: var(--fg-0); }
+.pl-menu button.pl-row:hover, .pl-menu div.pl-row:hover { background: var(--bg-3); }
+.pl-menu .pl-row b { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-menu .pl-row i { font-style: normal; font-size: 11px; color: var(--fg-2); }
+.pl-menu .pl-acts { display: flex; gap: 4px; }
+.pl-menu .pl-acts button { width: 26px; height: 24px; display: grid; place-items: center; border-radius: var(--r-xs); color: var(--fg-1); background: var(--bg-3); }
+.pl-menu .pl-acts button:hover { color: var(--cue); box-shadow: inset 0 0 0 1px var(--cue); }
+.pl-menu footer { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.pl-menu footer button { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 8px; border-radius: var(--r-sm); font-size: 12px; color: var(--fg-1); }
+.pl-menu footer button:hover { background: var(--bg-3); color: var(--fg-0); }
+.pl-empty { padding: 14px 10px; font-size: 12px; color: var(--fg-2); line-height: 1.6; }
+.pl-warn { margin: 4px; padding: 7px 9px; font-size: 12px; color: var(--warn); background: rgba(255, 181, 71, .1); border-radius: var(--r-sm); }
+
+/* 浮动面板 */
+.pl-sheet { position: fixed; z-index: 60; background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden; display: flex; flex-direction: column; animation: pop-in .16s var(--ease-out); }
+.pl-sheet > header { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 10px; background: var(--bg-2); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; font-size: 12.5px; }
+.pl-sheet.moving > header { cursor: grabbing; }
+.pl-sheet > header button { width: 26px; height: 24px; display: grid; place-items: center; border-radius: var(--r-xs); color: var(--fg-1); }
+.pl-sheet > header button:hover { background: var(--bg-3); color: var(--fg-0); }
+.pl-sheet-body { position: relative; }
+.pl-cover { position: absolute; inset: 0; }
+.pl-note { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 7px 10px; border-radius: var(--r-sm); background: var(--bg-4); color: var(--fg-0); font-size: 12px; box-shadow: var(--shadow-pop); }
+
+/* 插件页 */
+.pl-page { position: relative; }
+.pl-page .ags-head { flex-wrap: wrap; }
+.pl-head-acts { display: flex; gap: 8px; margin-left: auto; }
+.pl-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 22px 40px; display: flex; flex-direction: column; gap: 22px; }
+.pl-body h3 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: baseline; gap: 10px; }
+.pl-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--r-md); font-size: 13px; }
+.pl-banner.warn { background: rgba(255, 181, 71, .1); color: var(--warn); }
+.pl-banner span { flex: 1; color: var(--fg-0); }
+.pl-empty-big { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 34px; color: var(--fg-2); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); text-align: center; }
+.pl-list { display: flex; flex-direction: column; gap: 10px; }
+.pl-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; padding: 14px 16px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.pl-card.off { opacity: .72; }
+.pl-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pl-title { display: flex; align-items: baseline; gap: 8px; }
+.pl-title b { font-size: 14.5px; }
+.pl-title span { font-size: 11px; color: var(--fg-2); }
+.pl-title i { font-style: normal; font-size: 11.5px; color: var(--fg-2); }
+.pl-main > p { margin: 0; font-size: 12.5px; color: var(--fg-1); line-height: 1.6; }
+.pl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pl-perms { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
+.pl-perms span { padding: 2px 8px; border-radius: 99px; background: var(--private-soft, rgba(181, 140, 255, .14)); color: var(--private, #b58cff); }
+.pl-perms span.none { background: rgba(60, 207, 145, .12); color: var(--ok); }
+.pl-perms span.net { background: rgba(255, 181, 71, .12); color: var(--warn); }
+.pl-bad { display: flex; align-items: center; gap: 6px; color: var(--live) !important; font-size: 12px !important; }
+.pl-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.pl-acts { display: flex; gap: 6px; }
+.pl-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-2); }
+.pl-switch i { width: 30px; height: 17px; border-radius: 99px; background: var(--bg-4); position: relative; transition: background var(--dur); }
+.pl-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--fg-1); transition: transform var(--dur); }
+.pl-switch.on { color: var(--ok); }
+.pl-switch.on i { background: var(--ok); }
+.pl-switch.on i::after { transform: translateX(13px); background: #fff; }
+.pl-examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.pl-ex { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.pl-ex p { margin: 2px 0; font-size: 12px; color: var(--fg-1); line-height: 1.55; }
+.pl-ex small { font-size: 11px; color: var(--fg-2); }
+.pl-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.pl-templates label { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.pl-templates select { flex: 1; }
+.pl-dev p { margin: 0 0 8px; font-size: 13px; color: var(--fg-1); line-height: 1.7; max-width: 760px; }
+.pl-dev code { font-family: var(--font-num); font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--bg-3); }
+.pl-dev .sd-note { display: flex; align-items: center; gap: 6px; }
+.pl-page.drop::after { content: ""; position: absolute; inset: 8px; border: 2px dashed var(--cue); border-radius: var(--r-lg); pointer-events: none; }
+.pl-drop { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); padding: 12px 20px; border-radius: var(--r-md); background: var(--bg-4); color: var(--cue); font-weight: 600; pointer-events: none; }
+
+/* 安装确认 / 历史版本 */
+.pl-modal-bg { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, .45); display: grid; place-items: center; }
+.pl-modal { width: min(520px, calc(100vw - 40px)); max-height: calc(100vh - 80px); overflow: auto; background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.pl-modal header { display: flex; align-items: center; gap: 12px; }
+.pl-modal h3 { margin: 0; font-size: 16px; }
+.pl-modal h4 { margin: 6px 0 0; font-size: 12.5px; color: var(--fg-1); }
+.pl-modal h4.bad { color: var(--live); }
+.pl-modal > p { margin: 0; font-size: 13px; color: var(--fg-1); line-height: 1.6; }
+.pl-modal footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.pl-permlist, .pl-problems, .pl-history { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.pl-permlist li { font-size: 13px; padding: 6px 10px; border-radius: var(--r-sm); background: var(--bg-2); display: flex; align-items: center; gap: 8px; }
+.pl-permlist li.new { box-shadow: inset 0 0 0 1px var(--warn); }
+.pl-permlist em { font-style: normal; font-size: 11px; color: var(--warn); margin-left: auto; }
+.pl-problems li { font-size: 12.5px; color: var(--live); padding-left: 12px; position: relative; }
+.pl-problems li::before { content: "·"; position: absolute; left: 2px; }
+.pl-history li { display: grid; grid-template-columns: 140px 64px 1fr auto auto; align-items: center; gap: 10px; padding: 7px 10px; font-size: 12.5px; background: var(--bg-2); border-radius: var(--r-sm); }
+.pl-history i { font-style: normal; color: var(--fg-2); }
+.pl-history small { color: var(--fg-2); }
+.sd-btn.primary { background: var(--cue); color: #061418; box-shadow: none; font-weight: 600; }
+
+/* 学情页里的插件分页 */
+.sd-plugin { flex: 1; min-height: 480px; height: 100%; border-radius: var(--r-md); }
+
+/* 绘图库里的插件图形 */
+.obj-tab-plugin { display: inline-flex; align-items: center; gap: 4px; }
+.obj-tile-plugin img { width: 84px; height: 48px; object-fit: contain; padding: 3px; }
+:root:not([data-skin="paper"]) .obj-tile-plugin img.svg { filter: invert(.86); }
+.obj-err { margin: 4px 10px; font-size: 12px; color: var(--live); }
+
+/* 教师浮层里的插件 */
+.tdock-plugins { position: fixed; z-index: 70; background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden; display: flex; flex-direction: column; }
+.tdock-plugins > header { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px 0 10px; background: var(--bg-2); border-bottom: 1px solid var(--line); font-size: 12px; }
+.tdock-plugins > header b { flex: 1; }
+.tdock-plugins > header button { width: 26px; height: 24px; display: grid; place-items: center; border-radius: var(--r-xs); color: var(--fg-1); }
+.tdock-plugins .pl-list-dock { display: flex; flex-direction: column; padding: 6px; gap: 2px; }
+.tdock-plugins .pl-list-dock button { display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: var(--r-sm); font-size: 13px; text-align: left; color: var(--fg-0); }
+.tdock-plugins .pl-list-dock button:hover { background: var(--bg-3); }

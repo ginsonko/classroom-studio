@@ -1,0 +1,15 @@
+{
+  "protocol": "cs-plugin/1",
+  "id": "random-picker",
+  "name": "随机抽取",
+  "version": "1.0.0",
+  "author": "最强网课教辅系统",
+  "description": "随机点名、抽题号、抽签分组。名单自动保存，抽中的结果可以一键写到黑板上。",
+  "icon": "icon.svg",
+  "permissions": ["board", "student"],
+  "contributes": {
+    "panels": [
+      { "id": "main", "title": "随机抽取", "entry": "index.html", "where": ["console", "dock"], "width": 360, "height": 470 }
+    ]
+  }
+}

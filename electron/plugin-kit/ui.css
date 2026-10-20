@@ -1,0 +1,36 @@
+/* 插件界面的统一样式（可选）：<link rel="stylesheet" href="/__cs/ui.css">
+   颜色跟着导播台当前皮肤走（导播台在 cs.ready 之前把 --cs-* 变量写到 <html> 上）。 */
+:root {
+  --cs-bg: #13161c; --cs-bg-2: #1a1e26; --cs-bg-3: #232833; --cs-line: #2b313d;
+  --cs-fg: #eef1f6; --cs-fg-2: #b7bfcc; --cs-fg-3: #7c8596;
+  --cs-accent: #3dd9eb; --cs-accent-soft: rgba(61, 217, 235, .14); --cs-ok: #3ccf91; --cs-warn: #ffb547; --cs-danger: #ff5a52;
+  --cs-radius: 9px; --cs-font: "Noto Sans SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+[data-cs-scheme="light"] { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--cs-bg); color: var(--cs-fg); font: 14px/1.55 var(--cs-font); -webkit-font-smoothing: antialiased; }
+.cs-wrap { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
+h1, h2, h3 { margin: 0; font-weight: 700; }
+h1 { font-size: 18px; } h2 { font-size: 15px; } h3 { font-size: 13px; color: var(--cs-fg-2); }
+p { margin: 0; color: var(--cs-fg-2); }
+.cs-card { background: var(--cs-bg-2); border: 1px solid var(--cs-line); border-radius: var(--cs-radius); padding: 12px 14px; }
+.cs-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cs-grow { flex: 1; }
+.cs-muted { color: var(--cs-fg-3); font-size: 12px; }
+button, .cs-btn {
+  font: inherit; font-size: 13px; color: var(--cs-fg); background: var(--cs-bg-3); border: 1px solid var(--cs-line);
+  border-radius: 7px; padding: 6px 12px; cursor: pointer; transition: background .15s, border-color .15s;
+}
+button:hover { border-color: var(--cs-accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.cs-primary { background: var(--cs-accent); border-color: var(--cs-accent); color: #061418; font-weight: 600; }
+button.cs-danger { color: var(--cs-danger); }
+input, select, textarea {
+  font: inherit; color: var(--cs-fg); background: var(--cs-bg-2); border: 1px solid var(--cs-line); border-radius: 7px; padding: 6px 9px; outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--cs-accent); box-shadow: 0 0 0 3px var(--cs-accent-soft); }
+.cs-big { font-size: 56px; font-weight: 800; letter-spacing: .02em; text-align: center; }
+.cs-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; background: var(--cs-accent-soft); color: var(--cs-accent); font-size: 12px; }
+::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: var(--cs-bg-3); border-radius: 8px; }

@@ -84,6 +84,7 @@ function buildDocx(parsed, pics) {
   const INLINE = 14.67 / 48;
   const runs = (rs, extra = '') => rs.map((r) => {
     if (r.t === 'math') return pic(r.id, INLINE);
+    if (r.blank) return `<w:r><w:rPr><w:u w:val="single"/>${extra}</w:rPr><w:t xml:space="preserve">${'\u00a0'.repeat(Math.min(32, Math.max(6, [...r.text].length * 1.2)) | 0)}</w:t></w:r>`;
     const pr = `${r.b ? '<w:b/>' : ''}${r.i ? '<w:i/>' : ''}${r.code ? '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:shd w:val="clear" w:color="auto" w:fill="F1F3F6"/>' : ''}${extra}`;
     return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ''}<w:t xml:space="preserve">${x(r.text)}</w:t></w:r>`;
   }).join('');
@@ -97,17 +98,29 @@ function buildDocx(parsed, pics) {
       case 'code': return b.text.split('\n').map((l) => para(`<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${x(l)}</w:t></w:r>`, '<w:shd w:val="clear" w:color="auto" w:fill="F5F6F8"/><w:spacing w:before="0" w:after="0"/>')).join('');
       case 'break': return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
       case 'gap': return para('') + para('') + para('') + para('');
+      case 'fields': {
+        // 一段文字：栏目名 + 带下划线的全角空格（宽度确定，Word / WPS 里都和文字在同一基线）；已填好的值不画线
+        const wide = b.items.filter((f) => !f.value).length || 1;
+        const em = (s) => [...s].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.55), 0);
+        const used = b.items.reduce((s, f) => s + em(f.label) + 1 + (f.value ? em(f.value) : 0) + 2, 0);
+        const blank = Math.max(4, Math.min(14, Math.floor((44 - used) / wide)));
+        const label = (f) => `<w:r><w:rPr><w:b/><w:color w:val="1B4EA8"/></w:rPr><w:t xml:space="preserve">${x(f.label)}：</w:t></w:r>`;
+        const value = (f) => (f.value ? `<w:r><w:t xml:space="preserve">${x(f.value)}</w:t></w:r>` : `<w:r><w:rPr><w:u w:val="single" w:color="7D889B"/></w:rPr><w:t xml:space="preserve">${'\u3000'.repeat(blank)}</w:t></w:r>`);
+        const sep = '<w:r><w:t xml:space="preserve">\u3000\u3000</w:t></w:r>';
+        return para(b.items.map((f) => label(f) + value(f)).join(sep), '<w:pBdr><w:top w:val="single" w:sz="18" w:space="6" w:color="2F6FD6"/></w:pBdr><w:spacing w:before="120" w:after="200"/><w:ind w:left="120"/>');
+      }
       case 'img': {
         const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(b.src || ''); if (!m) return para(`<w:r><w:t>[图片缺失]</w:t></w:r>`);
         const data = Buffer.from(m[2], 'base64'), size = imageSize(data); if (!size) return '';
         const r = 'rId' + rid++, name = `image${media.length + 1}.${m[1] === 'png' ? 'png' : 'jpeg'}`;
         media.push({ r, name, data });
-        // 正文宽 ≈ 16.5 cm；题图按 96 dpi 放，太宽就缩到正文宽
-        const k = Math.min(1, (16.5 / 2.54 * 96) / size.w), w = Math.round(size.w * k * EMU), h = Math.round(size.h * k * EMU);
+        // 正文宽 ≈ 16.5 cm；题图按 96 dpi 放（原卷截图「w=宽pt」按原卷宽度放），太宽就缩到正文宽
+        const pt = Number(/\bw=(\d{2,4})\b/.exec(b.alt || '')?.[1]), px = pt ? pt * 96 / 72 : size.w;
+        const k = Math.min(px, 16.5 / 2.54 * 96) / size.w, w = Math.round(size.w * k * EMU), h = Math.round(size.h * k * EMU);
         return para(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${docPr}" name="图片 ${docPr++}"/>`
           + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
           + `<pic:nvPicPr><pic:cNvPr id="0" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${r}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
-          + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, '<w:jc w:val="center"/>');
+          + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, pt ? '<w:ind w:left="360"/>' : '<w:jc w:val="center"/>');
       }
       case 'hr': return para('', '<w:pBdr><w:bottom w:val="dashed" w:sz="6" w:space="1" w:color="B7C0CC"/></w:pBdr>');
       case 'table': {
@@ -184,7 +197,7 @@ function buildPptx(slides, title) {
  * 导出一个 Markdown 文件。formats ⊆ ['pdf','docx','pptx']。返回生成的文件路径和失败原因。
  * makeWindow() 返回一个能加载 studio://app/export.html 的隐藏窗口（离屏渲染，不显示）。
  */
-async function exportMarkdown(file, formats, makeWindow) {
+async function exportMarkdown(file, formats, makeWindow, opts = {}) {
   const md = inlineImages(fs.readFileSync(file, 'utf8'), path.dirname(file)), base = file.replace(/\.(md|markdown)$/i, '');
   const out = [], errors = [];
   const w = makeWindow();
@@ -194,6 +207,7 @@ async function exportMarkdown(file, formats, makeWindow) {
     for (let i = 0; i < 100 && !(await w.webContents.executeJavaScript('!!window.csExport')); i++) await new Promise((r) => setTimeout(r, 50));
     const frame = () => new Promise((r) => { const t = setTimeout(r, 600); w.webContents.once('paint', () => { clearTimeout(t); setTimeout(r, 30); }); w.webContents.invalidate(); });
     const parsed = await call('renderDoc', md);
+    if (opts.css) await call('addCss', String(opts.css));
     if (formats.includes('pdf')) {
       try { const pdf = await w.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true }); fs.writeFileSync(base + '.pdf', pdf); out.push(base + '.pdf'); }
       catch (e) { errors.push('PDF：' + e.message); }

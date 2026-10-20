@@ -8,7 +8,7 @@ const { atomicJSON, readJSON, cleanTemps } = require('./core.cjs');
 const { normal } = require('./files.cjs');
 
 const LISTS = ['questions', 'attempts', 'lessons', 'homework', 'notes', 'preps'];
-const KINDS = { homework: '作业', wrongbook: '错题本', lesson: '课后总结', courseware: 'AI课件', prep: '备课' };
+const KINDS = { homework: '作业', paper: '试卷', wrongbook: '错题本', lesson: '课后总结', courseware: 'AI课件', prep: '备课' };
 // 资料整理索引、AI 自动处理的设置和记录：各存一个 JSON，和学情库放在一起
 const STORES = { catalog: 'catalog.json', autopilot: 'autopilot.json' };
 const FORMATS = ['pdf', 'docx', 'pptx', 'png'];
@@ -64,7 +64,9 @@ class Study {
     const md = markdown.replace(/\]\(img:([0-9a-f-]{36}\.(?:png|jpg))\)/g, '](../img/$1)');
     await fs.promises.writeFile(file, md, 'utf8');
     if (!want.length) return { md: normal(file), out: [], errors: [] };
-    const r = await this.exportDoc(file, want);
+    // 插件提供的导出模板（学校统一试卷样式等）：只影响 PDF / 长图，Word 照常
+    const css = this.templateCss ? this.templateCss(kind) : '';
+    const r = await this.exportDoc(file, want, css ? { css } : undefined);
     this.log?.info('学情文档导出', KINDS[kind], path.basename(file), r.out.length, r.errors);
     return { md: normal(file), out: r.out.map(normal), errors: r.errors };
   }

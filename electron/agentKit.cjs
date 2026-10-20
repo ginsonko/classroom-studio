@@ -8,17 +8,48 @@ const path = require('node:path');
 const KIT = path.join(__dirname, 'agent-kit');
 const SKILL_ROOT = { codex: path.join('.agents', 'skills'), claude: path.join('.claude', 'skills') };
 
-function skills() {
+// 插件带来的技能：[{ key, dir }]，由主进程注入（只算启用中的插件）
+let extra = () => [];
+function setExtra(fn) { extra = typeof fn === 'function' ? fn : () => []; }
+function extraSkills() { try { return extra().filter((s) => s && s.key && fs.existsSync(path.join(s.dir, 'SKILL.md'))); } catch { return []; } }
+
+function builtin() {
   try {
     return fs.readdirSync(path.join(KIT, 'skills'), { withFileTypes: true })
       .filter((d) => d.isDirectory() && fs.existsSync(path.join(KIT, 'skills', d.name, 'SKILL.md'))).map((d) => d.name).sort();
   } catch { return []; }
 }
+function skills() { return [...builtin(), ...extraSkills().map((s) => s.key)]; }
 
-let cached = '';
-function instructions() {
-  if (!cached) cached = fs.readFileSync(path.join(KIT, 'instructions.md'), 'utf8').replace(/\r\n/g, '\n').trim();
-  return cached;
+/** 整个技能文件夹复制过去（技能可以带参考文档、示例、脚本），内容一样的文件跳过 */
+function copyFile(from, to) {
+  const body = fs.readFileSync(from);
+  try { if (fs.readFileSync(to).equals(body)) return; } catch { /* 还没有 */ }
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.writeFileSync(to, body);
+}
+function copyDir(src, dest) {
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, e.name), to = path.join(dest, e.name);
+    if (e.isDirectory()) copyDir(from, to);
+    else if (e.isFile()) copyFile(from, to);
+  }
+}
+
+const cached = {};
+/** kind = 'plugin' 时是 AI 工坊做插件用的那份 */
+function instructions(kind = '') {
+  const file = kind === 'plugin' ? 'plugin-instructions.md' : 'instructions.md';
+  if (!cached[file]) cached[file] = fs.readFileSync(path.join(KIT, file), 'utf8').replace(/\r\n/g, '\n').trim();
+  return cached[file];
+}
+
+// 插件技能的参考资料（SDK、样式、示例插件）只维护 plugin-kit 那一份，装技能时一起带过去
+const PLUGIN_KIT = path.join(__dirname, 'plugin-kit');
+function addPluginReference(skillDir) {
+  if (!fs.existsSync(skillDir)) return;
+  for (const f of ['sdk.js', 'ui.css']) { try { copyFile(path.join(PLUGIN_KIT, f), path.join(skillDir, 'reference', f)); } catch { /* 缺文件就算了 */ } }
+  try { copyDir(path.join(PLUGIN_KIT, 'examples'), path.join(skillDir, 'examples')); } catch { /* 没带示例 */ }
 }
 
 const skillFile = (engine, id) => path.join(SKILL_ROOT[engine] || SKILL_ROOT.codex, id, 'SKILL.md').replace(/\\/g, '/');
@@ -26,13 +57,9 @@ const skillFile = (engine, id) => path.join(SKILL_ROOT[engine] || SKILL_ROOT.cod
 /** 把技能复制进任务文件夹；每轮都调用，已有且一样的就跳过（导播台升级后旧任务也能拿到新版技能） */
 function installKit(work, engine) {
   const dest = path.join(work, SKILL_ROOT[engine] || SKILL_ROOT.codex);
-  for (const id of skills()) {
-    const src = path.join(KIT, 'skills', id, 'SKILL.md'), to = path.join(dest, id, 'SKILL.md');
-    const body = fs.readFileSync(src);
-    try { if (fs.readFileSync(to).equals(body)) continue; } catch { /* 还没有 */ }
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.writeFileSync(to, body);
-  }
+  for (const id of builtin()) copyDir(path.join(KIT, 'skills', id), path.join(dest, id));
+  addPluginReference(path.join(dest, 'plugin-dev'));
+  for (const s of extraSkills()) copyDir(s.dir, path.join(dest, s.key));
   return dest;
 }
 
@@ -43,4 +70,4 @@ function skillLead(engine, id) {
   return `先读技能文件 ${skillFile(engine, id)}${also}，严格按其中的流程和格式完成下面的任务。\n\n`;
 }
 
-module.exports = { skills, instructions, installKit, skillLead, skillFile };
+module.exports = { skills, instructions, installKit, skillLead, skillFile, setExtra };

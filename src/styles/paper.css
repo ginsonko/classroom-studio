@@ -1,0 +1,52 @@
+/* 自己组卷 */
+.sd-pane.pc { flex-direction: row; align-items: stretch; gap: 0; overflow: hidden; padding: 0; }
+.pc-bank { flex: 0 0 46%; min-width: 360px; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 18px 22px; border-right: 1px solid var(--line); }
+.pc-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pc-filters .sd-search { flex: 1 1 200px; }
+.pc-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+.pc-q { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); cursor: grab; }
+.pc-q.in { opacity: .55; cursor: default; }
+.pc-q .sd-img { width: 96px; height: 60px; }
+.pc-q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 0; text-align: left; background: none; color: inherit; }
+.pc-q-main p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--fg-0); overflow-wrap: anywhere; }
+.pc-q-main p.empty { color: var(--fg-3); }
+.pc-q-main > .sd-tag { align-self: flex-start; }
+.pc-add { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--cue); background: var(--cue-soft); }
+.pc-add:hover { color: #04161a; background: var(--cue); }
+.pc-add.on { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+
+.pc-paper { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 22px 22px 18px; }
+.pc-head { display: flex; align-items: center; gap: 10px; }
+.pc-head .sd-title { flex: 1; font-size: 15px; font-weight: 650; }
+.pc-num { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); white-space: nowrap; }
+.pc-num input { width: 64px; padding: 5px 7px; border-radius: var(--r-sm, 6px); font: inherit; font-size: 12.5px; color: var(--fg-0); background: var(--bg-1); border: 1px solid var(--line); text-align: center; }
+.pc-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--r-md); font-size: 12.5px; color: var(--fg-1); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
+.pc-sum b { color: var(--fg-0); font-size: 15px; }
+.pc-sum .flex { flex: 1; }
+.pc-drop { padding: 40px 20px; border: 1.5px dashed var(--line); border-radius: var(--r-md); line-height: 1.8; }
+.pc-drop.over, .pc-empty.over { border-color: var(--cue); background: var(--cue-soft); }
+.pc-sec { display: flex; flex-direction: column; gap: 6px; }
+.pc-sec-h { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 10px; border-left: 3px solid var(--cue); border-radius: 0 var(--r-md) var(--r-md) 0; background: var(--cue-soft); }
+.pc-sec-h .pc-cn { font-weight: 700; color: var(--fg-0); }
+.pc-sec-h input { flex: 0 1 160px; min-width: 60px; padding: 3px 6px; border-radius: 6px; font: inherit; font-weight: 700; color: var(--fg-0); background: transparent; border: 1px solid transparent; }
+.pc-sec-h input:hover, .pc-sec-h input:focus { border-color: var(--line); background: var(--bg-1); outline: none; }
+.pc-sec-h i { font-style: normal; font-size: 12px; color: var(--fg-2); white-space: nowrap; }
+.pc-sec-h .flex { flex: 1; }
+.pc-sec-h > button, .pc-act button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--fg-2); background: transparent; }
+.pc-sec-h > button:hover:not(:disabled), .pc-act button:hover:not(:disabled) { color: var(--fg-0); background: var(--bg-3); }
+.pc-sec-h > button:disabled, .pc-act button:disabled { opacity: .3; }
+.pc-items { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.pc-items li { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
+.pc-items li.over { box-shadow: inset 0 2px 0 var(--cue), inset 0 0 0 1px var(--line); }
+.pc-items li .n { flex: none; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; font-size: 11.5px; font-weight: 700; color: #04161a; background: var(--cue); }
+.pc-grip { flex: none; margin-top: 4px; color: var(--fg-3); cursor: grab; }
+.pc-score { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg-2); }
+.pc-score input { width: 52px; padding: 3px 5px; border-radius: 6px; font: inherit; font-size: 12.5px; color: var(--fg-0); background: var(--bg-2); border: 1px solid var(--line); text-align: center; }
+.pc-act { flex: none; display: flex; gap: 1px; }
+.pc-empty { justify-content: center; padding: 14px !important; font-size: 12px; color: var(--fg-3); border: 1.5px dashed var(--line); background: transparent !important; box-shadow: none !important; }
+.pc-foot { flex-wrap: wrap; margin-top: 4px; }
+
+/* 组作业的两种模式 */
+.hw-mode { display: flex; align-items: center; gap: 10px; padding: 10px 22px 0; }
+.hw-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hw-wrap > .sd-pane { flex: 1; min-height: 0; }

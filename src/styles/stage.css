@@ -151,13 +151,28 @@
 .answer-cover.partial svg { width: 3cqw; height: 3cqw; }
 .answer-cover.partial b { font-size: 2.8cqw; letter-spacing: .2em; }
 .answer-cover.partial span { font-size: 1.6cqw; }
-.answer-line {
+.answer-cover.partial { border-bottom: 2px dashed rgba(245, 166, 35, .4); overflow: hidden; }
+.answer-cover.partial.slim { padding-top: 0; align-content: center; }
+.answer-cover.partial.slim b { font-size: 1.9cqw; }
+/* 教师端：遮挡区域画成橙色虚线框，上沿有拖动把手 */
+.answer-zone {
   position: absolute; left: 0; right: 0; z-index: 5; pointer-events: none;
-  border-top: 2px dashed rgba(245, 166, 35, .8);
-  background: linear-gradient(rgba(245, 166, 35, .10), transparent 40px);
-  height: 40px;
+  border: 2px dashed rgba(245, 166, 35, .8); border-radius: 4px;
+  background: repeating-linear-gradient(135deg, rgba(245, 166, 35, .07) 0 10px, transparent 10px 20px);
 }
-.answer-line.open { border-top-color: rgba(52, 199, 123, .7); background: none; }
+.answer-zone.open { border-color: rgba(52, 199, 123, .6); background: none; }
+.answer-grip {
+  position: absolute; top: -11px; left: 50%; transform: translateX(-50%); pointer-events: auto;
+  display: grid; place-items: center; width: 34px; height: 20px; border-radius: 10px; border: 0;
+  background: #f5a623; color: #241500; cursor: ns-resize; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.answer-badge .ab-more { background: rgba(255,255,255,.12); color: #ffd38a; font-weight: 500; }
+.ab-menu {
+  position: absolute; top: calc(100% + 4px); right: 0; display: flex; flex-direction: column; gap: 2px; padding: 5px;
+  border-radius: 10px; background: rgba(26, 20, 10, .96); border: 1px solid rgba(245, 166, 35, .45); box-shadow: 0 8px 22px rgba(0,0,0,.4); min-width: 200px;
+}
+.answer-badge .ab-menu button { background: none; color: #ffe2b0; text-align: left; border-radius: 6px; padding: 6px 10px; font-weight: 500; }
+.answer-badge .ab-menu button:hover { background: rgba(245, 166, 35, .2); }
 .answer-badge {
   position: absolute; top: 8px; right: 8px; z-index: 6;
   display: flex; align-items: center; gap: 6px;

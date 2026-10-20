@@ -202,6 +202,23 @@ ok('作业文档：题图引用、答案另起一页、未自检提醒', () => {
   assert.ok(types.includes('gap'), '解答题后留作答空白');
   assert.equal(p.title, '测试作业', '配色注释不进正文');
   assert.ok(!splitSlides(p.blocks).flat().some((b) => b.type === 'break'), '幻灯片里不出现分页块');
+  const head = p.blocks.find((b) => b.type === 'fields');
+  assert.ok(head && head.type === 'fields');
+  assert.deepEqual(head.items, [{ label: '姓名', value: '俊宇' }, { label: '日期', value: '' }, { label: '用时', value: '' }, { label: '得分', value: '' }]);
+  assert.ok(!splitSlides(p.blocks).flat().some((b) => b.type === 'fields'), '幻灯片里不出现填写栏');
+});
+
+ok('表头填写栏与填空横线：下划线不再被当成加粗吃掉', () => {
+  const p = parseMarkdown('# 小测\n\n时间：40 分钟　满分：100 分　姓名：________　得分：________\n\n姓名：__　日期：__\n\n[[表头 班级|姓名：小林]]\n\n1. 速度的单位是 ____，加速度的单位是 ＿＿＿。\n\n注意：本题________要写过程\n\n答：________\n\n说明：两种方法都可以');
+  const f = p.blocks.filter((b) => b.type === 'fields').map((b) => b.type === 'fields' ? b.items : []);
+  assert.deepEqual(f[0], [{ label: '时间', value: '40 分钟' }, { label: '满分', value: '100 分' }, { label: '姓名', value: '' }, { label: '得分', value: '' }]);
+  assert.deepEqual(f[1], [{ label: '姓名', value: '' }, { label: '日期', value: '' }]);
+  assert.deepEqual(f[2], [{ label: '班级', value: '' }, { label: '姓名', value: '小林' }]);
+  assert.equal(f.length, 3, '普通句子不当成表头');
+  const li = p.blocks.find((b) => b.type === 'li');
+  assert.ok(li && li.type === 'li' && li.runs.filter((r) => r.t === 'text' && r.blank).length === 2, '填空横线');
+  assert.ok(li.runs.every((r) => r.t !== 'text' || !r.b), '没有被当成加粗');
+  assert.ok(p.blocks.some((b) => b.type === 'p' && b.runs.some((r) => r.t === 'text' && r.blank)), '句子里的横线也保留');
 });
 
 ok('课件大纲：校验模型输出、规则框架、按页切分', () => {

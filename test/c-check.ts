@@ -51,6 +51,12 @@ check('math expressions support x/t, implicit multiplication and standard expone
 check('unknown identifiers, object-property access and pathological nesting do not execute', () => {
   for (const s of ['globalThis.process.exit()', 'constructor.constructor(1)', 'sin.constructor(1)', 'x;process.exit()', 'random()', '('.repeat(100) + '1' + ')'.repeat(100)]) assert.ok(Number.isNaN(compileExpression(s)(2)), s);
 });
+// Node 没有 Path2D（化学仪器用它画轮廓）：记录调用并检查参数都是有限数
+(globalThis as { Path2D?: unknown }).Path2D ??= class {
+  constructor() {
+    return new Proxy(this, { get: (t, p) => p in t ? Reflect.get(t, p) : (...args: unknown[]) => { for (const a of args) if (typeof a === 'number') assert.ok(Number.isFinite(a), `Path2D.${String(p)} received ${a}`); } });
+  }
+};
 function canvas() {
   const operations: { name: string; args: unknown[] }[] = [];
   const target = { globalAlpha: 1, measureText: (s: string) => ({ width: s.length * .01 }) };

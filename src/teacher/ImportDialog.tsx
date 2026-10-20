@@ -14,7 +14,7 @@ export interface ImportSummary {
   kind: 'yinzi' | 'legacy'; site: { name: string; origin: string; host: string; official: boolean } | null; profile: string; mode: 'merge' | 'replace';
   baseUrl: string; baseFrom: string; keyHint: string; keyName: string; smart: boolean; replaces: boolean;
   text: string; vision: string; textFrom: string; visionFrom: string;
-  /** AI 工作室两个引擎的默认模型（网站「Codex 智能体」「Claude 智能体」） */
+  /** AI 工坊两个引擎的默认模型（网站「Codex 智能体」「Claude 智能体」） */
   codex?: string; claude?: string;
 }
 type Phase = { k: 'ask' } | { k: 'busy'; t: string } | { k: 'ok'; t: string } | { k: 'bad'; t: string };
@@ -97,8 +97,8 @@ export function ImportDialog() {
             <dt>API Key</dt><dd>{s.keyHint ? <>sk-…{s.keyHint}{s.keyName && <i className="imp-dim">「{s.keyName}」</i>}{s.smart && <i className="imp-tag">智能路由</i>}{s.replaces && <em>会替换现在保存的 Key</em>}</> : <span className="imp-dim">不变（用本机已保存的 Key）</span>}</dd>
             <dt>文本模型</dt><dd>{s.text ? <Change from={s.textFrom} to={s.text} keep="" /> : <span className="imp-dim">{replace ? '清空后自动挑选' : autoText}</span>}</dd>
             <dt>看图模型</dt><dd>{s.vision ? <Change from={s.visionFrom} to={s.vision === (s.text || s.textFrom) ? '同文本模型' : s.vision} keep="" /> : <span className="imp-dim">{replace ? '清空（同文本模型）' : s.visionFrom ? `不变（${s.visionFrom}）` : '同文本模型'}</span>}</dd>
-            {s.codex && <><dt>Codex 智能体</dt><dd>{s.codex}<i className="imp-dim">（AI 工作室）</i></dd></>}
-            {s.claude && <><dt>Claude 智能体</dt><dd>{s.claude}<i className="imp-dim">（AI 工作室）</i></dd></>}
+            {s.codex && <><dt>Codex 智能体</dt><dd>{s.codex}<i className="imp-dim">（AI 工坊）</i></dd></>}
+            {s.claude && <><dt>Claude 智能体</dt><dd>{s.claude}<i className="imp-dim">（AI 工坊）</i></dd></>}
           </dl>
         </>}
         {phase.k === 'ask' && replace && <label className="imp-sure"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} />覆盖模式：没勾选的项目会被清空，我已确认</label>}

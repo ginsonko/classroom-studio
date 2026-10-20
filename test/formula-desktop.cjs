@@ -60,10 +60,10 @@ const strokes = [
   const key = await T(`return Q.inkKey('board',0)`);
   const K = JSON.stringify(key);
 
-  // ── 1. 数学学生：浮层有 Σ 公式按钮、编辑按钮，没有物理器材库 ──
+  // ── 1. 数学学生：浮层有 Σ 公式按钮、编辑按钮，没有「力」工具 ──
   await T(`await window.csHost.call('ai.setConfig',{baseUrl:${JSON.stringify(base)},model:'fake-text',visionModel:'fake-vision',key:'sk-test-0000'});return true`);
   await until(() => D(`return s.subject==='math'&&!!document.querySelector('.tp-fx')`), 8000, 'formula button').catch(async (e) => { throw Error(e.message + ' dock subject=' + await D('return s.subject') + ' teacher subject=' + await T('return s.subject+" "+s.studentId+" "+s.students.length')); });
-  assert.equal(await D(`return !!document.querySelector('[aria-label="物理器材库"]')`), false, 'no physics objects for math');
+  assert.equal(await D(`return [...document.querySelectorAll('.tdock [aria-label]')].some((b) => /^力 /.test(b.getAttribute('aria-label')))`), false, 'no force tool for math');
   assert.ok(await D(`return !!document.querySelector('[aria-label="编辑选中内容"]')`), 'selection editor available for math');
   mark('math dock: Σ formula button and selection editor are there, physics objects are not');
 

@@ -12,7 +12,9 @@ import { TeacherApp } from './teacher/TeacherApp';
 import { Tooltips } from './teacher/TeacherApp';
 import { DockApp } from './dock/DockApp';
 import {host} from './lib/host';
+import { broadcastTheme, installPluginBridge } from './plugins/bridge';
 if(host.test)void import('./lib/qa');
+installPluginBridge();
 
 /** 渲染出错时记日志并在短暂停顿后重新挂载，避免整个窗口变成一块点不动的空白 */
 class Recover extends Component<{ children: ReactNode }, { failed: number }> {
@@ -29,7 +31,7 @@ function Root() {
   const skin = useStore((s) => s.skin);
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
-
+    broadcastTheme();
   }, [skin]);
   if (ROLE === 'dock') return <><Recover><DockApp/></Recover><Tooltips/></>;
   if (ROLE === 'student')

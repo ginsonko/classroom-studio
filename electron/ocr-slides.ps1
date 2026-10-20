@@ -24,10 +24,12 @@ foreach($p in ($Pages -split ',')){
         $decoder=Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
         $bitmap=Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
         $ocr=Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-        $h=[double]$decoder.PixelHeight
+        $h=[double]$decoder.PixelHeight;$wd=[double]$decoder.PixelWidth
         foreach($line in $ocr.Lines){
-          $top=1e9;foreach($w in $line.Words){if($w.BoundingRect.Y -lt $top){$top=$w.BoundingRect.Y}}
-          $lines+=[pscustomobject]@{t=[string]$line.Text;y=[math]::Round($top/$h,3)}
+          $top=1e9;$bot=0;foreach($w in $line.Words){if($w.BoundingRect.Y -lt $top){$top=$w.BoundingRect.Y};$e=$w.BoundingRect.Y+$w.BoundingRect.Height;if($e -gt $bot){$bot=$e}}
+          # 行首几个词的位置（题库导入：把原题号涂掉）
+          $ws=@($line.Words|Select-Object -First 4|ForEach-Object{,@([string]$_.Text,[math]::Round($_.BoundingRect.X/$wd,4))})
+          $lines+=[pscustomobject]@{t=[string]$line.Text;y=[math]::Round($top/$h,4);b=[math]::Round($bot/$h,4);ws=[object[]]$ws}
         }
         $bitmap.Dispose()
       } finally { $stream.Dispose() }

@@ -1,0 +1,28 @@
+{
+  "protocol": "cs-plugin/1",
+  "id": "math-solids",
+  "name": "立体几何图形",
+  "version": "1.0.0",
+  "author": "最强网课教辅系统",
+  "description": "数学绘图库里多一组立体图形：圆锥、圆柱、球、正方体、长方体、三棱锥、三棱柱、圆台。看不见的棱画虚线，颜色跟着黑板走。",
+  "icon": "icon.svg",
+  "subjects": ["math"],
+  "contributes": {
+    "shapes": [
+      {
+        "subject": "math",
+        "group": "立体几何",
+        "items": [
+          { "name": "圆锥", "file": "shapes/cone.svg" },
+          { "name": "圆柱", "file": "shapes/cylinder.svg" },
+          { "name": "球", "file": "shapes/sphere.svg" },
+          { "name": "正方体", "file": "shapes/cube.svg" },
+          { "name": "长方体", "file": "shapes/cuboid.svg" },
+          { "name": "三棱锥", "file": "shapes/tetrahedron.svg" },
+          { "name": "三棱柱", "file": "shapes/prism.svg" },
+          { "name": "圆台", "file": "shapes/frustum.svg" }
+        ]
+      }
+    ]
+  }
+}

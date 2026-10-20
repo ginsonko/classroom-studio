@@ -1,6 +1,8 @@
 import type { DrawCtx } from '../ink/draw';
 import type { PhysObj } from './model';
 import { fillTextPx } from '../ink/pxText';
+import { drawMath } from './drawMath';
+import { drawChem } from './drawChem';
 
 /** Shared vector renderer. All coordinates are in page-width units. */
 export function drawObj(d: DrawCtx, o: PhysObj, opts: { ghost?: boolean; selected?: boolean; color?: string } = {}) {
@@ -192,6 +194,9 @@ export function drawObj(d: DrawCtx, o: PhysObj, opts: { ghost?: boolean; selecte
     }
     case 'diode': terminals(w * .22); path([[-w * .22, y0], [w * .22, 0], [-w * .22, y1]], true); line(w * .22, y0, w * .22, y1); break;
     case 'junction': circle(0, 0, Math.min(w, h) / 2, true); break;
+    default:
+      if (o.kind.startsWith('m-')) drawMath(d, o, col);
+      else if (o.kind.startsWith('c-')) drawChem(d, o, col);
   }
   if (o.label && !noLabel) text(o.label, 0, labelInside ? 0 : y1 + .017, Math.max(.012, Math.min(.024, labelInside ? h * .42 : .018)));
   if (opts.selected) { ctx.save(); ctx.lineWidth = .001; ctx.strokeStyle = '#3dd9eb'; ctx.setLineDash([.004, .004]); ctx.strokeRect(x0 - .005, y0 - .005, w + .01, h + .01); ctx.restore(); }

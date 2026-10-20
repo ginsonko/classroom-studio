@@ -15,7 +15,7 @@ import type { BoardSkin } from './palette';
 export type { BoardSkin };
 export { PEN_COLORS, STUDENT_COLOR, DARK_BOARDS, resolveColor } from './palette';
 export type Pattern = 'none' | 'grid' | 'dots' | 'lines' | 'coord' | 'four' | 'tian';
-export type Page = 'console' | 'schedule' | 'students' | 'study' | 'agents' | 'auto';
+export type Page = 'console' | 'schedule' | 'students' | 'study' | 'agents' | 'auto' | 'replay' | 'plugins';
 export interface Shared {
   pgm: View; pgmMat: Material; boardSkin: BoardSkin; pattern: Pattern; eyeCare: number;
   ink: Record<string, Stroke[]>; studentTools: 'open' | 'locked' | 'hidden';
@@ -39,6 +39,7 @@ interface Local {
   aiOpen: boolean; skinsOpen: boolean; paletteOpen: boolean; roots: string[]; saveError: string | null;
   answerMarks: Record<string, number[] | AnswerMark>;   // 文件路径 → 老师确认过的答案页（旧版只存页码）
   answerAutoDetect: boolean;   // 打开 PDF / PPT 时按文字自动识别答案页
+  freeSubject: SubjectId;      // 自由课堂（不绑学生）用的学科，记住老师上次选的
 }
 export interface InkChange { remove?: string[]; upsert?: Stroke[]; order?: string[] }
 interface HistoryEntry { before: Stroke[]; after: Stroke[]; beforeOrder?:string[]; afterOrder?:string[] }
@@ -66,7 +67,7 @@ export type State=Shared&Local&Actions;
 export const inkKey=(materialId:string,page:number)=>`${materialId}#${page}`;
 export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...p});
 export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit'];
-const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect'];
+const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject'];
 const board=boardMaterial();
 // contextBridge 传进来的对象不可扩展：撤销记录等要原地修改的数据必须先深拷贝，否则第一次在新页面书写就抛错
 const stored = (()=>{if(host.electron)return host.initial?JSON.parse(JSON.stringify(host.initial)):{};if(ROLE!=='teacher')return {};try{return JSON.parse(localStorage.getItem('cs.v2.teacher')||'{}');}catch{return {};}})();
@@ -78,10 +79,10 @@ if(!Number.isFinite(sharedInit.deskLimit))sharedInit.deskLimit=DEFAULT_LIMIT;
 if(sharedInit.sim)sharedInit.sim={...sharedInit.sim,playing:false};
 // 0.8.1 起橡皮默认局部擦除（像真橡皮）；旧存档里的整笔擦除是当时的默认值，不是老师选的
 if(!sharedInit.inkOptions.eraserV)sharedInit.inkOptions={...sharedInit.inkOptions,eraserMode:'segment',eraserSize:'m',eraserV:2};
-const localInit:Local={students:host.electron?[]:STUDENTS,slots:host.electron?[]:SLOTS,learning:{},skin:'graphite',motion:true,page:'console',libraryOpen:true,rightOpen:true,libraryW:300,rightW:340,pinned:[],recents:[],favorites:[],expanded:[],pvw:null,reader:{mat:board,view:defaultView(board),split:null},notes:{},studentId:host.electron?'free':'junyu',rec:{on:false,start:0},aiOpen:false,skinsOpen:false,paletteOpen:false,roots:[],saveError:null,answerMarks:{},answerAutoDetect:true,...(ROLE==='teacher'?stored.local:{})};
+const localInit:Local={students:host.electron?[]:STUDENTS,slots:host.electron?[]:SLOTS,learning:{},skin:'graphite',motion:true,page:'console',libraryOpen:true,rightOpen:true,libraryW:300,rightW:340,pinned:[],recents:[],favorites:[],expanded:[],pvw:null,reader:{mat:board,view:defaultView(board),split:null},notes:{},studentId:host.electron?'free':'junyu',rec:{on:false,start:0},aiOpen:false,skinsOpen:false,paletteOpen:false,roots:[],saveError:null,answerMarks:{},answerAutoDetect:true,freeSubject:'physics',...(ROLE==='teacher'?stored.local:{})};
 // 0.7 之前的存档 shared 里没有 subject：按当前学生推一次
 const inferredSubject=!(stored.shared&&'subject'in stored.shared);
-if(inferredSubject)sharedInit.subject=studentSubject(localInit.students.find((x)=>x.id===localInit.studentId));
+if(inferredSubject){const stu=localInit.students.find((x)=>x.id===localInit.studentId);sharedInit.subject=stu?studentSubject(stu):localInit.freeSubject;}
 
 /** Single public projection for every initial snapshot and publication. */
 export function publicState(s:Shared):Shared {
@@ -134,7 +135,7 @@ export const useStore=create<State>()((set,get)=>{
   (redo?h.undo:h.redo).push(item);
  };
  return {...sharedInit,...localInit,
- set:(p)=>{set(p);const sp:Record<string,unknown>=Object.fromEntries(Object.entries(p).filter(([k])=>SHARED_KEYS.includes(k as keyof Shared)));if(ROLE==='teacher'&&('studentId' in p||'students' in p)){const ns=get(),sub=studentSubject(ns.students.find((x)=>x.id===ns.studentId));if(sub!==ns.subject){set({subject:sub});sp.subject=sub;}}if(Object.keys(sp).length)push(sp as Partial<Shared>);},
+ set:(p)=>{set(p);const sp:Record<string,unknown>=Object.fromEntries(Object.entries(p).filter(([k])=>SHARED_KEYS.includes(k as keyof Shared)));if(ROLE==='teacher'&&('studentId' in p||'students' in p)){const ns=get(),stu=ns.students.find((x)=>x.id===ns.studentId),sub=stu?studentSubject(stu):ns.freeSubject;if(sub!==ns.subject){set({subject:sub});sp.subject=sub;}}if(Object.keys(sp).length)push(sp as Partial<Shared>);},
  setShared:(p)=>{set(p);push(p);},
  editInk:(key,c,actor)=>edit(key,c,actor),
  addStroke:(key,s,b=true)=>edit(key,{upsert:[s]},s.author,b),
@@ -177,6 +178,8 @@ export function flushStore(){
  try{localStorage.setItem('cs.v2.teacher',JSON.stringify(value));}catch{if(!s.saveError)useStore.setState({saveError:'浏览器存储已满，请使用桌面版保存课堂'});}return Promise.resolve();
 }
 useStore.subscribe(()=>{if(ROLE!=='teacher')return;clearTimeout(saveTimer);saveTimer=window.setTimeout(flushStore,600);});
+// 自由课堂里切换的学科（教师端或浮层都能切）记下来，下次不绑学生时沿用
+if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if(s.subject!==prev.subject&&s.subject!==s.freeSubject&&!s.students.some((x)=>x.id===s.studentId))useStore.setState({freeSubject:s.subject});});
 window.addEventListener('pagehide',()=>{void flushStore();});
 bus.on(m=>{
  const st=useStore.getState();

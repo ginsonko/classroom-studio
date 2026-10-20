@@ -12,8 +12,8 @@ import { inkKey, useStore, ROLE } from '../lib/store';
 import type { Author, Material, PageInfo, Tool, View } from '../lib/types';
 
 import { host } from '../lib/host';
-import { Eye, EyeOff } from 'lucide-react';
-import { coverFrom, hiddenFromStudent, isAnswer, toggleReveal } from '../doc/answers';
+import { Eye, EyeOff, GripHorizontal } from 'lucide-react';
+import { coverSegs, hiddenFromStudent, isAnswer, moveSegTop, skipWholeFile, toggleAnswerPage, toggleReveal } from '../doc/answers';
 export interface StageProps {
   scope?:'program'|'preview';
   inkLayer?:'public'|'private';
@@ -84,9 +84,9 @@ export function Stage(p: StageProps) {
   const onAir = useStore((s) => s.pgmMat.id === mat.id || (p.scope === 'program' && s.desk.some((w) => w.id === mat.id)));
   const guard = useStore((s) => s.answerGuard !== false);
   const hidden = onAir && hiddenFromStudent(mat, view.page, revealed, guard);
-  const from = coverFrom(mat, view.page);
-  const coverStudent = ROLE === 'student' && hidden && from === 0;
-  const coverPart = ROLE === 'student' && hidden && from > 0;
+  const segs = coverSegs(mat, view.page);
+  const coverStudent = ROLE === 'student' && hidden && !segs.length;
+  const coverPart = ROLE === 'student' && hidden && segs.length > 0;
   const showBadge = ROLE !== 'student' && onAir && guard && p.scope === 'program' && isAnswer(mat, view.page);
 
   return (
@@ -105,7 +105,7 @@ export function Stage(p: StageProps) {
           style={{ width: L.pw, height: L.ph, left: L.left, top: L.top, clipPath: clip, ['--cell' as string]: L.pw / 32 + 'px' }}
         >
           {coverStudent ? <AnswerCover /> : <PageContent mat={mat} page={page} index={view.page} scope={p.scope??'preview'} interactive={p.tool==='pointer'}/>}
-          {showBadge && <AnswerBadge mat={mat} page={view.page} open={!hidden} from={from} />}
+          {showBadge && <AnswerBadge mat={mat} page={view.page} open={!hidden} segs={segs} />}
           {view.fit === 'region' && view.region && view.region[1] + view.region[3] > 1 && mat.pages[view.page + 1] && !(ROLE === 'student' && hiddenFromStudent(mat, view.page + 1, revealed, guard)) && (
             <div className="page-next" style={{ top: '100%', height: L.pw * (mat.pages[view.page + 1].h / mat.pages[view.page + 1].w) }}>
               <PageContent mat={mat} page={mat.pages[view.page + 1]} index={view.page + 1} />
@@ -123,7 +123,7 @@ export function Stage(p: StageProps) {
             showPrivate={p.showPrivate}
             inkLayer={p.inkLayer}
           />}
-          {coverPart && <AnswerCover from={from} />}
+          {coverPart && segs.map(([a, b], i) => <AnswerCover key={i} from={a} to={b} />)}
           {p.overlays !== false && curtain !== null && (
             <div className="curtain" style={{ top: curtain * 100 + '%' }}>
               <div className="curtain-grip"><span />拖动揭开<span /></div>
@@ -144,19 +144,45 @@ export function Stage(p: StageProps) {
   );
 }
 
-function AnswerCover({ from = 0 }: { from?: number }) {
-  if (from > 0) return <div className="answer-cover partial" style={{ top: from * 100 + '%' }}><div><EyeOff size={28} /><b>答案</b><span>先自己想一想，老师稍后揭晓</span></div></div>;
+function AnswerCover({ from = 0, to = 1 }: { from?: number; to?: number }) {
+  if (from > 0 || to < 1) {
+    const small = to - from < 0.12;
+    return <div className={'answer-cover partial' + (small ? ' slim' : '')} style={{ top: from * 100 + '%', height: (to - from) * 100 + '%', bottom: 'auto' }}><div><EyeOff size={small ? 18 : 28} /><b>答案</b>{!small && <span>先自己想一想，老师稍后揭晓</span>}</div></div>;
+  }
   return <div className="answer-cover"><div><EyeOff size={34} /><b>答案页</b><span>先自己想一想，老师稍后揭晓</span></div></div>;
 }
 
-function AnswerBadge({ mat, page, open, from }: { mat: Material; page: number; open: boolean; from: number }) {
+/** 老师端：标出学生看不到的区域；遮挡条上沿可以拖动微调，遮错了一键取消 */
+function AnswerBadge({ mat, page, open, segs }: { mat: Material; page: number; open: boolean; segs: [number, number][] }) {
+  const [menu, setMenu] = useState(false);
+  // 微调和取消只改当前项（pgmMat）；浮动窗口里的课件先点一下切成当前项再改
+  const editable = useStore((s) => s.pgmMat.id === mat.id) && !open;
+  const drag = (i: number) => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const el = (e.currentTarget as HTMLElement).closest('.page') as HTMLElement | null;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const move = (ev: PointerEvent) => moveSegTop(page, i, (ev.clientY - r.top) / r.height);
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
   return (
     <>
-      {from > 0 && <div className={'answer-line' + (open ? ' open' : '')} style={{ top: from * 100 + '%' }} />}
+      {segs.map(([a, b], i) => (
+        <div key={i} className={'answer-zone' + (open ? ' open' : '')} style={{ top: a * 100 + '%', height: (b - a) * 100 + '%' }}>
+          {editable && <button className="answer-grip" onPointerDown={drag(i)} data-tip="拖动调整遮挡的上沿" aria-label="拖动调整遮挡的上沿"><GripHorizontal size={12} /></button>}
+        </div>
+      ))}
       <div className={'answer-badge' + (open ? ' open' : '')}>
         {open ? <Eye size={13} /> : <EyeOff size={13} />}
-        <span>{open ? '答案已揭晓 · 学生可见' : from > 0 ? '虚线下方是答案 · 学生看不到' : '答案页 · 学生看不到'}</span>
+        <span>{open ? '答案已揭晓 · 学生可见' : segs.length ? `${segs.length > 1 ? segs.length + ' 段' : '框内'}是答案 · 学生看不到` : '答案页 · 学生看不到'}</span>
         <button onClick={() => toggleReveal(mat.id, page)}>{open ? '收回' : '揭晓'}</button>
+        {editable && <button className="ab-more" onClick={() => setMenu(!menu)} aria-label="遮错了">遮错了</button>}
+        {menu && <div className="ab-menu" onPointerLeave={() => setMenu(false)}>
+          <button onClick={() => { toggleAnswerPage(page); setMenu(false); }}>本页不遮</button>
+          <button onClick={() => { skipWholeFile(); setMenu(false); }}>这份课件都不遮</button>
+          <button onClick={() => { useStore.getState().setShared({ answerGuard: false }); setMenu(false); }}>以后都不遮（可在设置里重新打开）</button>
+        </div>}
       </div>
     </>
   );

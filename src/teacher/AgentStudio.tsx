@@ -1,10 +1,11 @@
-// AI 工作室：后台任务中心（Codex CLI / Claude Code 在本机无界面运行）+ AI 账本。
-// 任务在主进程里跑，这里只负责发起、查看实时进度、追加指令、停止和查看成果。
+// AI 工坊：后台任务中心（Codex CLI / Claude Code 在本机无界面运行）+ AI 账本。
+// 任务在主进程里跑，这里只负责发起、查看实时进度、追加指令、停止和查看成果；做插件的任务右侧是实时预览。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot, ChevronRight, CircleStop, Download, FileText, FolderOpen, FolderPlus, Loader2, Plus, RefreshCw, Send, Settings2, ShieldCheck, Sparkles, Terminal,
-  Trash2, TriangleAlert, Wallet, Wrench, X,
+  Trash2, TriangleAlert, Wallet, Wrench, X, Puzzle,
 } from 'lucide-react';
+import { loadPlugins, usePlugins } from '../plugins/pluginStore';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { packOf, studentSubject } from '../lib/subjects';
@@ -12,6 +13,7 @@ import { addRoot } from '../lib/useLib';
 import { loadAgentModel, loadStudioKey, saveAgentModel, saveStudioKey, type AgentEngine } from '../lib/agentPrefs';
 import { importBank, parseBank, studyReady } from '../lib/agentBank';
 import { ModelPicker } from '../ui/ModelPicker';
+import { AttachChips, EFFORT_NAME, EffortSeg, PluginPreview, useAttachments, type Effort } from './Workshop';
 import '../styles/agents.css';
 
 type Engine = AgentEngine;
@@ -29,6 +31,7 @@ interface Task {
   note?: string; cap: number; cny: number; tokens: number; turns: number; created: number; updated: number; work: string;
   queued: number; last?: Ev | null; events?: Ev[]; live?: number; model?: string; pick?: string; permission?: Permission;
   formats?: Fmt[]; exporting?: boolean; calibrated?: boolean; reconciled?: boolean;
+  kind?: '' | 'plugin'; effort?: Effort; check?: { at: number; ok: boolean; problems: string[]; id: string; name: string; version: string };
 }
 interface CliInfo { name: string; found: boolean; version: string; pkg: string; where?: string; bundled?: string; native?: boolean }
 type Detect = { codex: CliInfo; claude: CliInfo; npm: boolean };
@@ -53,7 +56,7 @@ const WHERE_LABEL: Record<string, string> = { bundled: '内置', private: '已�
 
 // 每种成品的详细做法写在内置技能（electron/agent-kit/skills）里，这里只放老师最常改的几项要求；
 // 导播台会在提示词前面让 AI 先读对应的 SKILL.md。
-const TEMPLATES: { id: string; label: string; hint: string; skill: string; formats: Fmt[]; build: (topic: string) => string }[] = [
+const TEMPLATES: { id: string; label: string; hint: string; skill: string; formats: Fmt[]; kind?: 'plugin'; build: (topic: string) => string }[] = [
   {
     id: 'html', label: '互动课件', hint: '单文件 HTML，可调参数的动画', skill: 'courseware-html', formats: [],
     build: (t) => `做一份「${t}」的单文件 HTML 互动课件，保存为「${t}.html」。\n6～10 页；至少一页带滑块调参数的动画演示；最后放 3 道随堂小测和答案页。`,
@@ -82,8 +85,28 @@ const TEMPLATES: { id: string; label: string; hint: string; skill: string; forma
     id: 'plan', label: '教案', hint: '一对一流程，分钟级安排', skill: 'lesson-plan', formats: ['docx', 'pdf'],
     build: (t) => `写一份「${t}」的一对一教案「${t}-教案.md」，课时 60 分钟。`,
   },
+  {
+    id: 'plugin', label: '做插件', hint: '给导播台加新功能，边做边预览', skill: 'plugin-dev', formats: [], kind: 'plugin',
+    build: (t) => `做一个导播台插件「${t}」。\n想要的功能：\n放在哪里用：导播台面板（上课时随手打开）\n`,
+  },
   { id: 'free', label: '自定义', hint: '自己写要求', skill: '', formats: ['docx', 'pdf'], build: () => '' },
 ];
+type Template = (typeof TEMPLATES)[number] & { plugin?: string };
+
+/** 启用中的插件带来的任务类型排在「自定义」前面；插件开关变化时跟着刷新 */
+function usePluginTemplates(): Template[] {
+  const list = usePlugins((s) => s.list);
+  const [extra, setExtra] = useState<Template[]>([]);
+  useEffect(() => { void loadPlugins(); }, []);
+  useEffect(() => {
+    if (!host.electron) return;
+    host.call<{ key: string; label: string; hint: string; formats: Fmt[]; prompt: string; plugin: string }[]>('plugins.skills').then((rows) => setExtra(rows.map((s) => ({
+      id: s.key, label: s.label, hint: s.hint, skill: s.key, formats: s.formats, plugin: s.plugin,
+      build: (t: string) => s.prompt ? s.prompt.replace(/\{主题\}|\{topic\}/g, t) : `主题：「${t}」。`,
+    })))).catch(() => setExtra([]));
+  }, [list]);
+  return useMemo(() => [...TEMPLATES.slice(0, -1), ...extra, TEMPLATES[TEMPLATES.length - 1]], [extra]);
+}
 
 export function AgentStudio() {
   const [tab, setTab] = useState<'tasks' | 'ledger'>('tasks');
@@ -94,7 +117,7 @@ export function AgentStudio() {
   return (
     <div className="ags">
       <header className="ags-head">
-        <div className="ags-title"><Sparkles size={18} /><h2>AI 工作室</h2><span>后台让 Codex / Claude 帮你备课，花费统一记账</span></div>
+        <div className="ags-title"><Sparkles size={18} /><h2>AI 工坊</h2><span>说需求就行：AI 在后台备课、做插件，花费统一记账</span></div>
         <nav className="ags-tabs">
           <button className={tab === 'tasks' ? 'on' : ''} onClick={() => setTab('tasks')}><Bot size={14} />任务中心</button>
           <button className={tab === 'ledger' ? 'on' : ''} onClick={() => setTab('ledger')}><Wallet size={14} />AI 账本</button>
@@ -128,9 +151,11 @@ function Tasks({ onSpend, cap }: { onSpend: () => void; cap: number }) {
   const [installLog, setInstallLog] = useState<string[]>([]);
   const [error, setError] = useState('');
   const selRef = useRef(sel); selRef.current = sel;
+  // 从插件页点「用 AI 修改」过来时停在新任务上
+  const [fromPlugins] = useState(() => !!usePlugins.getState().workshop);
 
   useEffect(() => {
-    host.call<Task[]>('agents.list').then((l) => { setTasks(l); if (l[0]?.status === 'running') setSel(l[0].id); }).catch((e) => setError(e.message));
+    host.call<Task[]>('agents.list').then((l) => { setTasks(l); if (l[0]?.status === 'running' && !fromPlugins) setSel(l[0].id); }).catch((e) => setError(e.message));
     host.call<Detect>('agents.detect').then(setCli).catch(() => {});
     return host.onEvent((e) => {
       if (e?.type !== 'agent') return;
@@ -227,7 +252,10 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
   const [engine, setEngine] = useState<Engine>(() => (localStorage.getItem('cs.agent.engine') as Engine) || 'codex');
   const [model, setModel] = useState(() => loadAgentModel(engine));
   const [permission, setPermission] = useState<Permission>(() => (localStorage.getItem('cs.agent.permission') as Permission) || 'full');
-  const [tpl, setTpl] = useState('html');
+  const [effort, setEffort] = useState<Effort>(() => (localStorage.getItem('cs.agent.effort') as Effort) || '');
+  const intent = useState(() => usePlugins.getState().workshop)[0];
+  const [tpl, setTpl] = useState(intent ? 'plugin' : 'html');
+  const [pluginId, setPluginId] = useState(intent?.id ?? '');
   const [topic, setTopic] = useState('');
   const [prompt, setPrompt] = useState('');
   const [taskCap, setTaskCap] = useState(cap);
@@ -235,9 +263,20 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
   const [busy, setBusy] = useState(false);
   const student = useStore((s) => s.students.find((x) => x.id === s.studentId));
   const [formats, setFormats] = useState<Fmt[]>([]);
+  const tpls = usePluginTemplates();
+  const installed = usePlugins((s) => s.list?.items ?? []);
+  const attach = useAttachments(onError);
+  const cur = tpls.find((x) => x.id === tpl) ?? tpls[0];
+  const plugin = cur.kind === 'plugin', editing = plugin ? installed.find((p) => p.id === pluginId) : undefined;
+  const editName = editing?.name ?? '';
+  useEffect(() => { if (intent) usePlugins.setState({ workshop: null }); }, [intent]);
   useEffect(() => setTaskCap(cap), [cap]);
-  useEffect(() => { const t = TEMPLATES.find((x) => x.id === tpl)!; if (t.id !== 'free') setPrompt(t.build(topic.trim() || '（主题）')); }, [tpl, topic]);
-  useEffect(() => setFormats(TEMPLATES.find((x) => x.id === tpl)!.formats), [tpl]);
+  useEffect(() => {
+    if (cur.id === 'free') return;
+    if (editName) setPrompt(`修改插件「${editName}」：\n`);
+    else setPrompt(cur.build(topic.trim() || (plugin ? '（插件名称）' : '（主题）')));
+  }, [cur, topic, editName, plugin]);
+  useEffect(() => setFormats(cur.formats), [cur]);
   const ready = cli?.[engine]?.found;
   const start = async () => {
     setBusy(true); onError('');
@@ -246,15 +285,22 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
       saveAgentModel(engine, model);
       saveStudioKey(studioKey);
       localStorage.setItem('cs.agent.permission', permission);
-      const t = TEMPLATES.find((x) => x.id === tpl)!;
-      const title = (topic.trim() ? topic.trim() + ' · ' : '') + t.label;
-      onStarted(await host.call<Task>('agents.start', { engine, title, prompt, context: backgroundFor(), cap: taskCap, useStudioKey: studioKey, formats, model, permission, skill: t.skill }));
+      localStorage.setItem('cs.agent.effort', effort);
+      const t = cur, name = editing ? editing.name : topic.trim();
+      const title = (name ? name + ' · ' : '') + (editing ? '改插件' : t.label);
+      onStarted(await host.call<Task>('agents.start', {
+        engine, title, prompt, context: backgroundFor(), cap: taskCap, useStudioKey: studioKey, formats, model, permission, skill: t.skill,
+        effort, attachments: attach.files, kind: t.kind ?? '', pluginId: editing?.id ?? '',
+      }));
+      attach.clear();
     } catch (e) { onError((e as Error).message); } finally { setBusy(false); }
   };
   return (
-    <div className="ags-new-form">
+    <div className="ags-new-form" onDrop={attach.onDrop} onDragOver={attach.onDragOver}>
       <h3>新任务</h3>
-      <p className="ags-sub">任务在本机后台运行，只能读写它自己的文件夹。{student ? `会附上「${student.name}」的学生情况。` : '顶栏选好学生后，会自动附上学生情况。'}</p>
+      <p className="ags-sub">{plugin
+        ? 'AI 按插件协议在独立文件夹里写插件，右侧实时预览，满意了一键装上。插件运行在沙盒里，拿不到电脑上的文件和密钥。'
+        : <>任务在本机后台运行，只能读写它自己的文件夹。{student ? `会附上「${student.name}」的学生情况。` : '顶栏选好学生后，会自动附上学生情况。'}</>}</p>
       <div className="ags-field">
         <label>用谁来做</label>
         <div className="ags-seg">
@@ -279,17 +325,33 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
         <p className="ags-perm-hint"><ShieldCheck size={12} />{PERMISSION_HINT[permission]}</p>
       </div>
       <div className="ags-field">
+        <label>思考档位</label>
+        <EffortSeg value={effort} onChange={setEffort} />
+      </div>
+      <div className="ags-field">
         <label>做什么</label>
         <div className="ags-tpls">
-          {TEMPLATES.map((t) => <button key={t.id} className={tpl === t.id ? 'on' : ''} onClick={() => setTpl(t.id)}><b>{t.label}</b><i>{t.hint}</i></button>)}
+          {tpls.map((t) => <button key={t.id} className={tpl === t.id ? 'on' : ''} onClick={() => setTpl(t.id)} data-tip={t.plugin ? `来自插件「${t.plugin}」` : undefined}><b>{t.plugin && <Puzzle size={11} />}{t.label}</b><i>{t.hint}</i></button>)}
         </div>
-        {tpl !== 'free' && <p className="ags-perm-hint"><Sparkles size={12} />已内置「{TEMPLATES.find((x) => x.id === tpl)!.label}」的完整做法（结构、格式、自检），AI 会先照着做，下面只写这次的特别要求即可</p>}
+        {tpl !== 'free' && <p className="ags-perm-hint"><Sparkles size={12} />已内置「{cur.label}」的完整做法（结构、格式、自检），AI 会先照着做，下面只写这次的特别要求即可</p>}
       </div>
-      {tpl !== 'free' && (
-        <div className="ags-field"><label>主题</label><input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="例如：斜面上的受力分析" /></div>
+      {plugin && (
+        <div className="ags-field">
+          <label>新做一个，还是改已装的插件</label>
+          <select className="ags-select" value={pluginId} onChange={(e) => setPluginId(e.target.value)}>
+            <option value="">新做一个插件</option>
+            {installed.map((p) => <option key={p.id} value={p.id}>改「{p.name}」v{p.version}</option>)}
+          </select>
+          {editing && <p className="ags-perm-hint"><ShieldCheck size={12} />AI 在一份副本上改，装上前原来的插件不受影响；装上时旧版自动存进历史，可以回退</p>}
+        </div>
       )}
-      <div className="ags-field grow"><label>给 AI 的要求（可以直接改）</label><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="写清楚要做什么、做成什么格式、存成什么文件名" /></div>
-      {tpl !== 'html' && (
+      {tpl !== 'free' && !editing && (
+        <div className="ags-field"><label>{plugin ? '插件名称' : '主题'}</label><input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={plugin ? '例如：课堂骰子、电路连接动画、化学方程式配平练习' : '例如：斜面上的受力分析'} /></div>
+      )}
+      <div className="ags-field grow"><label>给 AI 的要求（可以直接改）</label><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={attach.onPaste}
+        placeholder={plugin ? '写清楚想要什么功能、放在哪里用、上课时怎么操作；有参考图可以直接 Ctrl+V 贴进来' : '写清楚要做什么、做成什么格式、存成什么文件名'} /></div>
+      <AttachChips a={attach} />
+      {tpl !== 'html' && !plugin && (
         <div className="ags-field">
           <label>成品格式</label>
           <div className="ags-fmts">
@@ -308,7 +370,7 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
           <input type="checkbox" checked={studioKey} onChange={(e) => setStudioKey(e.target.checked)} />用导播台的 AI 接口
         </label>
         <span className="flex" />
-        <button className="ags-go" disabled={busy || !ready || !prompt.trim() || (tpl !== 'free' && !topic.trim())} onClick={() => void start()}>
+        <button className="ags-go" disabled={busy || !ready || !prompt.trim() || (tpl !== 'free' && !editing && !topic.trim())} onClick={() => void start()}>
           {busy ? <Loader2 size={15} className="ags-spin" /> : <Sparkles size={15} />}开始
         </button>
       </div>
@@ -382,7 +444,14 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
   const lastFile = (task.events ?? []).filter((e) => e.kind === 'file').length;
   useEffect(() => { host.call<OutFile[]>('agents.files', task.id).then(setFiles).catch(() => setFiles([])); }, [task.id, task.status, lastFile, task.exporting]);
   const act = async (fn: () => Promise<unknown>) => { try { onError(''); await fn(); } catch (e) { onError((e as Error).message); } };
-  const send = () => { const t = text.trim(); if (!t) return; setText(''); void act(() => host.call('agents.inject', { id: task.id, text: t })); };
+  const attach = useAttachments(onError);
+  const send = () => {
+    const t = text.trim(); if (!t) return;
+    const files = attach.files;
+    setText(''); attach.clear();
+    void act(() => host.call('agents.inject', { id: task.id, text: t, attachments: files }).catch((e) => { setText(t); files.forEach((f) => attach.add([f])); throw e; }));
+  };
+  const isPlugin = task.kind === 'plugin';
   const toggleDetailed = (v: boolean) => { setDetailed(v); localStorage.setItem('cs.agent.detailed', v ? '1' : '0'); };
   const sorted = useMemo(() => [...files].filter((f) => !f.name.startsWith('.')).sort((a, b) => (RANK[fileKind(a.name)] - RANK[fileKind(b.name)]) || b.mtime - a.mtime), [files]);
   /** 「文件」事件里提到的图片 / 视频 / 音频，直接在对话里预览 */
@@ -406,7 +475,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
     const r = importBank(drafts, subject, 'AI 工作室 · ' + task.title);
     setBankMsg(`按${packOf(subject).stage}导入：入库 ${r.bank}，待核对 ${r.inbox}${r.dup ? `，重复跳过 ${r.dup}` : ''}`);
   });
-  const configure = (v: { model?: string; permission?: Permission }) => void act(() => host.call('agents.configure', { id: task.id, ...v }));
+  const configure = (v: { model?: string; permission?: Permission; effort?: Effort }) => void act(() => host.call('agents.configure', { id: task.id, ...v }));
   const saveCalib = () => {
     const v = Number(calib);
     if (!(v >= 0)) { onError('请填写中转站后台显示的这个任务实际扣费（元）'); return; }
@@ -418,7 +487,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
         <div>
           <h3>{task.title}</h3>
           <p><span className={'ags-pill s-' + task.status}>{running && <Loader2 size={11} className="ags-spin" />}{STATUS[task.status]}</span>
-            {task.engine === 'codex' ? 'Codex CLI' : 'Claude Code'} · {task.pick || task.model || '默认模型'} · {PERMISSION_NAME[task.permission ?? 'safe']} · {when(task.created)} · 第 {task.turns} 轮 ·
+            {task.engine === 'codex' ? 'Codex CLI' : 'Claude Code'} · {task.pick || task.model || '默认模型'}{task.effort ? ` · 思考档位${EFFORT_NAME[task.effort]}` : ''} · {PERMISSION_NAME[task.permission ?? 'safe']} · {when(task.created)} · 第 {task.turns} 轮 ·
             <b className="num"> {yuan(task.cny)}</b>{running && task.live ? <em className="ags-live">本轮进行中 +{yuan(task.live)}</em> : null} / ¥{task.cap}
             {task.calibrated && <em className="ags-calibrated">已按实际扣费校准</em>}
             {task.reconciled && <em className="ags-calibrated">已和中转站对账</em>}
@@ -433,7 +502,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
             </div>)}
         </div>
         <div className="ags-d-act">
-          <button className={cfgOpen ? 'on' : ''} title="换模型、改权限（下一轮对话生效）" onClick={() => setCfgOpen(!cfgOpen)}><Settings2 size={14} />模型 / 权限</button>
+          <button className={cfgOpen ? 'on' : ''} title="换模型、思考档位、权限（下一轮对话生效）" onClick={() => setCfgOpen(!cfgOpen)}><Settings2 size={14} />模型 / 权限</button>
           {running ? <button className="danger" onClick={() => void act(() => host.call('agents.stop', task.id))}><CircleStop size={14} />停止</button>
             : <button onClick={() => { if (confirm('删除这个任务和它生成的所有文件？')) void act(async () => { await host.call('agents.remove', task.id); onRemoved(); }); }}><Trash2 size={14} />删除</button>}
         </div>
@@ -443,6 +512,12 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
           <div className="ags-cfg-item">
             <label>模型</label>
             <ModelPicker value={task.pick ?? ''} onChange={(m) => configure({ model: m })} placeholder="默认模型" title="下一轮对话开始用新模型" />
+          </div>
+          <div className="ags-cfg-item">
+            <label>思考档位</label>
+            <div className="ags-seg">
+              {(['', 'low', 'medium', 'high', 'xhigh'] as Effort[]).map((k) => <button key={k || 'auto'} className={(task.effort ?? '') === k ? 'on' : ''} onClick={() => configure({ effort: k })}>{EFFORT_NAME[k]}</button>)}
+            </div>
           </div>
           <div className="ags-cfg-item">
             <label>权限</label>
@@ -455,7 +530,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
           <p className="ags-perm-hint"><ShieldCheck size={12} />{PERMISSION_HINT[task.permission ?? 'safe']}；改动从下一轮对话开始生效</p>
         </div>
       )}
-      <div className="ags-d-body">
+      <div className={'ags-d-body' + (isPlugin ? ' plugin' : '')}>
         <div className="ags-log" ref={log}>
           {rows.map((r) => {
             if (r.kind === 'ev') {
@@ -484,10 +559,11 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
             );
           })}
           {running && <div className="ags-ev k-wait"><Loader2 size={13} className="ags-spin" />{nowDoing(task.events ?? [])}，可以随时在下面追加要求</div>}
-          {!running && task.exporting && <div className="ags-ev k-wait"><Loader2 size={13} className="ags-spin" />正在排版成 {(task.formats ?? []).map((f) => FMT_LABEL[f]).join(' / ')}…</div>}
+          {!running && task.exporting && <div className="ags-ev k-wait"><Loader2 size={13} className="ags-spin" />{isPlugin ? '正在生成素材图片…' : `正在排版成 ${(task.formats ?? []).map((f) => FMT_LABEL[f]).join(' / ')}…`}</div>}
         </div>
         <aside className="ags-files">
-          <h4><FileText size={13} />成果文件</h4>
+          {isPlugin && <PluginPreview task={task} onError={onError} onAsk={(t) => void act(() => host.call('agents.inject', { id: task.id, text: t }))} />}
+          <h4><FileText size={13} />{isPlugin ? '任务文件' : '成果文件'}</h4>
           {sorted.length ? sorted.map((f) => {
             const kind = fileKind(f.name), md = kind === '文稿' && f.name !== '任务背景.md';
             return (
@@ -518,8 +594,10 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
           <label className="ags-check small"><input type="checkbox" checked={detailed} onChange={(e) => toggleDetailed(e.target.checked)} />显示 AI 的每一步操作（命令、思考）</label>
         </aside>
       </div>
-      <div className="ags-input">
-        <textarea value={text} rows={2} onChange={(e) => setText(e.target.value)} placeholder={running ? '追加要求：AI 会在当前工作里接着处理' : '继续这个任务：例如「把第三题改简单一点」'}
+      <div className="ags-input" onDrop={attach.onDrop} onDragOver={attach.onDragOver}>
+        <AttachChips a={attach} compact />
+        <textarea value={text} rows={2} onChange={(e) => setText(e.target.value)} onPaste={attach.onPaste}
+          placeholder={running ? '追加要求：AI 会在当前工作里接着处理' : isPlugin ? '继续改：例如「按钮再大一点」「颜色换成蓝的」，可以 Ctrl+V 贴截图' : '继续这个任务：例如「把第三题改简单一点」'}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
         <button disabled={!text.trim()} onClick={send}><Send size={15} />{running ? '追加' : '继续'}</button>
       </div>

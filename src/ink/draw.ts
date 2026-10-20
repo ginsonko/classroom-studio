@@ -5,6 +5,7 @@ import { hitObject, strokeBounds } from './geometry';
 import { compileExpression } from './expression';
 import { drawTexShape, texShape } from './texCache';
 import { atPx, fillTextPx } from './pxText';
+import { boardImage } from './imgCache';
 
 /**
  * 坐标系：页宽 = 1；size 以页宽的 1/1000 为单位。
@@ -96,6 +97,7 @@ export function draw(d: DrawCtx, s: Stroke) {
   if (s.layer === 'private') ctx.globalAlpha = 0.85;
 
   if (s.tool === 'obj' && s.obj) { drawObj(d, s.obj, { color: col }); ctx.restore(); return; }
+  if (s.tool === 'image') { drawImage(d, s); ctx.restore(); return; }
   if (!s.plot) switch (s.tool) {
     case 'pen':
     case 'marker': {
@@ -176,7 +178,9 @@ export function draw(d: DrawCtx, s: Stroke) {
       ctx.beginPath();
       if (s.tool === 'rect') ctx.roundRect(x0, y0, ww, hh, Math.min(ww, hh) * 0.02);
       else if (s.tool === 'ellipse') ctx.ellipse(x0 + ww / 2, y0 + hh / 2, ww / 2, hh / 2, 0, 0, Math.PI * 2);
-      else {
+      else if (s.shape === 'plain') {
+        ctx.moveTo(x0, y0 + hh); ctx.lineTo(x0 + ww, y0 + hh); ctx.lineTo(x0 + ww / 2, y0); ctx.closePath();
+      } else {
         // 斜面：直角在拖动方向的远端下方
         const right = bx >= ax;
         ctx.moveTo(right ? x0 : x0 + ww, y0 + hh);
@@ -235,6 +239,16 @@ export function draw(d: DrawCtx, s: Stroke) {
   }
   if (s.plot) drawPlot(d, s);
   ctx.restore();
+}
+
+function drawImage(d: DrawCtx, s: Stroke) {
+  const { ctx } = d, { x0, y0, x1, y1 } = bbox(s.pts), img = s.img ? boardImage(s.img) : null;
+  if (img) { ctx.globalAlpha = 1; ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0); return; }
+  // 加载中 / 文件丢了：画一个虚线框占位，老师知道这里本来有图
+  ctx.globalAlpha = 0.5; ctx.strokeStyle = d.color('ink'); ctx.lineWidth = 1.5 / d.scale; ctx.setLineDash([6 / d.scale, 5 / d.scale]);
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.textBaseline = 'top';
+  if (img === null) fillTextPx(ctx, '图片已丢失', x0 + 8 / d.scale, y0 + 8 / d.scale, 14 / d.scale, (px) => `500 ${px}px "Microsoft YaHei UI", sans-serif`);
 }
 
 // ── 函数图像（AI 画图与坐标工具共用）──────────────────────
@@ -326,12 +340,12 @@ const fmt = (v: number) => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.rou
 export function hit(s: Stroke, x: number, y: number, r: number) {
   if (s.obj) return hitObject(s.obj, x, y, r);
   const p = s.pts;
-  if (s.tool === 'rect' || s.tool === 'ellipse' || s.tool === 'triangle' || s.tool === 'axes' || s.tool === 'text' || s.plot) {
+  if (s.tool === 'rect' || s.tool === 'ellipse' || s.tool === 'triangle' || s.tool === 'axes' || s.tool === 'text' || s.tool === 'image' || s.plot) {
     const b = strokeBounds(s);
     const pad = r + (s.tool === 'text' ? 0.02 : 0);
     const inside = x > b.x0 - pad && x < b.x1 + pad && y > b.y0 - pad && y < b.y1 + pad;
     if (!inside) return false;
-    if (s.tool === 'text' || s.plot) return true;
+    if (s.tool === 'text' || s.tool === 'image' || s.plot) return true;
     return !(x > b.x0 + pad && x < b.x1 - pad && y > b.y0 + pad && y < b.y1 - pad);
   }
   const rr = r + (s.size * U) * (s.tool === 'highlighter' ? 4.5 : 1.2);

@@ -1,9 +1,13 @@
 // 把 AI 写的 Markdown（含 $...$ 公式）解析成简单的块结构，供导出 PDF / Word / PPT 使用。
 // 只支持备课文档常用的部分：标题、段落、列表、引用、表格、分隔线、代码块、公式。
 
-export type Run = { t: 'text'; text: string; b?: boolean; i?: boolean; code?: boolean } | { t: 'math'; tex: string; id: number };
+/** blank：一串下划线（填空横线），导出时画成真正的横线，不当成加粗语法 */
+export type Run = { t: 'text'; text: string; b?: boolean; i?: boolean; code?: boolean; blank?: boolean } | { t: 'math'; tex: string; id: number };
+/** 表头填写栏的一格：value 为空就是留给学生填的横线 */
+export interface Field { label: string; value: string }
 export type Block =
   | { type: 'h'; level: number; runs: Run[] }
+  | { type: 'fields'; items: Field[] }
   | { type: 'p'; runs: Run[]; quote?: boolean }
   | { type: 'li'; ordered: boolean; n: number; depth: number; runs: Run[] }
   | { type: 'table'; rows: Run[][][] }
@@ -16,22 +20,49 @@ export type Block =
 
 export interface Parsed { blocks: Block[]; maths: { id: number; tex: string; display: boolean }[]; title: string }
 
+const BLANK = /^[_＿]{2,}$/;
+const KNOWN_FIELD = /^(姓名|班级|学号|日期|得分|分数|成绩|用时|学校|年级|座号|考号)$/;
+/**
+ * 表头填写栏：`[[表头 姓名|日期|得分]]`，或 AI 常写的「姓名：________　日期：________」这种整行
+ * （至少一格是空横线；只有一格时必须是姓名、得分这类常见栏目，避免把普通句子当表头）。
+ */
+export function fieldsOf(line: string): Field[] | null {
+  const d = /^\[\[(?:表头|填写栏)[:：\s]*(.*)\]\]$/.exec(line);
+  if (d) {
+    const items = d[1].split(/[|｜]/.test(d[1]) ? /[|｜]/ : /[,，、\s\u3000]+/).map((s) => s.trim()).filter(Boolean).map((s) => { const [label, ...v] = s.split(/[:：=]/); const value = v.join('：').trim(); return { label: label.trim(), value: BLANK.test(value) ? '' : value }; }).filter((f) => f.label);
+    return items.length ? items : null;
+  }
+  const re = /([^\s\u3000：:_＿]{1,6})[：:][\s\u3000]*(.*?)(?=[\s\u3000]+[^\s\u3000：:_＿]{1,6}[：:]|[\s\u3000]*$)/gu;
+  const items: (Field & { blank: boolean })[] = [];
+  let rest = line, m: RegExpExecArray | null;
+  while ((m = re.exec(line))) {
+    if (!m[0]) { re.lastIndex++; continue; }
+    const v = m[2].trim();
+    items.push({ label: m[1], value: BLANK.test(v) ? '' : v, blank: BLANK.test(v) });
+    rest = rest.replace(m[0], '');
+  }
+  if (!items.length || items.length > 8 || rest.trim().replace(/\u3000/g, '') || !items.some((f) => f.blank)) return null;
+  if (items.length === 1 && !KNOWN_FIELD.test(items[0].label)) return null;
+  return items.map(({ label, value }) => ({ label, value }));
+}
+
 export function parseMarkdown(src: string): Parsed {
   const maths: Parsed['maths'] = [];
   const addMath = (tex: string, display: boolean) => { const id = maths.length; maths.push({ id, tex: tex.trim(), display }); return id; };
   const inline = (s: string): Run[] => {
     const out: Run[] = [];
     // 公式优先切出来，避免 * _ 被当成强调
-    const re = /\$\$([^$]+)\$\$|\$((?:\\\$|[^$\n])+?)\$|\\\((.+?)\\\)|`([^`]+)`|\*\*(.+?)\*\*|__(.+?)__|\*([^*\s][^*]*?)\*|(?<![\w\\])_([^_\s][^_]*?)_(?!\w)/g;
+    const re = /\$\$([^$]+)\$\$|\$((?:\\\$|[^$\n])+?)\$|\\\((.+?)\\\)|`([^`]+)`|(?<!\\)(_{3,}|＿{2,})|\*\*(.+?)\*\*|__(.+?)__|\*([^*\s][^*]*?)\*|(?<![\w\\])_([^_\s][^_]*?)_(?!\w)/g;
     let last = 0, m: RegExpExecArray | null;
     const text = (t: string, extra: Partial<{ b: boolean; i: boolean }> = {}) => { if (t) out.push({ t: 'text', text: t.replace(/\\([$*_`\\])/g, '$1'), ...extra }); };
     while ((m = re.exec(s))) {
       text(s.slice(last, m.index));
       if (m[1] !== undefined || m[2] !== undefined || m[3] !== undefined) out.push({ t: 'math', tex: (m[1] ?? m[2] ?? m[3]).trim(), id: addMath(m[1] ?? m[2] ?? m[3], false) });
       else if (m[4] !== undefined) out.push({ t: 'text', text: m[4], code: true });
-      else if (m[5] !== undefined || m[6] !== undefined) {
-        for (const r of inline(m[5] ?? m[6])) out.push(r.t === 'text' ? { ...r, b: true } : r);
-      } else for (const r of inline(m[7] ?? m[8])) out.push(r.t === 'text' ? { ...r, i: true } : r);
+      else if (m[5] !== undefined) out.push({ t: 'text', text: m[5], blank: true });
+      else if (m[6] !== undefined || m[7] !== undefined) {
+        for (const r of inline(m[6] ?? m[7])) out.push(r.t === 'text' ? { ...r, b: true } : r);
+      } else for (const r of inline(m[8] ?? m[9])) out.push(r.t === 'text' ? { ...r, i: true } : r);
       last = re.lastIndex;
     }
     text(s.slice(last));
@@ -61,6 +92,8 @@ export function parseMarkdown(src: string): Parsed {
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) { flush(); blocks.push({ type: 'hr' }); continue; }
     if (line === '[[分页]]') { flush(); blocks.push({ type: 'break' }); continue; }
     if (line === '[[留空]]') { flush(); blocks.push({ type: 'gap' }); continue; }
+    const fd = /[：:]|^\[\[/.test(line) ? fieldsOf(line) : null;
+    if (fd) { flush(); blocks.push({ type: 'fields', items: fd }); continue; }
     if (/^<!--.*-->$/.test(line)) { flush(); continue; }
     const im = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(line);
     if (im) { flush(); blocks.push({ type: 'img', alt: im[1], src: im[2] }); continue; }
@@ -102,5 +135,5 @@ export function splitSlides(blocks: Block[]): Block[][] {
     cur.push(b);
   }
   if (cur.length) out.push(cur);
-  return out.map((s) => s.filter((b) => b.type !== 'break' && b.type !== 'gap')).filter((s) => s.some((b) => b.type !== 'hr'));
+  return out.map((s) => s.filter((b) => b.type !== 'break' && b.type !== 'gap' && b.type !== 'fields')).filter((s) => s.some((b) => b.type !== 'hr'));
 }

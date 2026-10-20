@@ -1,0 +1,18 @@
+{
+  "protocol": "cs-plugin/1",
+  "id": "class-timer",
+  "name": "课堂计时器",
+  "version": "1.0.0",
+  "author": "最强网课教辅系统",
+  "description": "倒计时 / 正计时，一键把大号计时投到学生画面，时间到了有提示音。",
+  "icon": "icon.svg",
+  "permissions": ["present"],
+  "contributes": {
+    "panels": [
+      { "id": "main", "title": "计时器", "entry": "index.html", "where": ["console", "dock"], "width": 340, "height": 430 }
+    ],
+    "lessons": [
+      { "id": "screen", "title": "大号计时（学生画面）", "entry": "screen.html" }
+    ]
+  }
+}

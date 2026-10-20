@@ -77,6 +77,7 @@ const timer = setTimeout(() => { console.error('v081 desktop timed out'); app.ex
   await until(() => call(dock, `!!document.querySelector('.tdock')`).catch(() => false), 8000, 'dock');
   if (process.env.CS_SHOW !== '1') dock.setPosition(left, 30);
   const D = run(dock, 'dock');
+  await until(() => call(dock, '!!window.__studioQA').catch(() => false), 15000, 'dock QA hook');
   const dclick = (sel, text) => D(`const b=[...document.querySelectorAll(${JSON.stringify(sel)})].find(b=>b.innerText.includes(${JSON.stringify(text)})||b.getAttribute('aria-label')===${JSON.stringify(text)});if(!b)throw Error('no button '+${JSON.stringify(sel + ' ' + text)});b.click();return true`);
   await dclick('.tdock .tp-b', '橡皮 · 再点一次选局部 / 整笔擦除和大小，笔尾也能擦');
   await until(() => D(`return !!document.querySelector('.eraser-options')`), 3000, 'eraser options open');
@@ -85,7 +86,8 @@ const timer = setTimeout(() => { console.error('v081 desktop timed out'); app.ex
   await shot(dock, 'v081-3-eraser-options.png', 200);
   await dclick('.eraser-options .eo-row button', '整笔擦除');
   await dclick('.eraser-options .eo-size button', '橡皮大');
-  await until(() => T(`return s.inkOptions.eraserMode==='stroke'&&s.inkOptions.eraserSize==='l'`), 3000, 'options saved');
+  // 屏幕外的浮层窗口计时器会被节流，轮询时顺便唤醒它，让它把改动发出去
+  await until(async () => { await D('return true'); return T(`return s.inkOptions.eraserMode==='stroke'&&s.inkOptions.eraserSize==='l'`); }, 8000, 'options saved');
   assert.equal(await S(`return s.inkOptions.eraserMode`), 'stroke', 'student window follows');
   await T(`document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));return true`);
   await drag(teacher, line(P(.3, .42), P(.3, .58), 6));

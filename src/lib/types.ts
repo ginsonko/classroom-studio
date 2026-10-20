@@ -35,13 +35,14 @@ export interface Material {
   answerPages?: number[];   // 答案页（0 起）：学生端默认遮住，老师揭晓后才显示
   answerAuto?: boolean;     // answerPages 来自关键词自动识别（老师可改）
   answerFrom?: Record<number, number>;   // 页 → 答案从页面多高处开始（0~1）；没有则整页遮住
+  answerSegs?: Record<number, [number, number][]>;   // 页 → 只遮这几段 [上沿, 下沿]（优先于 answerFrom）
   src?: DocSource;
   scene?: Scene;          // kind = 'sim'
   s3d?: import('../scene3d/spec').S3DSpec;   // kind = 'sim' 的立体演示规格（scene 只留时长 / 参数给共享时钟用）
 }
 
 /** 老师确认过的答案页标记（按文件路径记住） */
-export interface AnswerMark { pages: number[]; from?: Record<number, number> }
+export interface AnswerMark { pages: number[]; from?: Record<number, number>; segs?: Record<number, [number, number][]> }
 
 /** 展示方式：整页、按宽、幻灯片切分、框选区域 */
 export type FitMode = 'page' | 'width' | 'slides' | 'region';
@@ -79,7 +80,8 @@ export type Tool =
   | 'rect' | 'ellipse' | 'triangle'
   | 'force' | 'axes' | 'text' | 'poly' | 'laser' | 'spotlight' | 'curtain'
   | 'select'   // 点选物理对象 / 笔迹：移动、旋转、缩放、改属性
-  | 'obj';     // 放置物理对象（种类见 store.objKind）
+  | 'obj'      // 放置物理对象（种类见 store.objKind）
+  | 'image';   // 贴在板面上的图片（粘贴的截图）；pts 存外接矩形两角，img 是图片地址
 
 export type Author = 'teacher' | 'student' | 'ai';
 
@@ -98,6 +100,8 @@ export interface Stroke {
   author: Author;
   layer?: 'public' | 'private'; // private：只在教师端显示
   obj?: PhysObj;           // tool = 'obj'：物理对象；pts 存外接矩形两角 [x0,y0,.5,x1,y1,.5] 供命中 / 套索
+  img?: string;            // tool = 'image'：图片地址（lesson:// 或 data:）
+  shape?: 'plain';         // tool = 'triangle'：普通三角形（非物理学科），缺省是带地面阴影线的斜面
   plot?: { expr: string; x0: number; x1: number; y0: number; y1: number; xl: string; yl: string; shade?: [number, number] };
 }
 

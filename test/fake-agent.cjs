@@ -30,8 +30,22 @@ if (engine === 'codex') {
     out({ type: 'turn.started' });
     if (slow) await wait(1500);
     out({ type: 'item.started', item: { id: 'i1', type: 'command_execution', command: 'dir', status: 'in_progress' } });
-    fs.writeFileSync('课件.html', '<h1>' + text.trim().slice(0, 40) + '</h1>');
-    out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\课件.html', kind: 'add' }] } });
+    if (/PLUGIN|校验了 plugin 文件夹|修正插件/.test(text) && fs.existsSync('plugin')) {
+      // AI 工坊：PLUGINBAD 第一轮故意漏掉 name，等导播台的校验结果再修；ASSET 时要一张素材图；已有插件就在上面改
+      const old = (() => { try { return JSON.parse(fs.readFileSync('plugin/plugin.json', 'utf8')); } catch { return null; } })();
+      const bad = /PLUGINBAD/.test(text) && !/校验了 plugin 文件夹/.test(text);
+      const m = old?.name ? { ...old, version: '1.0.1' } : { protocol: 'cs-plugin/1', id: 'dice-roller', name: '课堂骰子', version: '1.0.0', author: 'AI 工坊', description: '点一下掷骰子，结果可以写到黑板', icon: 'icon.svg', permissions: ['board'], contributes: { panels: [{ id: 'main', title: '骰子', entry: 'index.html', where: ['console', 'dock'], width: 340, height: 360 }] } };
+      if (bad) delete m.name;
+      const img = /ASSET/.test(text) ? '<img id="bg" src="img/bg.png" width="40">' : '';
+      fs.writeFileSync('plugin/plugin.json', JSON.stringify(m, null, 2));
+      fs.writeFileSync('plugin/index.html', `<!doctype html><html><head><meta charset="utf-8"><title>骰子</title><link rel="stylesheet" href="/__cs/ui.css"></head><body><div class="cs-wrap">${img}<div class="cs-big" id="n">${old?.name ? '改过' : '?'}</div><button class="cs-primary" id="roll">掷骰子</button></div><script>document.getElementById('roll').onclick=function(){document.getElementById('n').textContent=String(1+Math.floor(Math.random()*6));};cs.ready.then(function(c){document.body.dataset.where=c.where;});</script></body></html>`);
+      if (!fs.existsSync('plugin/icon.svg')) fs.writeFileSync('plugin/icon.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="none" stroke="currentColor" stroke-width="4"/></svg>');
+      if (img) fs.writeFileSync('素材需求.json', JSON.stringify([{ file: 'img/bg.png', prompt: '木纹桌面', size: '1024x1024' }, { file: '../evil.png', prompt: 'x' }]));
+      out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\plugin\\plugin.json', kind: old ? 'update' : 'add' }, { path: process.cwd() + '\\plugin\\index.html', kind: 'add' }] } });
+    } else {
+      fs.writeFileSync('课件.html', '<h1>' + text.trim().slice(0, 40) + '</h1>');
+      out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\课件.html', kind: 'add' }] } });
+    }
     if (live) { add([3e6, 0, 1e6]); await wait(8000); }
     if (slow) await wait(1500);
     out({ type: 'item.completed', item: { id: 'i3', type: 'agent_message', text: '完成：' + text.trim().slice(0, 40) } });

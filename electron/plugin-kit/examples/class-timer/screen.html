@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>课堂计时</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10161d; color: #f4f2ea; font-family: "Noto Sans SC", "Microsoft YaHei UI", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; }
+  .t { font: 800 26vw/1 "JetBrains Mono", "Cascadia Mono", monospace; letter-spacing: .02em; }
+  .t.over { color: #ff6b5f; animation: blink 1s steps(2) infinite; }
+  .l { font-size: 3.2vw; color: #93a4b8; }
+  @keyframes blink { 50% { opacity: .35; } }
+</style>
+</head>
+<body>
+<div class="l" id="label">计时</div>
+<div class="t" id="t">--:--</div>
+<script>
+  // 只读老师面板写下的状态，自己不改
+  var state = null, rang = false;
+  // 提示音在学生画面这边响：老师窗口是静音的，学生画面的声音会跟着共享传给学生
+  function beep() { try { var a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; g.gain.value = .2; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + .8); } catch (e) {} }
+  function fmt(s) { s = Math.max(0, Math.round(s)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+  function draw() {
+    if (!state) return;
+    var e = state.acc + (state.running ? (Date.now() - state.start) / 1000 : 0), left = state.total - e;
+    var t = document.getElementById('t');
+    t.textContent = state.mode === 'down' ? fmt(left) : fmt(e);
+    t.classList.toggle('over', state.mode === 'down' && left <= 0);
+    document.getElementById('label').textContent = state.mode === 'down' ? (left <= 0 ? '时间到' : '倒计时') : '已用时';
+    if (state.mode === 'down' && state.running && left <= 0 && left > -3 && !rang) { rang = true; beep(); }
+    if (left > 0) rang = false;
+  }
+  function pull() { cs.storage.get('state').then(function (s) { if (s) state = s; draw(); }).catch(function () {}); }
+  pull(); setInterval(pull, 700); setInterval(draw, 200);
+</script>
+</body>
+</html>

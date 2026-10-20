@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bot, CalendarDays, Circle, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
   PanelRightOpen, Palette, Square, Users, Settings2, PenTool, Sparkles, BellRing, BookOpenCheck, Shapes, Workflow, LifeBuoy,
+  SkipForward, Film, Clapperboard, Puzzle,
 } from 'lucide-react';
 import { type FileEntry } from '../lib/library';
 import { STUDENTS } from '../lib/mock';
@@ -9,6 +10,7 @@ import { stepView, useStore } from '../lib/store';
 import { ensureLibrary, useLib } from '../lib/useLib';
 import { Logo } from '../ui/icons';
 import { SkinPicker } from '../ui/SkinPicker';
+import { SubjectPicker } from '../ui/SubjectPicker';
 import { AiPanel, useAiLib } from './AiPanel';
 import { Library } from './Library';
 import { dropExternal, PgmMonitor, PvwMonitor } from './Monitors';
@@ -18,7 +20,9 @@ import { FlowPanel, NotesPanel, StudentCard } from './SidePanels';
 import { Students } from './Students';
 import { host } from '../lib/host';
 import { openMaterial } from '../doc/actions';
-import { useRecording, toggleRecording } from '../lib/recording';
+import { useRecording, toggleRecording, nextLesson, isLive } from '../lib/recording';
+import { ReplayPage } from './ReplayPage';
+import { installPaste } from '../ink/pasteImage';
 import { DesktopPanel } from './DesktopPanel';
 import { AgentStudio } from './AgentStudio';
 import { StudyPage } from './StudyPage';
@@ -32,6 +36,9 @@ import { startAutopilot, useAuto } from '../lib/autopilot';
 import { ImportDialog } from './ImportDialog';
 import { HelpCenter, UpdateToast } from './HelpCenter';
 import { openHelp, useHelp } from '../lib/update';
+import { dismiss, useToast } from '../lib/toast';
+import { PluginsPage } from '../plugins/PluginsPage';
+import { PluginButton, PluginSheets } from '../plugins/PluginUi';
 
 export function TeacherApp() {
   const page = useStore((s) => s.page);
@@ -68,7 +75,8 @@ export function TeacherApp() {
       if (e.key === '1' && e.altKey) st.set({ page: 'console' });
     };
     window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
+    const offPaste = installPaste(() => useStore.getState().page === 'console', (m) => useRecording.setState({ error: '贴图失败：' + m }));
+    return () => { window.removeEventListener('keydown', k); offPaste(); };
   }, []);
 
   return (
@@ -82,6 +90,8 @@ export function TeacherApp() {
           <RailBtn icon={<BookOpenCheck size={19} />} label="学情" on={page === 'study'} onClick={() => set({ page: 'study' })} />
           <RailBtn icon={<Sparkles size={19} />} label="备课" on={page === 'agents'} onClick={() => set({ page: 'agents' })} />
           <RailBtn icon={<Workflow size={19} className={autoOn ? 'rail-live' : ''} />} label="自动" on={page === 'auto'} onClick={() => set({ page: 'auto' })} />
+          <RailBtn icon={<Clapperboard size={19} />} label="回放" on={page === 'replay'} onClick={() => set({ page: 'replay' })} />
+          <RailBtn icon={<Puzzle size={19} />} label="插件" on={page === 'plugins'} onClick={() => set({ page: 'plugins' })} />
           <span className="rail-flex" />
           <RailBtn icon={<Shapes size={19} />} label="演示" on={aiOpen && libOpen} onClick={() => { if (aiOpen && libOpen) set({ aiOpen: false }); else { useAiLib.setState({ open: true, focus: Date.now() }); set({ aiOpen: true }); } }} />
           <RailBtn icon={<Bot size={19} />} label="AI" on={aiOpen} onClick={() => set({ aiOpen: !aiOpen })} />
@@ -95,6 +105,8 @@ export function TeacherApp() {
           {page === 'study' && <StudyPage />}
           {page === 'agents' && <AgentStudio />}
           {page === 'auto' && <AutopilotPage />}
+          {page === 'replay' && <ReplayPage />}
+          {page === 'plugins' && <PluginsPage />}
         </div>
         {aiOpen && <div className="ai-dock"><AiPanel onClose={() => set({ aiOpen: false })} /></div>}
       </div>
@@ -103,11 +115,13 @@ export function TeacherApp() {
       {(recordError||saveError) && <div className="studio-notice" role="alert">{recordError||saveError}<button onClick={()=>useRecording.setState({error:null})}>知道了</button></div>}
       <RemindBanner />
       <SavedNotice />
+      <Toasts />
       <ImportDialog />
       <HelpCenter />
       <UpdateToast />
       <SkillRunner />
       <FormulaHost />
+      <PluginSheets />
       <Tooltips />
     </div>
   );
@@ -129,7 +143,7 @@ function RailBtn({ icon, label, on, onClick }: { icon: ReactNode; label: string;
 
 function TopBar() {
   const status = useRecording(s=>s.status);
-  const rec={on:['starting','recording','stopping','converting'].includes(status.phase), start:status.startedAt??Date.now()};
+  const rec={on:isLive(status.phase), start:status.startedAt??Date.now()};
   const set = useStore((s) => s.set);
   const studentId = useStore((s) => s.studentId);
   const students=useStore(s=>s.students);
@@ -141,7 +155,8 @@ function TopBar() {
   const el = rec.on ? Math.floor((now - rec.start) / 1000) : 0;
   const hms = [Math.floor(el / 3600), Math.floor(el / 60) % 60, el % 60].map((v) => String(v).padStart(2, '0')).join(':');
   const lv=[status.micLevel??0,status.systemLevel??0];
-  const finalizing=['stopping','converting'].includes(status.phase);
+  const finalizing=status.phase==='stopping';
+  const job=status.jobs?.[0];
 
   return (
     <header className="tb">
@@ -151,6 +166,8 @@ function TopBar() {
         <span>{finalizing?'正在保存…':status.phase==='starting'?'正在准备…':rec.on?'下课并保存':'开始上课'}</span>
         {rec.on && <b className="num">{hms}</b>}
       </button>
+      {status.phase==='recording' && <button className="tb-next" onClick={()=>void nextLesson()} data-tip="连堂课：这一节保存，马上开始录下一节（学生窗口和会议共享不用动）"><SkipForward size={13}/><span>下一节</span></button>}
+      {job && <button className="tb-job" onClick={()=>set({page:'replay'})} data-tip={`「${job.title||'课堂回放'}」正在后台生成 MP4，不影响上课${(status.jobs?.length??0)>1?`；后面还有 ${status.jobs!.length-1} 段排队`:''}`}><Film size={13}/><span>回放生成中</span><b className="num">{Math.round((job.progress??0)*100)}%</b></button>}
       {rec.on && (
         <div className="tb-meters" data-tip="录音电平：麦克风 / 系统声音（含腾讯会议里学生的声音）">
           <Meter v={lv[0]} label="麦" /><Meter v={lv[1]} label="系统" />
@@ -166,6 +183,7 @@ function TopBar() {
           <>
           <div className="pop-bg" onPointerDown={() => setPick(false)} />
           <div className="pop stu-pop">
+            <button className={s.id==='free'?'on':''} onClick={() => { set({ studentId: 'free' }); setPick(false); }} style={{ ['--h' as string]: 192 }}><span className="ava sm">课</span><b>自由课堂</b><i>不绑学生</i></button>
             {!students.length&&<button onClick={()=>{set({page:'students'});setPick(false);}}>添加学生档案</button>}
             {students.map((x) => (
               <button key={x.id} className={x.id === studentId ? 'on' : ''} onClick={() => { set({ studentId: x.id }); setPick(false); }} style={{ ['--h' as string]: x.hue }}>
@@ -176,10 +194,12 @@ function TopBar() {
           </>
         )}
       </div>
+      <SubjectPicker className="tb-subj" />
       <div className="tb-now"><span className="tally-dot" /><span className="tb-now-t">学生画面</span><b title={pgmTitle}>{pgmTitle}</b></div>
       <span className="flex" />
       <PenHolder />
       <button className="tb-cmd" onClick={focusSearch}><Command size={13}/><span>搜索课件</span><kbd>Ctrl K</kbd></button>
+      <PluginButton />
       <DockToggle />
       <button className="tb-ico" onClick={()=>useRecording.setState({panel:true})} data-tip="窗口、录课与回放"><Settings2 size={16}/></button>
       <button className="tb-ico" onClick={()=>host.openStudentWindow()} data-tip="打开学生窗口"><MonitorUp size={16} /></button>
@@ -193,21 +213,40 @@ function SavedNotice() {
   const [closed, setClosed] = useState('');
   const student = useStore((s) => s.students.find((x) => x.id === st.studentId));
   const set = useStore((s) => s.set);
-  if (st.phase !== 'complete' || !st.path || closed === st.path) return null;
-  const close = () => setClosed(st.path!);
+  const key = st.phase + ':' + (st.id ?? '');
+  if (closed === key) return null;
+  const close = () => setClosed(key);
+  if (st.phase === 'saved') return (
+    <div className="saved-notice" role="status">
+      <b>这节课的录像已保存</b>
+      <span>回放视频正在后台生成（顶部能看到进度）。现在就可以关学生窗口、开始下一节课。</span>
+      <div className="saved-acts">
+        <button onClick={() => { set({ page: 'replay' }); close(); }}>去回放页</button>
+        <button className="ghost" onClick={close}>知道了</button>
+      </div>
+    </div>
+  );
+  if (st.phase !== 'complete' || !st.path) return null;
   return (
     <div className="saved-notice" role="status">
-      <b>录像已保存</b>
-      <span>{student ? <>已归到「{student.name}」的档案，在左侧「学生」页可以回放。</> : <>这节课没有绑定学生，录像在右上角齿轮「窗口、录课与回放」里，也可以直接打开文件夹。</>}</span>
+      <b>回放已生成</b>
+      <span>{student ? <>已归到「{student.name}」的档案。左侧「回放」页和「学生」页都能找到。</> : <>这节课没有绑定学生，录像在左侧「回放」页。</>}</span>
       <code title={st.path}>{st.path}</code>
       <div className="saved-acts">
         <button onClick={() => void host.call('openRecording', st.id)}>播放</button>
         <button onClick={() => host.revealInFolder(st.path!)}>打开文件夹</button>
-        {student ? <button onClick={() => { set({ page: 'students', studentId: student.id }); close(); }}>去学生页</button> : <button onClick={() => { useRecording.setState({ panel: 'records' }); close(); }}>全部录像</button>}
+        <button onClick={() => { set({ page: 'replay' }); close(); }}>全部回放</button>
+        {student && <button onClick={() => { set({ page: 'students', studentId: student.id }); close(); }}>去学生页</button>}
         <button className="ghost" onClick={close}>关闭</button>
       </div>
     </div>
   );
+}
+
+function Toasts() {
+  const list = useToast((s) => s.list);
+  if (!list.length) return null;
+  return <div className="toasts" role="status">{list.map((t) => <div key={t.id} className="toast"><span>{t.message}</span>{t.action && <button onClick={() => { t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}<button className="ghost" onClick={() => dismiss(t.id)} aria-label="关闭提示">×</button></div>)}</div>;
 }
 
 /** 学生拿着笔时在顶栏常驻提示；浮层被隐藏时也能一键收回 */

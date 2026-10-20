@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import { bus, WINDOW_ID } from '../lib/bus';
 import { DARK_BOARDS, ROLE, resolveColor, useStore } from '../lib/store';
 import type { Author, Stroke, Tool } from '../lib/types';
-import { createObject, isObjKind, updateObject } from '../physics/catalog';
+import { familyOf } from '../lib/subjects';
+import { createObject, isObjKind, keepsAspect, updateObject } from '../physics/catalog';
 import { SelectionEditor } from '../physics/edit/SelectionEditor';
 import { draw, hit, recognize, type DrawCtx } from './draw';
 import { texTick } from './texCache';
+import { imgTick } from './imgCache';
 import { canRotate, duplicateStroke, eraseSegment, freshId, insideLasso, moveStroke, rotateStroke, scaleStroke, selectionBounds, withObject, type Box, type Point } from './geometry';
 import '../styles/objects.css';
 
@@ -98,12 +100,15 @@ export function InkLayer(props: Props) {
       raf = requestAnimationFrame(loop); const now = performance.now();
       for (const [id, r] of remoteDraft) if (now - r.at > 5000) { remoteDraft.delete(id); remoteTick++; }
       const lasers = [...laserTrails.values(), myLaser.current].filter((t) => (!('key' in t) || t.key === ikey) && t.at.length);
-      if (!dirty.current && lastTick.current === remoteTick + texTick() && !lasers.length) return;
-      dirty.current = false; lastTick.current = remoteTick + texTick(); setup(bc); setup(ctx); const bd = context(bc), ld = context(ctx);
+      const ticks = remoteTick + texTick() + imgTick();
+      if (!dirty.current && lastTick.current === ticks && !lasers.length) return;
+      dirty.current = false; lastTick.current = ticks; setup(bc); setup(ctx); const bd = context(bc), ld = context(ctx);
       const remote = [...remoteDraft.values()].filter((r) => r.key === ikey && r.stroke.layer !== 'private');
       const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id)]);
       const list = gesture.current?.type === 'erase' ? gesture.current.working : all();
-      for (const s of list) if (visible(s) && !hidden.has(s.id)) draw(bd, s);
+      // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
+      for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id)) draw(bd, s);
+      for (const s of list) if (s.tool !== 'image' && visible(s) && !hidden.has(s.id)) draw(bd, s);
       for (const r of remote) draw(ld, r.stroke); for (const s of preview.current) draw(ld, s); if (draft.current) draw(ld, draft.current);
       for (const tr of lasers) drawLaser(ctx, tr, now);
       const ea = eraserAt.current;
@@ -142,7 +147,8 @@ export function InkLayer(props: Props) {
     const radius = eraserRadius(), segment = useStore.getState().inkOptions.eraserMode !== 'stroke';
     const count = Math.max(1, Math.min(128, Math.ceil(Math.hypot(p.x - g.last.x, p.y - g.last.y) / (radius * .5))));
     for (let i = 1; i <= count; i++) { const x = g.last.x + (p.x - g.last.x) * i / count, y = g.last.y + (p.y - g.last.y) * i / count;
-      g.working = g.working.flatMap((s) => !editable(s) || !hit(s, x, y, radius) ? [s] : segment && CUTTABLE.includes(s.tool) ? eraseSegment(s, x, y, radius + s.size / 1000) : []);
+      // 橡皮只擦笔迹，不擦贴图（擦图上的字时不能把整张图擦没了）；贴图用选择工具删除
+      g.working = g.working.flatMap((s) => !editable(s) || s.tool === 'image' || !hit(s, x, y, radius) ? [s] : segment && CUTTABLE.includes(s.tool) ? eraseSegment(s, x, y, radius + s.size / 1000) : []);
     }
     g.last = p; dirty.current = true;
   };
@@ -177,12 +183,15 @@ export function InkLayer(props: Props) {
         if ([[box.x0 - pad, box.y0 - pad], [box.x1 + pad, box.y0 - pad], [box.x0 - pad, box.y1 + pad], [box.x1 + pad, box.y1 + pad]].some(([x, y]) => Math.hypot(p.x - x, p.y - y) < touch)) { beginTransform('scale', p, items, pointer); return; }
         if (!e.shiftKey && p.x >= box.x0 - pad && p.x <= box.x1 + pad && p.y >= box.y0 - pad && p.y <= box.y1 + pad) { beginTransform('move', p, items, pointer); return; }
       }
-      const top = [...all()].reverse().find((s) => editable(s) && hit(s, p.x, p.y, touch));
+      const hits = [...all()].reverse().filter((s) => editable(s) && hit(s, p.x, p.y, touch)), top = hits.find((s) => s.tool !== 'image') ?? hits[0];
       if (tool === 'select' && top) { const ids = e.shiftKey ? selected.current.includes(top.id) ? selected.current.filter((id) => id !== top.id) : [...selected.current, top.id] : [top.id]; setSelection(ids); if (ids.includes(top.id)) beginTransform('move', p, all().filter((s) => ids.includes(s.id) && editable(s)), pointer); return; }
       setSelection([]); lasso.current = [p.x, p.y]; gesture.current = { type: 'lasso', start: p, pointer }; dirty.current = true; return;
     }
     if (tool === 'pointer' || author === 'student' && tool === 'obj') return;
     const s: Stroke = { id: freshId(), tool, color, size, pts: [p.x, p.y, p.p], author, layer };
+    const physics = familyOf(useStore.getState().subject) === 'physics';
+    if (tool === 'triangle' && !physics) s.shape = 'plain';
+    if (tool === 'axes' && !physics) s.text = 'x,y';
     if (tool === 'obj') { const kind = useStore.getState().objKind; if (!isObjKind(kind)) return; draft.current = withObject(s, createObject(kind, p.x, p.y, s.id)); }
     else { if (TWO_POINT.includes(tool)) s.pts.push(p.x, p.y, p.p); draft.current = s; }
     gesture.current = { type: 'draw', start: p, pointer }; dirty.current = true; sendLive();
@@ -204,7 +213,7 @@ export function InkLayer(props: Props) {
       if (preview.current.length === 1) sendLive(preview.current[0]); dirty.current = true; return;
     }
     const d = draft.current; if (!d) return;
-    if (d.obj) { const dx = p.x - g.start.x, dy = p.y - g.start.y; if (Math.hypot(dx, dy) > .01) { const original = createObject(d.obj.kind, 0, 0, d.id), w = Math.max(.008, Math.abs(dx)), h = e.shiftKey ? Math.max(.008, w * original.h / original.w) : Math.max(.008, Math.abs(dy)); draft.current = withObject(d, updateObject(d.obj, { x: g.start.x + Math.sign(dx || 1) * w / 2, y: g.start.y + Math.sign(dy || 1) * h / 2, w, h })); } }
+    if (d.obj) { const dx = p.x - g.start.x, dy = p.y - g.start.y; if (Math.hypot(dx, dy) > .01) { const original = createObject(d.obj.kind, 0, 0, d.id), w = Math.max(.008, Math.abs(dx)), h = e.shiftKey || keepsAspect(d.obj) ? Math.max(.008, w * original.h / original.w) : Math.max(.008, Math.abs(dy)); draft.current = withObject(d, updateObject(d.obj, { x: g.start.x + Math.sign(dx || 1) * w / 2, y: g.start.y + Math.sign(dy || 1) * h / 2, w, h })); } }
     else if (TWO_POINT.includes(d.tool)) { let { x, y } = p; if (e.shiftKey) { const a = Math.atan2(y - d.pts[1], x - d.pts[0]), length = Math.hypot(x - d.pts[0], y - d.pts[1]), sa = Math.round(a / (Math.PI / 12)) * (Math.PI / 12); x = d.pts[0] + Math.cos(sa) * length; y = d.pts[1] + Math.sin(sa) * length; } d.pts = [d.pts[0], d.pts[1], d.pts[2], x, y, p.p]; if (d.tool === 'force') d.text = forceName(d.pts); }
     else if (FREE.includes(d.tool)) {
       const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];

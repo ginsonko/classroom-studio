@@ -53,6 +53,7 @@ function publicConfig(cfg) {
     baseUrl: cfg.baseUrl || DEFAULT_BASE,
     model: cfg.model || '',
     visionModel: cfg.visionModel || '',
+    imageModel: cfg.imageModel || '',
     hasKey: !!cfg.key && !!readKey(cfg),
     keyHint: cfg.hint || '',
     encrypted: cfg.enc === 'safe',
@@ -215,6 +216,44 @@ async function chat(cfg, value, windows) {
   return { content, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, sawImage: !!image, finish: choice?.finish_reason || '', rid: r.__rid || '' };
 }
 
+// 没指定生图模型时，从服务的模型列表里按这个顺序挑第一个有的
+const IMAGE_MODELS = [/^gpt-image/i, /seedream/i, /nano-banana|gemini.*image/i, /^flux/i, /^dall-e-3/i, /imagen/i, /qwen-image|wanx|cogview|kolors/i, /image/i];
+
+async function pickImageModel(cfg) {
+  let ids = modelCache.get(cfg.baseUrl || DEFAULT_BASE)?.models;
+  if (!ids) {
+    try {
+      const r = await request(cfg, '/models', { method: 'GET' }, 30000);
+      ids = (Array.isArray(r?.data) ? r.data : []).map((m) => String(typeof m === 'string' ? m : m?.id || '')).filter(Boolean);
+      modelCache.set(cfg.baseUrl || DEFAULT_BASE, { at: Date.now(), models: ids, hint: cfg.hint });
+    } catch { ids = []; }
+  }
+  for (const re of IMAGE_MODELS) { const m = ids.find((x) => re.test(x)); if (m) return m; }
+  return '';
+}
+
+/** 文生图（OpenAI 兼容 /images/generations）。结果统一成 data: 地址，插件页面和黑板都能直接用 */
+async function image(cfg, value) {
+  const prompt = String(value?.prompt || '').trim().slice(0, 4000);
+  if (!prompt) throw new Error('请写清楚要画什么');
+  const model = String(value?.model || cfg.imageModel || await pickImageModel(cfg)).trim();
+  if (!model) throw new Error('当前 AI 服务里没有找到生图模型。可以在 AI 设置里填写生图模型名');
+  const size = /^\d{3,4}x\d{3,4}$/.test(String(value?.size || '')) ? value.size : '1024x1024';
+  const t0 = Date.now();
+  const r = await request(cfg, '/images/generations', { method: 'POST', body: JSON.stringify({ model, prompt, size, n: 1 }) }, 5 * 60000);
+  const d = Array.isArray(r?.data) ? r.data[0] : null;
+  let url = d?.b64_json ? 'data:image/png;base64,' + d.b64_json : String(d?.url || '');
+  if (/^https?:/i.test(url)) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('生成的图片下载失败（' + res.status + '）');
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 30 * 1024 * 1024) throw new Error('生成的图片太大');
+    url = 'data:' + (res.headers.get('content-type') || 'image/png').split(';')[0] + ';base64,' + buf.toString('base64');
+  }
+  if (!url.startsWith('data:image/')) throw new Error('生图服务没有返回图片');
+  return { image: url, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, content: '', rid: r.__rid || '', revised: String(d?.revised_prompt || '') };
+}
+
 /** 实测用：CS_AI_DUMP=目录 时把请求（图片换成占位）和回复原文存下来，方便核对提示词效果。不含 Key。 */
 function dump(body, choice, usage, ms) {
   try {
@@ -254,6 +293,7 @@ async function handle(method, value, ctx) {
       if (v.baseUrl !== undefined) cfg.baseUrl = cleanBase(v.baseUrl);
       if (v.model !== undefined) cfg.model = String(v.model).trim().slice(0, 120);
       if (v.visionModel !== undefined) cfg.visionModel = String(v.visionModel).trim().slice(0, 120);
+      if (v.imageModel !== undefined) cfg.imageModel = String(v.imageModel).trim().slice(0, 120);
       if (v.key !== undefined) writeKey(cfg, String(v.key).trim());
       save(dataDir, cfg);
       return publicConfig(cfg);
@@ -313,6 +353,7 @@ async function handle(method, value, ctx) {
       return { ok: true, model: r.model, ms: r.ms, reply: r.content.slice(0, 40) };
     }
     case 'ai.chat': return metered(ledger, String(value?.feature || '课堂 AI').slice(0, 40), () => chat(cfg, value, windows), reconciler);
+    case 'ai.image': return metered(ledger, String(value?.feature || 'AI 生图').slice(0, 40), () => image(cfg, value), reconciler);
     case 'ai.ledger': return ledger ? ledger.summary() : null;
     case 'ai.setBudget': { const s = ledger.setBudget(value); if (value?.reconcile === true) reconciler?.soon(500); return s; }
     case 'ai.reconcile': { if (!reconciler) throw new Error('对账不可用'); await reconciler.sync({ force: true }); return ledger.summary(); }

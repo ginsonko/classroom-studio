@@ -55,7 +55,7 @@ const timer = setTimeout(() => { console.error('v092 desktop timed out'); app.ex
   // ── 2. 新任务：8 种成品 + 内置做法提示 + 学科约定 ──
   await T(`document.querySelector('.ags-new').click();return true`);
   const labels = await until(() => T(`const l=[...document.querySelectorAll('.ags-tpls button b')].map(b=>b.innerText);return l.length?l:null`), 5000, 'templates');
-  assert.deepEqual(labels, ['互动课件', '讲课 PPT', '练习题', '分层作业', '测验卷', '课堂讲义', '教案', '自定义']);
+  assert.deepEqual(labels, ['互动课件', '讲课 PPT', '练习题', '分层作业', '测验卷', '课堂讲义', '教案', '做插件', '自定义']);
   await T(`[...document.querySelectorAll('.ags-tpls button')].find(b=>b.innerText.includes('分层作业')).click();return true`);
   await T(`const i=document.querySelector('.ags-new-form input[placeholder*="斜面"]');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'浮力');i.dispatchEvent(new Event('input',{bubbles:true}));return true`);
   const form = await until(() => T(`const t=document.querySelector('.ags-new-form textarea').value;return t.includes('浮力-题库.json')?{t,hint:document.querySelector('.ags-new-form .ags-perm-hint+*')?null:[...document.querySelectorAll('.ags-new-form .ags-perm-hint')].map(x=>x.innerText).join('|')}:null`), 5000, 'prompt');

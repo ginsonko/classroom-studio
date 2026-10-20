@@ -7,6 +7,7 @@ import { pageLabel } from '../lib/desk';
 import { useToolKeys } from '../ui/ToolPalette';
 import { StudentBar } from './StudentBar';
 import { warm } from '../doc/webKeep';
+import { installPaste } from '../ink/pasteImage';
 
 /**
  * 学生窗口：腾讯会议只共享这个窗口。
@@ -29,6 +30,8 @@ export function StudentApp() {
   const [flash, setFlash] = useState(false);
 
   useEffect(() => { document.title = '课堂展示 · 请共享这个窗口'; }, []);
+  // 老师拿着笔时，在学生窗口里 Ctrl+V 也能把截图贴到黑板
+  useEffect(() => installPaste(() => useStore.getState().drawAuthor === 'teacher', (m) => console.warn('贴图失败', m)), []);
   const warmList = useStore((s) => s.warm);
   useEffect(() => { warm(warmList ?? []); }, [warmList]);
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpenCheck, BookX, Camera, ClipboardList, ClipboardPaste, Download, GitBranch, Inbox, Library, Loader2, NotebookPen, Presentation, ScanText, Search, X, Zap } from 'lucide-react';
+import { BookOpenCheck, BookX, Camera, ClipboardList, ClipboardPaste, Download, FileUp, GitBranch, Inbox, Library, Loader2, NotebookPen, Presentation, ScanText, Search, X, Zap } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { host } from '../lib/host';
 import { DIFF_NAME, RESULT_NAME, guessDifficulty, guessPoints, guessType, normStem, pointLabel, pointsOf, questionSubject, wrongBook, wrongbookMarkdown, type Question, type Result } from '../lib/studyLogic';
@@ -8,10 +8,15 @@ import { useSubject } from '../lib/subjectState';
 import { TexText, clipTex } from './TexText';
 import { addQuestion, ensureStudy, patchQuestion, recordAttempt, useStudy } from '../lib/studyStore';
 import { aiConfig, autoReadOn, captureFromScreen, presetHomework, readInBackground, setAutoRead, useReading } from '../lib/studyActions';
+import { importFiles, type ImportResult } from '../lib/importQuestions';
+import { IMPORT_EXT } from '../lib/importLogic';
 import { Chips, Outputs, QImage, QuestionEditor } from './StudyParts';
 import { CoursewareTab, HomeworkTab, LessonTab } from './StudyTools';
 import { NetTab } from './KnowledgeNet';
 import { SkillsTab } from './Skills';
+import { activePlugins, loadPlugins, usePlugins } from '../plugins/pluginStore';
+import { PluginFrame } from '../plugins/PluginFrame';
+import { PluginIcon } from '../plugins/PluginUi';
 import '../styles/agents.css';
 import '../styles/study.css';
 
@@ -33,7 +38,11 @@ export function openStudy(tab: StudyTab) { wanted = tab; useStore.getState().set
 
 export function StudyPage() {
   useEffect(ensureStudy, []);
-  const [tab, setTab] = useState<StudyTab>(() => { const t = wanted ?? 'inbox'; wanted = null; return t; });
+  useEffect(() => { void loadPlugins(); }, []);
+  const [tab, setTab] = useState<StudyTab | `plugin:${string}`>(() => { const t = wanted ?? 'inbox'; wanted = null; return t; });
+  const pluginList = usePlugins((s) => s.list);
+  const pluginPages = activePlugins(pluginList).flatMap((p) => p.contributes.pages.map((pg) => ({ key: `plugin:${p.id}/${pg.id}` as const, p, pg })));
+  const pluginPage = pluginPages.find((x) => x.key === tab);
   const loaded = useStudy((s) => s.loaded), error = useStudy((s) => s.error), data = useStudy((s) => s.data);
   const studentId = useStore((s) => s.studentId), students = useStore((s) => s.students);
   const student = students.find((x) => x.id === studentId);
@@ -42,7 +51,8 @@ export function StudyPage() {
   return <div className="ags sd">
     <header className="ags-head">
       <div className="ags-title"><BookOpenCheck size={20} /><h2>学情</h2><span>{student ? `当前学生：${student.name}（${packOf(subject).name}）` : '没有选择学生（在顶栏切换）'}</span></div>
-      <nav className="ags-tabs">{TABS.map((t) => <button key={t.k} className={tab === t.k ? 'on' : ''} onClick={() => setTab(t.k)}>{t.icon}{t.label}{t.k === 'inbox' && inbox > 0 && <em className="sd-count">{inbox}</em>}</button>)}</nav>
+      <nav className="ags-tabs">{TABS.map((t) => <button key={t.k} className={tab === t.k ? 'on' : ''} onClick={() => setTab(t.k)}>{t.icon}{t.label}{t.k === 'inbox' && inbox > 0 && <em className="sd-count">{inbox}</em>}</button>)}
+        {pluginPages.map((x) => <button key={x.key} className={tab === x.key ? 'on' : ''} onClick={() => setTab(x.key)} data-tip={`来自插件「${x.p.name}」`}><PluginIcon p={x.p} size={14} />{x.pg.title}</button>)}</nav>
       <div className="sd-stats"><span>题库 <b className="num">{data.questions.filter((q) => q.status === 'bank').length}</b></span><span>作答 <b className="num">{data.attempts.length}</b></span></div>
     </header>
     {error && <div className="ags-error">{error}<button onClick={() => useStudy.setState({ error: null })}><X size={13} /></button></div>}
@@ -55,6 +65,8 @@ export function StudyPage() {
       {tab === 'lesson' && <LessonTab />}
       {tab === 'courseware' && <CoursewareTab />}
       {tab === 'skills' && <SkillsTab />}
+      {pluginPage && <PluginFrame key={pluginPage.key} id={pluginPage.p.id} entry={pluginPage.pg.entry} where="page" title={pluginPage.pg.title} className="sd-plugin" />}
+      {tab.startsWith('plugin:') && !pluginPage && <p className="sd-empty">这个插件页面已经停用或删除了。</p>}
     </div>}
   </div>;
 }
@@ -78,25 +90,61 @@ function AttemptButtons({ q }: { q: Question }) {
   return <span className="sd-res">{(['right', 'half', 'wrong'] as Result[]).map((r) => <button key={r} className={'r-' + r} onClick={() => recordAttempt(studentId, q.id, r)} data-tip={'给当前学生记一次：' + RESULT_NAME[r]}>{RESULT_NAME[r]}</button>)}</span>;
 }
 
+/** 导入 Word / PDF / 图片：按钮 + 把文件拖进来；结果都进收件箱 */
+function useImport(onAdded?: () => void) {
+  const subject = useSubject();
+  const [step, setStep] = useState(''), [report, setReport] = useState<ImportResult | null>(null), [over, setOver] = useState(false);
+  const run = async (paths: string[]) => {
+    const ok = paths.filter((p) => IMPORT_EXT.test(p));
+    if (!ok.length) { setReport({ added: [], dup: 0, files: paths.map((p) => ({ name: p.split(/[\\/]/).pop() ?? p, added: 0, dup: 0, error: '不支持这种文件，可以导入 Word、PDF、图片、txt' })), ai: false }); return; }
+    setReport(null); setStep('准备导入…');
+    try { setReport(await importFiles(ok, subject, setStep)); onAdded?.(); }
+    catch (e) { setReport({ added: [], dup: 0, files: [{ name: '导入', added: 0, dup: 0, error: (e as Error).message }], ai: false }); }
+    finally { setStep(''); }
+  };
+  const pick = async () => { const ps = await host.call<string[]>('study.pickImport'); if (ps.length) await run(ps); };
+  const drop = {
+    onDragOver: (e: React.DragEvent) => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); setOver(true); } },
+    onDragLeave: (e: React.DragEvent) => { if (e.currentTarget === e.target) setOver(false); },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); setOver(false); if (step) return; const ps = [...e.dataTransfer.files].map((f) => host.pathForFile(f)).filter((p): p is string => !!p); if (ps.length) void run(ps); },
+  };
+  const button = <button className="sd-btn" disabled={!!step || !host.electron} onClick={() => void pick()} data-tip="Word、PDF、截图或拍照的卷子，按题号自动拆成一道道题；也可以直接把文件拖进来">{step ? <Loader2 size={13} className="ags-spin" /> : <FileUp size={13} />}导入 Word / PDF / 图片</button>;
+  const view = <>
+    {over && <div className="sd-drop">松开鼠标，把题目导入收件箱</div>}
+    {step && <p className="sd-msg sd-import-step"><Loader2 size={13} className="ags-spin" />{step}</p>}
+    {report && <div className="sd-import">
+      <b>{report.added.length ? `导入 ${report.added.length} 道题，已放进收件箱` : '没有导入新题'}{report.dup ? `，跳过 ${report.dup} 道重复题` : ''}。</b>
+      {report.ai && report.added.length > 0 && <span>AI 正在后台补答案、解析和知识点，并独立再解一遍自检。</span>}
+      {!report.ai && report.added.length > 0 && <span>答案、知识点可以点开逐题补；配好 AI 并打开「收题后自动 AI 识题」会自动补全。</span>}
+      {report.files.filter((f) => f.error || f.note || report.files.length > 1).map((f) => <i key={f.name} className={f.error ? 'err' : ''}>{f.name}：{f.error ?? `${f.added} 题${f.dup ? `，重复 ${f.dup}` : ''}${f.note ? `（${f.note}）` : ''}`}</i>)}
+      <button onClick={() => setReport(null)} aria-label="关闭"><X size={12} /></button>
+    </div>}
+  </>;
+  return { button, view, drop, busy: !!step };
+}
+
 function InboxTab() {
   const questions = useStudy((s) => s.data.questions);
   const subject = useSubject();
   const items = questions.filter((q) => q.status === 'inbox' && questionSubject(q) === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const [open, setOpen] = useState<Question | null>(null), [paste, setPaste] = useState(false), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [auto, setAuto] = useState(autoReadOn());
+  const imp = useImport();
   const capture = async () => { setBusy(true); setMsg(''); try { await captureFromScreen({ fresh: true }); setMsg('已把学生画面收进收件箱。'); } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); } };
   const readAll = async () => { const cfg = await aiConfig(); for (const q of items.filter((x) => !x.stem || !x.points.length)) await readInBackground(q.id, cfg); };
-  return <div className="sd-pane">
+  return <div className="sd-pane" {...imp.drop}>
     <div className="sd-bar">
       <button className="ags-go" disabled={busy || !host.electron} onClick={() => void capture()}>{busy ? <Loader2 size={14} className="ags-spin" /> : <Camera size={14} />}收学生画面上的题</button>
       <button className="sd-btn" onClick={() => setPaste(true)}><ClipboardPaste size={13} />粘贴题目</button>
+      {imp.button}
       <button className="sd-btn" disabled={!items.length} onClick={() => void readAll()}><ScanText size={13} />AI 识别未整理的题</button>
       <label className="ags-check"><input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setAutoRead(e.target.checked); }} />收题后自动 AI 识题</label>
       <span className="flex" />
       {items.length > 0 && <button className="sd-btn" data-tip="AI 自检没通过的题要逐题核对，不会一起入库" onClick={() => { for (const q of items) if ((q.stem.trim() || q.image) && q.check !== 'mismatch') patchQuestion(q.id, { status: 'bank' }); }}>全部入库</button>}
     </div>
     {msg && <p className="sd-msg">{msg}</p>}
+    {imp.view}
     <p className="ags-sub">上课时在右侧学生卡点「对 / 半对 / 错」，题目会自动截图收进这里，同时记下作答。整理好知识点和答案后入库，组作业和错题本才能用上。</p>
-    {!items.length && <div className="lib-empty">收件箱是空的。可以收学生画面上的题、粘贴题目文字或截图。</div>}
+    {!items.length && <div className="lib-empty">收件箱是空的。可以收学生画面上的题、粘贴题目文字或截图，也可以把 Word / PDF / 图片拖到这里导入。</div>}
     <div className="sd-list">{items.map((q) => <QRow key={q.id} q={q} onOpen={() => setOpen(q)} extra={q.check === 'mismatch' ? <button className="sd-btn" onClick={() => setOpen(q)}>核对</button> : <button className="btn-cue" disabled={!q.stem.trim() && !q.image} onClick={() => patchQuestion(q.id, { status: 'bank' })}>入库</button>} />)}</div>
     {open && <QuestionEditor q={open} onClose={() => setOpen(null)} />}
     {paste && <PasteDialog onClose={() => setPaste(false)} onDone={(q) => { setPaste(false); setOpen(q); }} />}
@@ -148,14 +196,17 @@ function BankTab() {
     && (ch < 0 || !pack || x.points.some((k) => k.startsWith(`${pack.prefix}${ch}.`)))
     && (!d || x.difficulty === d)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [questions, q, ch, d, subject, pack]);
   const chapters = useMemo(() => (pack ? [...new Map(pointsOf(pack.id).map((p) => [p.ci, p])).values()] : []), [pack]);
-  return <div className="sd-pane">
+  const imp = useImport();
+  return <div className="sd-pane" {...imp.drop}>
     <div className="sd-bar">
+      {imp.button}
       <div className="lib-search sd-search"><Search size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜题干、出处、知识点" /></div>
       <select className="sd-select" value={subject} onChange={(e) => { const v = e.target.value; setSub(v === String(current) ? null : v as SubjectId | 'all'); setCh(-1); }}><option value={current}>{packOf(current).stage}（当前学生）</option>{LEVELS.map((l) => <optgroup key={l} label={LEVEL_NAME[l]}>{byLevel(l).filter((p) => p.id !== current).map((p) => <option key={p.id} value={p.id}>{p.stage}</option>)}</optgroup>)}<option value="all">全部学科</option></select>
       {pack && <select className="sd-select" value={ch} onChange={(e) => setCh(Number(e.target.value))}><option value={-1}>全部章节</option>{chapters.map((p) => <option key={p.ci} value={p.ci}>{p.book} · {p.ch}</option>)}</select>}
       <select className="sd-select" value={d} onChange={(e) => setD(Number(e.target.value))}><option value={0}>全部难度</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} {DIFF_NAME[n]}</option>)}</select>
       <span className="flex" /><span className="sd-note">{items.length} 题</span>
     </div>
+    {imp.view}
     {!items.length && <div className="lib-empty">{questions.some((x) => x.status === 'bank') ? '没有符合条件的题。' : '题库还是空的。先在收件箱收题、整理后入库；组作业时 AI 出的原创题也会进题库。'}</div>}
     <div className="sd-list">{items.map((x) => <QRow key={x.id} q={x} onOpen={() => setOpen(x)} extra={<AttemptButtons q={x} />} />)}</div>
     {open && <QuestionEditor q={open} onClose={() => setOpen(null)} />}

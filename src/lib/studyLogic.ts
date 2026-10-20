@@ -4,12 +4,13 @@ import { familyOf, packOf, pointKey, SUBJECTS, subjectOfKey, type SubjectId } fr
 import type { ChapterState } from './types';
 
 export type Result = 'right' | 'wrong' | 'half';
-export type Origin = 'board' | 'paste' | 'ai' | 'explain' | 'manual' | 'homework';
+export type Origin = 'board' | 'paste' | 'ai' | 'explain' | 'manual' | 'homework' | 'import';
 
 export interface Question {
   id: string;
   stem: string;              // 题干文字（看图题可以为空，只有 image）
   image?: string;            // 题图绝对路径（学情库 study/img 下）
+  imagePt?: number;          // 题图在原卷上的打印宽度（pt）；导出时按原大小放，不按像素放大
   answer?: string;
   analysis?: string;
   points: string[];          // 知识点 key："章序号.节序号"（数学、化学带 m / c 前缀），与学习地图同一套
@@ -314,6 +315,10 @@ export function lessonByRules(i: LessonInput): Pick<LessonNote, 'summary' | 'str
 // ── 文档拼装（Markdown → 主进程导出 Word / PDF / PPT / 长图） ──────────
 /** 学情库题图在 Markdown 里写成 img:<文件名>，主进程换成真实路径 */
 export function imgRef(p?: string) { const m = p ? /([0-9a-f-]{36}\.(?:png|jpg))$/.exec(p) : null; return m ? 'img:' + m[1] : ''; }
+/** 题图那一段 Markdown；知道原卷尺寸的写成「题图 w=宽pt」，导出按原大小排 */
+export function imgMd(q: Question) { const r = imgRef(q.image); return r ? `![题图${q.imagePt ? ` w=${Math.round(q.imagePt)}` : ''}](${r})` : ''; }
+/** 从卷子导入的题：题图就是原题截图（含题干和选项），导出时只放图，不再重复印一遍识别出来的文字 */
+export const pictureOnly = (q: Question) => q.origin === 'import' && !!imgRef(q.image);
 const block = (s: string) => s.trim().split(/\n{2,}/).map((x) => x.replace(/\n/g, ' ')).join('\n\n');
 /** 导出排版的配色跟学科大类走（export.css 里的 data-theme） */
 export const themeLine = (subject?: SubjectId) => `<!-- cs:theme=${familyOf(subject)} -->`;
@@ -326,15 +331,16 @@ function splitOptions(stem: string): [string, string] {
   return [block(lines.slice(0, k).join('\n')), lines.slice(k).map((l) => l.trim()).filter(Boolean).join('\u3000\u3000')];
 }
 function questionMd(q: Question, n: number, space: boolean) {
-  const [stem, options] = q.stem ? splitOptions(q.stem) : ['（见下图）', ''];
-  const head = `**${n}.** ` + stem + `　（${q.qtype}，${DIFF_NAME[q.difficulty] ?? ''}）`;
-  const img = imgRef(q.image);
+  const pic = pictureOnly(q);
+  const [stem, options] = pic ? ['', ''] : q.stem ? splitOptions(q.stem) : ['（见下图）', ''];
+  const head = `**${n}.** ` + (stem ? stem + '　' : '') + `（${q.qtype}，${DIFF_NAME[q.difficulty] ?? ''}）`;
   const gap = !space || SHORT.test(q.qtype) ? '' : /作文|写作|书面表达/.test(q.qtype + q.stem.slice(0, 40)) ? '[[留空]]\n\n[[留空]]\n\n[[留空]]' : '[[留空]]';
-  return [head, options, img ? `![题图](${img})` : '', gap].filter(Boolean).join('\n\n');
+  return [head, options, imgMd(q), gap].filter(Boolean).join('\n\n');
 }
 export const PAGE_BREAK = '[[分页]]';
 export function homeworkMarkdown(title: string, student: string, items: Question[], note = ''): string {
-  const out = [themeLine(items[0] ? questionSubject(items[0]) : undefined), `# ${title}`, `学生：${student}　　日期：${new Date().toLocaleDateString('zh-CN')}　　共 ${items.length} 题`, note ? `> ${note}` : '', '## 练习'];
+  const name = student.replace(/[|｜\]\s]+/g, '');
+  const out = [themeLine(items[0] ? questionSubject(items[0]) : undefined), `# ${title}`, `共 ${items.length} 题　　布置日期 ${new Date().toLocaleDateString('zh-CN')}`, `[[表头 姓名${name ? '：' + name : ''}|日期|用时|得分]]`, note ? `> ${note}` : '', '## 练习'];
   items.forEach((q, i) => out.push(questionMd(q, i + 1, true)));
   out.push(PAGE_BREAK, '## 参考答案');
   items.forEach((q, i) => out.push(`**${i + 1}.** ${q.answer ? block(q.answer) : '（答案待补充）'}` + (q.analysis ? `\n\n> ${block(q.analysis)}` : '') + (q.check === 'unchecked' || q.check === 'mismatch' ? '\n\n> 注意：这道 AI 原创题的答案没有通过自检，请老师核对。' : '')));

@@ -58,6 +58,21 @@ class Files{
   });
   this.queue=job;return job;
  }
+  /** 题库导入：几张 PNG（data URL）用 Windows 自带 OCR 读出每行文字和上沿位置；其他系统返回 null，交给 AI 看图 */
+  async ocrImages(list){
+  if(process.platform!=='win32')return null;
+  const imgs=(Array.isArray(list)?list:[]).slice(0,60).map(s=>/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(s||''))?.[1]).filter(Boolean);
+  if(!imgs.length)return [];
+  const dir=path.join(this.cache,'ocr-'+crypto.randomBytes(6).toString('hex'));await fs.promises.mkdir(dir,{recursive:true});
+  try{
+   for(const [i,b] of imgs.entries())await fs.promises.writeFile(path.join(dir,`slide-${String(i+1).padStart(4,'0')}.png`),Buffer.from(b,'base64'));
+   const out=path.join(dir,'ocr.json');
+   const job=this.queue.catch(()=>{}).then(()=>runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'ocr-slides.ps1'),'-Dir',dir,'-Pages',imgs.map((_,i)=>i+1).join(','),'-OutputFile',out],{timeout:60000+imgs.length*20000}));
+   this.queue=job.catch(()=>{});await job;
+   const v=await readJSON(out,[]);const by=new Map((Array.isArray(v)?v:[v]).map(x=>[Number(x?.p),(Array.isArray(x?.lines)?x.lines:x?.lines?[x.lines]:[]).filter(l=>typeof l?.t==='string').map(l=>({t:l.t.slice(0,500),y:Number(l.y),b:Number(l.b),ws:(Array.isArray(l.ws)?l.ws:[]).filter(w=>Array.isArray(w)&&typeof w[0]==='string'&&Number.isFinite(Number(w[1]))).slice(0,4).map(w=>[w[0].slice(0,20),Number(w[1])])}))]));
+   return imgs.map((_,i)=>({lines:by.get(i+1)??[]}));
+  }finally{await fs.promises.rm(dir,{recursive:true,force:true}).catch(()=>{});}
+ }
   async convert(input,progress){
   const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
   if(['.pdf','.zml'].includes(ext)){const h=await fs.promises.open(actual,'r');try{const buf=Buffer.alloc(1024);const {bytesRead}=await h.read(buf,0,buf.length,0);if(!buf.subarray(0,bytesRead).includes(Buffer.from('%PDF-')))throw Error('这份文件不是有效 PDF');}finally{await h.close();}return {render:'pdf',pdf:normal(actual),cached:true,engine:'passthrough'};}

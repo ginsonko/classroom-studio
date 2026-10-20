@@ -59,7 +59,7 @@ export function scaleStroke(s: Stroke, center: Point, scale: number): Stroke {
   if (s.obj) return withObject(s, { ...s.obj, x: center.x + (s.obj.x - center.x) * k, y: center.y + (s.obj.y - center.y) * k, w: Math.max(.008, s.obj.w * k), h: Math.max(.008, s.obj.h * k) });
   return { ...s, size: Math.max(.3, Math.min(80, s.size * k)), pts: s.pts.map((v, i) => i % 3 === 0 ? center.x + (v - center.x) * k : i % 3 === 1 ? center.y + (v - center.y) * k : v) };
 }
-export function canRotate(s: Stroke): boolean { return !s.plot && !['text', 'axes'].includes(s.tool); }
+export function canRotate(s: Stroke): boolean { return !s.plot && !['text', 'axes', 'image'].includes(s.tool); }
 export function rotateStroke(s: Stroke, center: Point, angle: number): Stroke {
   const c = Math.cos(angle), sn = Math.sin(angle);
   const xy = (x: number, y: number) => [center.x + (x - center.x) * c - (y - center.y) * sn, center.y + (x - center.x) * sn + (y - center.y) * c];
@@ -68,7 +68,7 @@ export function rotateStroke(s: Stroke, center: Point, angle: number): Stroke {
   let pts = s.pts, tool = s.tool;
   const b = bounds(pts);
   if (s.tool === 'rect') { pts = [b.x0, b.y0, .5, b.x1, b.y0, .5, b.x1, b.y1, .5, b.x0, b.y1, .5]; tool = 'poly'; }
-  if (s.tool === 'triangle') { pts = [b.x0, b.y1, .5, b.x1, b.y1, .5, b.x1, b.y0, .5]; tool = 'poly'; }
+  if (s.tool === 'triangle') { pts = s.shape === 'plain' ? [b.x0, b.y1, .5, b.x1, b.y1, .5, (b.x0 + b.x1) / 2, b.y0, .5] : [b.x0, b.y1, .5, b.x1, b.y1, .5, b.x1, b.y0, .5]; tool = 'poly'; }
   if (s.tool === 'ellipse') { pts = Array.from({ length: 64 }, (_, i) => { const a = i * Math.PI / 32; return [(b.x0 + b.x1) / 2 + (b.x1 - b.x0) / 2 * Math.cos(a), (b.y0 + b.y1) / 2 + (b.y1 - b.y0) / 2 * Math.sin(a), .5]; }).flat(); tool = 'poly'; }
   const out: number[] = [];
   for (let i = 0; i < pts.length; i += 3) out.push(...xy(pts[i], pts[i + 1]), pts[i + 2]);

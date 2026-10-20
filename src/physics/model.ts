@@ -11,6 +11,15 @@ export const OBJ_KINDS = [
   // 电路
   'battery', 'resistor', 'rheostat', 'bulb', 'switch', 'ammeter', 'voltmeter', 'galvanometer', 'capacitor',
   'inductor', 'diode', 'motor', 'power-ac', 'junction', 'wire',
+  // 数学：平面
+  'm-segment', 'm-ray', 'm-line', 'm-angle', 'm-triangle', 'm-polygon', 'm-circle', 'm-arc', 'm-sector', 'm-axes', 'm-numberline', 'm-grid',
+  // 数学：曲线
+  'm-func', 'm-ellipse', 'm-hyperbola', 'm-parabola',
+  // 数学：立体
+  'm-cube', 'm-cuboid', 'm-prism', 'm-pyramid', 'm-cylinder', 'm-cone', 'm-sphere', 'm-frustum',
+  // 化学仪器
+  'c-test-tube', 'c-beaker', 'c-conical', 'c-round-flask', 'c-cylinder', 'c-burette', 'c-funnel', 'c-sep-funnel', 'c-lamp',
+  'c-stand', 'c-tube', 'c-gas-bottle', 'c-trough', 'c-condenser', 'c-dropper', 'c-dish', 'c-thermometer', 'c-u-tube',
 ] as const;
 export type ObjKind = (typeof OBJ_KINDS)[number];
 

@@ -63,7 +63,7 @@ const timer = setTimeout(() => { console.error('dock-ui timed out'); app.exit(1)
   await until(() => call(dock, `!!document.querySelector('.tdock-reclaim')`));
   mark('dock shows "student is writing · take back" while the student holds the pen');
 
-  await call(dock, `document.querySelector('[aria-label="物理器材库"]').click(); true`);
+  await call(dock, `document.querySelector('[aria-label="绘图库"]').click(); true`);
   await until(() => call(dock, `!!document.querySelector('.obj-pop')`));
   await sleep(400);
   const geo = await call(dock, `({w:innerWidth,h:innerHeight,pop:document.querySelector('.obj-pop').getBoundingClientRect().toJSON()})`);
@@ -78,15 +78,16 @@ const timer = setTimeout(() => { console.error('dock-ui timed out'); app.exit(1)
   assert.ok(closed.length >= 1 && closed[0].width < geo.w / 2, 'shape shrinks back to the rail: ' + JSON.stringify(closed));
   mark('picking an object closes the popover and the click-through shape returns to the rail');
 
-  // 学科包：数学学生的浮层不显示物理器材库，物理学生显示
+  // 学科包：数学学生的浮层学科标签是数学、没有「力」工具；物理学生有
   await call(teacher, `__studioQA.useStore.getState().set({ students: [{ id: 'm1', name: '小舟', grade: '高二', subject: 'math', hue: 260, textbook: '人教A版 2019', tags: [], lessons: 0, lastTopic: '', lastAt: '' }, { id: 'p1', name: '小林', grade: '高二', hue: 200, textbook: '人教版 2019', tags: [], lessons: 0, lastTopic: '', lastAt: '' }], studentId: 'm1' }); true`);
-  await until(() => call(dock, `!document.querySelector('[aria-label="物理器材库"]')`));
-  mark('dock hides the physics object library for a math student');
+  const force = `[...document.querySelectorAll('.tdock [aria-label]')].some((b) => /^力 /.test(b.getAttribute('aria-label')))`;
+  await until(() => call(dock, `/数学/.test(document.querySelector('.tdock-subj').innerText) && !${force} && !!document.querySelector('[aria-label="绘图库"]')`));
+  mark('dock shows the math subject tag, keeps the drawing library and hides the force tool for a math student');
   await call(teacher, `__studioQA.useStore.getState().set({ studentId: 'p1' }); true`);
-  await until(() => call(dock, `!!document.querySelector('[aria-label="物理器材库"]')`));
-  mark('dock shows the physics object library again for a physics student');
+  await until(() => call(dock, `/物理/.test(document.querySelector('.tdock-subj').innerText) && ${force}`));
+  mark('dock shows the force tool again for a physics student');
   await call(teacher, `__studioQA.useStore.getState().set({ students: [], studentId: 'junyu' }); true`);
-  await until(() => call(dock, `!!document.querySelector('[aria-label="物理器材库"]')`));
+  await until(() => call(dock, `!!document.querySelector('[aria-label="绘图库"]')`));
 
   await call(dock, `document.querySelector('.tdock .tp-g .tp-b').click(); true`);
   await until(async () => (await T('drawAuthor')) === 'teacher');

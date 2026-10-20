@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Circle, Eraser, Highlighter, Lasso, Minus, MousePointer2, MoveUpRight, Pencil, Square, Type, BoxSelect, Shapes, SlidersHorizontal, Sigma,
+  Circle, Eraser, Highlighter, Lasso, Minus, MousePointer2, MoveUpRight, Pencil, Square, Type, BoxSelect, Shapes, SlidersHorizontal, Sigma, Triangle,
 } from 'lucide-react';
 import { DARK_BOARDS, PEN_COLORS, ROLE, STUDENT_COLOR, inkKey, useStore } from '../lib/store';
-import { packOf } from '../lib/subjects';
+import { familyOf } from '../lib/subjects';
 import type { Stroke, Tool } from '../lib/types';
 import { IAxes, ICurtain, ICurveArrow, IDArrow, IDashed, IForce, IIncline, ILaser, IMarker, ISpot } from './icons';
 import { ObjectLibrary } from '../physics/edit/ObjectLibrary';
@@ -38,6 +38,15 @@ export const TOOL_META: Record<string, { icon: Ico; name: string; key?: string }
   spotlight: { icon: ISpot, name: '聚光灯 · 只照亮一块' },
   curtain: { icon: ICurtain, name: '幕布 · 遮住下方，拖动揭开' },
 };
+
+/** 非物理学科的形状菜单：不再叫「物块 / 斜面」，三角形不带地面阴影线，坐标系默认 x–y */
+const GENERAL_META: Record<string, { icon?: Ico; name: string }> = {
+  obj: { name: '绘图库 · 数学图形、化学仪器、物理器材' },
+  rect: { name: '矩形' },
+  triangle: { icon: Triangle, name: '三角形' },
+  axes: { name: '坐标系 · x–y' },
+};
+const metaOf = (t: string, physics: boolean) => physics ? TOOL_META[t] : { ...TOOL_META[t], ...GENERAL_META[t] };
 
 const GROUPS: { id: string; tools: Tool[] }[] = [
   { id: 'select', tools: ['pointer', 'select', 'lasso'] },
@@ -79,8 +88,9 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
   const root = useRef<HTMLDivElement>(null);
   const objectButton = useRef<HTMLButtonElement>(null), editorButton = useRef<HTMLButtonElement>(null);
   const [objectsOpen, setObjectsOpen] = useState(false), [editorOpen, setEditorOpen] = useState(false);
-  // 物理器材是物理学科专属；浮层窗口拿不到学生列表，用同步过来的当前学科
-  const showObj = useStore((s) => packOf(s.subject).demos);
+  // 浮层窗口拿不到学生列表，用同步过来的当前学科决定形状菜单的叫法
+  const physics = useStore((s) => ['physics', 'science'].includes(familyOf(s.subject)));
+  const groups = physics ? GROUPS : GROUPS.map((g) => g.id === 'physics' ? { ...g, tools: g.tools.filter((t) => t !== 'force') } : g);
   const selection = selected ? (ink[selected.key] ?? []).filter((s) => selected.ids.includes(s.id) && s.layer !== 'private') : [];
   const changeOptions = (patch: Partial<typeof inkOptions>) => useStore.getState().setShared({ inkOptions: { ...useStore.getState().inkOptions, ...patch } });
 
@@ -92,7 +102,7 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
   }, [fly]);
 
   const btn = (t: Tool, extra?: { onClick?: () => void; caret?: boolean; active?: boolean }) => {
-    const M = TOOL_META[t];
+    const M = metaOf(t, physics);
     const I = M.icon;
     return (
       <button
@@ -112,7 +122,7 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
   return (
     <div ref={root} className={'tp' + (vertical ? ' v' : '') + (student ? ' student' : '')}>
       {/* 0.9.1 起师生工具合一：学生拿到和老师一样的工具组，只是笔色固定为品红 */}
-      {GROUPS.map((g) => {
+      {groups.map((g) => {
             const cur = g.tools.includes(tool) ? tool : last[g.id] ?? g.tools[0];
             const active = g.tools.includes(tool);
             return (
@@ -128,12 +138,12 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
                 {fly === g.id && (
                   <div className="tp-fly">
                     {g.id !== 'erase' && g.tools.map((t) => {
-                      const I = TOOL_META[t].icon;
+                      const M = metaOf(t, physics), I = M.icon;
                       return (
                         <button key={t} className={'tp-fi' + (t === tool ? ' on' : '')} onClick={() => { onTool(t); setLast({ ...last, [g.id]: t }); setFly(null); }}>
                           <I size={17} strokeWidth={1.9} />
-                          <span>{TOOL_META[t].name.split(' · ')[0]}</span>
-                          <small>{TOOL_META[t].name.split(' · ')[1] ?? ''}</small>
+                          <span>{M.name.split(' · ')[0]}</span>
+                          <small>{M.name.split(' · ')[1] ?? ''}</small>
                         </button>
                       );
                     })}
@@ -153,8 +163,8 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
               </div>
             );
           })}
-      {showObj && <button ref={objectButton} disabled={disabled} className={'tp-b' + (tool === 'obj' || objectsOpen ? ' on' : '')} onClick={() => { setObjectsOpen(!objectsOpen); setEditorOpen(false); setFly(null); }} aria-label="物理器材库" data-tip="物理器材库 · 点击选择后在画布放置"><Shapes size={18} /><i className="tp-caret" /></button>}
-      <button ref={editorButton} className={'tp-b' + (editorOpen ? ' on' : '')} disabled={!selection.length || disabled} onClick={() => { setEditorOpen(!editorOpen); setObjectsOpen(false); setFly(null); }} aria-label="编辑选中内容" data-tip={showObj ? '编辑选中内容：颜色、粗细，器材的大小、方向和物理参数' : '编辑选中内容：颜色、粗细、复制、删除'}><SlidersHorizontal size={18} />{selection.length > 1 && <small className="obj-tool-hint">{selection.length}</small>}</button>
+      {!student && <button ref={objectButton} disabled={disabled} className={'tp-b' + (tool === 'obj' || objectsOpen ? ' on' : '')} onClick={() => { setObjectsOpen(!objectsOpen); setEditorOpen(false); setFly(null); }} aria-label="绘图库" data-tip="绘图库 · 物理器材、数学图形、化学仪器，选好后在画布上点一下或拖出大小"><Shapes size={18} /><i className="tp-caret" /></button>}
+      <button ref={editorButton} className={'tp-b' + (editorOpen ? ' on' : '')} disabled={!selection.length || disabled} onClick={() => { setEditorOpen(!editorOpen); setObjectsOpen(false); setFly(null); }} aria-label="编辑选中内容" data-tip="编辑选中内容：颜色、粗细，图形的大小、方向和参数"><SlidersHorizontal size={18} />{selection.length > 1 && <small className="obj-tool-hint">{selection.length}</small>}</button>
       {ROLE !== 'student' && <button className="tp-b tp-fx" disabled={disabled} onClick={() => { setEditorOpen(false); setObjectsOpen(false); setFly(null); useFormula.getState().open({ ikey: selected?.key ?? inkKey(pgm.materialId, pgm.page), ids: selection.map((s) => s.id), actor: 'teacher', at: { x: .5, y: .12 } }); }} aria-label="公式" data-tip={formulaTip(selection)}><Sigma size={18} /></button>}
       <span className="tp-sep" />
       {student ? (
@@ -191,13 +201,13 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
           </div>
         )}
       </div>
-      {objectsOpen && showObj && <AnchoredPopup anchor={objectButton.current} vertical={vertical} onClose={() => setObjectsOpen(false)}><ObjectLibrary current={objKind} onClose={() => setObjectsOpen(false)} onSelect={(kind) => { useStore.getState().setShared({ objKind: kind }); onTool('obj'); setObjectsOpen(false); }} /></AnchoredPopup>}
+      {objectsOpen && !student && <AnchoredPopup anchor={objectButton.current} vertical={vertical} onClose={() => setObjectsOpen(false)}><ObjectLibrary current={objKind} onClose={() => setObjectsOpen(false)} onSelect={(kind) => { useStore.getState().setShared({ objKind: kind }); onTool('obj'); setObjectsOpen(false); }} /></AnchoredPopup>}
       {editorOpen && selected && selection.length > 0 && <AnchoredPopup anchor={editorButton.current} vertical={vertical} onClose={() => setEditorOpen(false)}><SelectionEditor ikey={selected.key} strokes={selection} onClose={() => setEditorOpen(false)} onSelection={(ids) => useStore.getState().setShared({ selectedInk: ids.length ? { key: selected.key, ids } : null })} /></AnchoredPopup>}
     </div>
   );
 }
 
-function AnchoredPopup({ anchor, children, vertical, onClose }: { anchor: HTMLElement | null; children: ReactNode; vertical?: boolean; onClose: () => void }) {
+export function AnchoredPopup({ anchor, children, vertical, onClose }: { anchor: HTMLElement | null; children: ReactNode; vertical?: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null), [pos, setPos] = useState({ left: 8, top: 8 });
   useLayoutEffect(() => {
     const place = () => {
