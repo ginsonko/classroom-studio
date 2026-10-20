@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import { create } from 'zustand';
-import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, History, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, PenTool, RotateCcw, Settings2, Shapes, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, History, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, PenTool, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
 import { archive } from '../lib/archive';
 import { AiHistory } from './AiHistory';
-import { ai, DemoError, demoByRules, demoEngine, explainToBoard, makePreset, materialFromObjects, runAction, SAMPLE_PROBLEM, setDemoEngine, type Action, type AiConfig, type AiOut, type DemoEngine, type DemoGuess, type RunMeta } from '../lib/ai';
+import { ai, DemoError, demoByRules, demoEngine, explainToBoard, makeMotion, makePreset, materialFromObjects, runAction, SAMPLE_PROBLEM, setDemoEngine, type Action, type AiConfig, type AiOut, type DemoEngine, type DemoGuess, type RunMeta } from '../lib/ai';
+import { SHOWCASE } from '../motion/showcase';
+import { MotionView } from './MotionView';
 import { host } from '../lib/host';
 import { defaultView, inkKey, useStore } from '../lib/store';
 import type { Material, Stroke } from '../lib/types';
@@ -18,7 +20,7 @@ import { makeManim, manimApi, useManim, type ManimQuality } from '../lib/manim';
 import { MdText, TexText } from './TexText';
 import { loadModels, ModelPicker } from '../ui/ModelPicker';
 import { importLink, showImport, type ImportSummary } from './ImportDialog';
-import { ManimBlock, ManimSteps, ManimView, manimQuality, QualityPick } from './ManimBlock';
+import { ManimBlock, ManimInstall, ManimSteps, ManimView, manimQuality, QualityPick } from './ManimBlock';
 import '../styles/sim.css';
 import '../styles/ai.css';
 
@@ -29,10 +31,14 @@ const ACTIONS: { id: Action; label: string; sub: string; icon: typeof Bot }[] = 
   { id: 'explain', label: '讲这道题', sub: '分步解析 · 只给你看', icon: ListOrdered },
   { id: 'draw', label: '画到黑板', sub: '矢量板书 · 可再编辑', icon: PenTool },
   { id: 'ask', label: '问一问', sub: '自由提问', icon: MessageCircle },
+  { id: 'motion', label: '课堂动画', sub: '三维发光 · 自带配乐 · 免安装 · 导出 MP4', icon: Sparkles },
   { id: 'anim', label: '讲解动画', sub: 'manim 视频 · 讲题 → 写脚本 → 渲染 → 审片', icon: Clapperboard },
 ];
-const LABEL: Record<Action, string> = { demo: '物理演示', explain: '讲题', draw: '板书', ask: '回答', anim: '讲解动画' };
-const WAIT: Record<Action, string> = { demo: '正在读题、选模型、校验物理参数…', explain: '正在读题并分步推导…', draw: '正在设计板书布局…', ask: '正在思考…', anim: '正在读题…' };
+const LABEL: Record<Action, string> = { demo: '物理演示', explain: '讲题', draw: '板书', ask: '回答', anim: '讲解动画', motion: '课堂动画' };
+const WAIT: Record<Action, string> = { demo: '正在读题、选模型、校验物理参数…', explain: '正在读题并分步推导…', draw: '正在设计板书布局…', ask: '正在思考…', anim: '正在读题…', motion: '正在构思镜头…' };
+/** 要几分钟、做的时候其它功能照常用的动作 */
+const LONG = (a: Action) => a === 'anim' || a === 'motion';
+const SAMPLE_OUT: AiOut = { kind: 'motion', spec: SHOWCASE, note: '引擎自带的样片，展示课堂动画能做出的效果：三维星空与行星、电场线、化学反应、DNA、曲面、地球、时间轴、水墨古诗、英文动效。', issues: [], checked: true };
 
 /** 演示库展开状态：侧栏「演示」按钮直接打开 AI 面板里的演示库 */
 export const useAiLib = create<{ open: boolean; focus: number }>(() => ({ open: localStorage.getItem('cs.ai.lib') === '1', focus: 0 }));
@@ -67,8 +73,9 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   const [engine, setEngine] = useState<DemoEngine>(demoEngine);
   const [cards, setCards] = useState<Card[]>([]);
   // 讲解动画要几分钟，渲染时其它 AI 功能照常可用；同一时间只做一个动画
-  const busy = cards.some((c) => c.pending && c.action !== 'anim');
+  const busy = cards.some((c) => c.pending && !LONG(c.action));
   const animBusy = cards.some((c) => c.pending && c.action === 'anim');
+  const motionBusy = cards.some((c) => c.pending && c.action === 'motion');
   const signals = useRef(new Map<string, { cancelled: boolean; job: string }>());
   const online = !!cfg?.hasKey && !!cfg.model;
   // 学科默认跟着当前学生，老师可以临时切换（物理课上用数学工具）；换学生时回到学生的学科
@@ -79,7 +86,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   // 物理：物理引擎 + 物理模板库；数学 / 化学：从演示库里挑（kit）
   const demos = packOf(subject).demos, canDemo = hasDemo(subject);
   const [animQ, setAnimQ] = useState<ManimQuality>(manimQuality);
-  const manimSt = useManim((s) => s.status), manimChecking = useManim((s) => s.checking);
+  const manimSt = useManim((s) => s.status), manimChecking = useManim((s) => s.checking), manimSetup = useManim((s) => s.setup);
   useEffect(() => { if (host.electron) void useManim.getState().check(); }, []);
 
   useEffect(() => {
@@ -105,6 +112,14 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
       if (image) patch(id, { meta: { image } });
       const steps: string[] = [];
       const onStep = (t: string) => { steps.push(t); patch(id, { steps: [...steps] }); };
+      if (action === 'motion') {
+        if (cards.some((c) => c.pending && c.action === 'motion')) throw new Error('上一个动画还在做，做完再点。');
+        const sig = { cancelled: false, job: '' }; signals.current.set(id, sig);
+        const { out, meta } = await makeMotion(ask, { cfg: online ? cfg : null, image, subject, onStep, signal: sig });
+        patch(id, { pending: false, out, meta });
+        archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta, subject });
+        return;
+      }
       if (action === 'anim') {
         if (cards.some((c) => c.pending && c.action === 'anim')) throw new Error('上一个动画还在做，做完再点。');
         if (!online) throw new Error('讲解动画需要先在「设置」里填写 API Key 和模型。');
@@ -132,7 +147,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   };
   const cancelAnim = (id: string) => {
     const s = signals.current.get(id);
-    if (s) { s.cancelled = true; void manimApi.cancel(s.job).catch(() => {}); }
+    if (s) { s.cancelled = true; if (s.job) void manimApi.cancel(s.job).catch(() => {}); }
     patch(id, { pending: false, error: '已取消' });
   };
 
@@ -187,14 +202,23 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
           <SubjectPick value={subject} student={studentSubj} onChange={(id) => { setSubject(id); setLibSubject(id); }} />
           <div className="ai-acts">
             {ACTIONS.filter((a) => (a.id !== 'anim' || host.electron) && (a.id !== 'demo' || canDemo)).map((a) => (a.id === 'demo' && !demos ? { ...a, sub: packOf(subject).name + '演示 · 可调参数' } : a)).map((a) => {
+              if (a.id === 'motion') {
+                const tip = !online ? '需要先在设置里配置模型。可以先点右边「看样片」看看效果' : motionBusy ? '上一个动画还在做，做完再点' : '说一句要讲什么（例如「光的折射」），AI 写分镜、本机渲染试看并审片，一般 1～4 分钟。不用安装任何东西，做好后可实时播放、导出 MP4 上屏';
+                return <div key={a.id} className="ai-act-wrap">
+                  <button className="ai-act a-motion" disabled={!online || motionBusy} onClick={() => void run('motion')} data-tip={tip}>
+                    <a.icon size={16} /><b>{a.label}</b><span>{a.sub}</span>
+                  </button>
+                  <button className="ai-manim-inst-go mv-sample" onClick={() => setCards((all) => [{ id: uid(), action: 'motion' as const, ask: '样片：一节课的宇宙', at: Date.now(), out: SAMPLE_OUT }, ...all].slice(0, 30))} data-tip="看引擎自带的 88 秒样片（不用模型）"><Sparkles size={12} />看样片</button>
+                </div>;
+              }
               if (a.id === 'anim') {
                 const noManim = !manimSt || manimChecking || !manimSt.ok;
-                const tip = !online ? '需要先在设置里配置模型' : manimChecking || !manimSt ? '正在检测 manim…' : !manimSt.ok ? '本机没检测到 manim（可选组件）：' + (manimSt.error ?? '') : animBusy ? '上一个动画还在做，做完再点' : 'AI 先讲题，再写 manim 脚本、渲染成视频并看截帧审一遍，一般 3～8 分钟。做动画时其它功能照常用';
+                const tip = !online ? '需要先在设置里配置模型' : manimChecking || !manimSt ? '正在检测 manim…' : !manimSt.ok ? (manimSt.installable ? '还没装 manim（可选组件），点右边「一键安装 manim」，约 3~5 分钟' : '本机没检测到 manim（可选组件）：' + (manimSt.error ?? '')) : animBusy ? '上一个动画还在做，做完再点' : 'AI 先讲题，再写 manim 脚本、渲染成视频并看截帧审一遍，一般 3～8 分钟。做动画时其它功能照常用';
                 return <div key={a.id} className="ai-act-wrap">
                   <button className="ai-act a-anim" disabled={!online || animBusy || noManim} onClick={() => void run('anim')} data-tip={tip}>
                     <a.icon size={16} /><b>{a.label}</b><span>{!online || !manimSt?.ok ? a.sub : `manim ${manimSt.version} · 讲题 → 写脚本 → 渲染 → 审片`}</span>
                   </button>
-                  <QualityPick value={animQ} onChange={setAnimQ} />
+                  {!manimChecking && manimSt && !manimSt.ok && manimSt.installable ? <ManimInstall compact /> : <QualityPick value={animQ} onChange={setAnimQ} />}
                 </div>;
               }
               const dis = busy || (!online && a.id !== 'demo');
@@ -206,6 +230,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
               );
             })}
           </div>
+          {host.electron && manimSetup && (manimSetup.phase === 'running' || manimSetup.phase === 'error') && manimSt && !manimSt.ok && <div className="ai-manim"><ManimInstall /></div>}
         </div>
 
         <DemoLibrary subject={libSubject} setSubject={setLibSubject} onError={(msg) => setCards((all) => [{ id: uid(), action: 'demo', ask: '用学生当前页的器材做演示', error: msg, at: Date.now() }, ...all])} />
@@ -306,15 +331,30 @@ function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onR
   const [bigSheet, setBigSheet] = useState(false);
   const [showLog, setShowLog] = useState(false), [showEx, setShowEx] = useState(false);
   const [, tick] = useState(0);
-  const animLive = c.action === 'anim' && !!c.pending;
+  const animLive = LONG(c.action) && !!c.pending;
   useEffect(() => { if (!animLive) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [animLive]);
   let body: ReactNode = null;
-  const steps = c.steps ?? (c.out?.kind === 'demo' ? c.out.steps : undefined) ?? [];
+  const steps = c.steps ?? (c.out?.kind === 'demo' || c.out?.kind === 'motion' ? c.out.steps : undefined) ?? [];
   if (animLive) body = <div className="ai-manim busy">
     <ManimSteps steps={steps} live />
     <div className="ai-manim-row"><span className="ai-manim-note num">已用 {Math.round((Date.now() - c.at) / 1000)} 秒 · 其它 AI 功能可以照常用</span><span className="flex" /><button onClick={onCancel}><Square size={11} />取消</button></div>
   </div>;
-  else if (c.action === 'anim' && c.error) body = <div className="ai-manim error">
+  else if (c.out?.kind === 'motion') {
+    const o = c.out;
+    body = <>
+      <div className="ai-out-t">{o.spec.title}{o === SAMPLE_OUT ? <span className="ai-ok">引擎样片</span> : o.checked ? <span className="ai-ok">已试看审片</span> : <span className="ai-unk">请预览核对</span>}</div>
+      <TexText text={o.note} className="ai-note" />
+      {o.issues.length > 0 && <div className="ai-warn">{o.issues.slice(0, 4).map((x, i) => <div key={i}>{x}</div>)}</div>}
+      <MotionView spec={o.spec} sheet={o.sheet} send={(m) => <Send3 mat={m} />} />
+      {(steps.length > 0 || c.ask) && <div className="ai-manim-row">
+        {steps.length > 0 && <button className="ai-manim-log" onClick={() => setShowLog(!showLog)}><ChevronDown size={12} />制作过程（{steps.length} 步）</button>}
+        <span className="flex" />
+        {o !== SAMPLE_OUT && <button onClick={onRetry} data-tip="同样的要求让 AI 重新写一版分镜"><RotateCcw size={12} />让 AI 重新做一版</button>}
+      </div>}
+      {showLog && <ManimSteps steps={steps} />}
+    </>;
+  }
+  else if (LONG(c.action) && c.error) body = <div className="ai-manim error">
     {steps.length > 0 && <ManimSteps steps={steps} />}
     <div className="ai-err"><AlertTriangle size={14} /><div><p>动画没做成：{c.error.split('\n')[0]}</p>{c.error.includes('\n') && <pre>{c.error.split('\n').slice(1).join('\n').trim()}</pre>}<div className="ai-err-b"><button onClick={onRetry}>重试</button></div></div></div>
   </div>;

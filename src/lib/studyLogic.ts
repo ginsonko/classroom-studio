@@ -317,8 +317,23 @@ export function lessonByRules(i: LessonInput): Pick<LessonNote, 'summary' | 'str
 export function imgRef(p?: string) { const m = p ? /([0-9a-f-]{36}\.(?:png|jpg))$/.exec(p) : null; return m ? 'img:' + m[1] : ''; }
 /** 题图那一段 Markdown；知道原卷尺寸的写成「题图 w=宽pt」，导出按原大小排 */
 export function imgMd(q: Question) { const r = imgRef(q.image); return r ? `![题图${q.imagePt ? ` w=${Math.round(q.imagePt)}` : ''}](${r})` : ''; }
-/** 从卷子导入的题：题图就是原题截图（含题干和选项），导出时只放图，不再重复印一遍识别出来的文字 */
-export const pictureOnly = (q: Question) => q.origin === 'import' && !!imgRef(q.image);
+/** 题干提到图、表：截图里有文字说不清的内容 */
+const FIGURE = /如图|图中|下图|上图|右图|左图|图所示|图示|见图|图象|图像|示意图|下表|如表|表中|表格|图[:：]/;
+/**
+ * 导出时印文字还是印题图。截图收来的题（卷子导入、粘贴截图、学生画面、讲题），题图就是整道题，不能文字、图各印一遍：
+ * - 卷子导入：只印原卷截图（文字层里的公式常是乱的）；
+ * - 其余截图题：识别出了文字、题目又不涉及图表时只印文字（排版干净，也不会把截图里的答案带出去），否则只印截图。
+ * 手动录入、AI 出的题：图是配图，文字和图都印。
+ */
+export function questionView(q: Question): 'text' | 'image' | 'both' {
+  if (!imgRef(q.image)) return 'text';
+  if (q.origin === 'import') return 'image';
+  if (q.origin === 'paste' || q.origin === 'board' || q.origin === 'explain') return q.stem.trim() && !FIGURE.test(q.stem) ? 'text' : 'image';
+  return q.stem.trim() ? 'both' : 'image';
+}
+export const pictureOnly = (q: Question) => questionView(q) === 'image';
+/** 导出用的题图 Markdown：只印文字时为空 */
+export const viewImgMd = (q: Question) => (questionView(q) === 'text' ? '' : imgMd(q));
 const block = (s: string) => s.trim().split(/\n{2,}/).map((x) => x.replace(/\n/g, ' ')).join('\n\n');
 /** 导出排版的配色跟学科大类走（export.css 里的 data-theme） */
 export const themeLine = (subject?: SubjectId) => `<!-- cs:theme=${familyOf(subject)} -->`;
@@ -335,7 +350,7 @@ function questionMd(q: Question, n: number, space: boolean) {
   const [stem, options] = pic ? ['', ''] : q.stem ? splitOptions(q.stem) : ['（见下图）', ''];
   const head = `**${n}.** ` + (stem ? stem + '　' : '') + `（${q.qtype}，${DIFF_NAME[q.difficulty] ?? ''}）`;
   const gap = !space || SHORT.test(q.qtype) ? '' : /作文|写作|书面表达/.test(q.qtype + q.stem.slice(0, 40)) ? '[[留空]]\n\n[[留空]]\n\n[[留空]]' : '[[留空]]';
-  return [head, options, imgMd(q), gap].filter(Boolean).join('\n\n');
+  return [head, options, viewImgMd(q), gap].filter(Boolean).join('\n\n');
 }
 export const PAGE_BREAK = '[[分页]]';
 export function homeworkMarkdown(title: string, student: string, items: Question[], note = ''): string {

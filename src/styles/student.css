@@ -180,3 +180,6 @@
 .sbar.s-locked .sbar-who { color: #9aa0ad; }
 .sbar.s-locked .sbar-who i { background: #5b6170; box-shadow: none; }
 .sbar .tp { background: none; box-shadow: none; padding: 0; }
+/* 拖图片进来 / 贴图失败的提示 */
+.sw-drop { position: fixed; inset: 14px; z-index: 60; display: flex; align-items: center; justify-content: center; border: 3px dashed rgba(120, 170, 255, .9); border-radius: 18px; background: rgba(20, 40, 80, .28); color: #fff; font-size: 26px; font-weight: 600; pointer-events: none; }
+.sw-msg { position: fixed; left: 50%; top: 18px; z-index: 61; transform: translateX(-50%); max-width: min(720px, 86vw); padding: 10px 18px; border-radius: 12px; background: rgba(30, 30, 36, .92); color: #fff; font-size: 15px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); pointer-events: none; }

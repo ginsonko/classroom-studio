@@ -9,7 +9,9 @@ import { extractCode, lintScript, manimPrompt, manimSystem, parseReview, repairP
 
 export { extractCode, manimPrompt };
 
-export interface ManimStatus { ok: boolean; version?: string; latex?: boolean; error?: string }
+export interface ManimStatus { ok: boolean; version?: string; latex?: boolean; error?: string; portable?: boolean; installable?: boolean }
+/** 一键安装的进度（主进程 manimSetup.cjs 推过来） */
+export interface ManimSetupState { phase: 'idle' | 'running' | 'done' | 'error'; step: string; pct: number; lines: string[]; error?: string; installed?: boolean; started?: number; platform?: string }
 export interface ManimVideo { id: string; video: string; ms: number; bytes: number; duration?: number; sheet?: string }
 export interface ManimResult extends ManimVideo { code: string; tries: number; review: string[] }
 export type ManimQuality = 'draft' | 'normal' | 'hd';
@@ -19,20 +21,49 @@ export const manimApi = {
   status: (force = false) => host.call<ManimStatus>('manim.status', { force }),
   render: (o: { code: string; quality: ManimQuality; title: string; job: string }) => host.call<ManimVideo>('manim.render', o),
   cancel: (job: string) => host.call<boolean>('manim.cancel', job),
+  install: () => host.call<ManimSetupState>('manim.install'),
+  installState: () => host.call<ManimSetupState>('manim.installState'),
+  cancelInstall: () => host.call<boolean>('manim.cancelInstall'),
+  uninstall: () => host.call<ManimSetupState>('manim.uninstall'),
 };
 
+interface ManimStore {
+  status: ManimStatus | null; checking: boolean; setup: ManimSetupState | null;
+  check: (force?: boolean) => Promise<ManimStatus>;
+  install: () => Promise<void>; cancelInstall: () => Promise<void>;
+}
+let listening = false;
 /** 检测一次（启动 Python 要几秒），之后各个讲解卡片共用结果 */
-export const useManim = create<{ status: ManimStatus | null; checking: boolean; check: (force?: boolean) => Promise<ManimStatus> }>()((set, get) => ({
-  status: null, checking: false,
+export const useManim = create<ManimStore>()((set, get) => ({
+  status: null, checking: false, setup: null,
   check: async (force = false) => {
     const cur = get().status; if (cur && !force) return cur;
     if (!host.electron) { const s = { ok: false, error: '浏览器预览版不能运行 manim，请用桌面版。' }; set({ status: s }); return s; }
+    listen();
     set({ checking: true });
-    try { const s = await manimApi.status(force); set({ status: s }); return s; }
+    try { const s = await manimApi.status(force); set({ status: s }); if (s.installable && !get().setup) void manimApi.installState().then((st) => { if (!get().setup) set({ setup: st }); }, () => {}); return s; }
     catch (e) { const s = { ok: false, error: (e as Error).message }; set({ status: s }); return s; }
     finally { set({ checking: false }); }
   },
+  install: async () => {
+    listen();
+    try { set({ setup: await manimApi.install() }); }
+    catch (e) { set({ setup: { phase: 'error', step: clean(e), error: clean(e), pct: 0, lines: [] } }); }
+  },
+  cancelInstall: async () => { await manimApi.cancelInstall().catch(() => {}); },
 }));
+
+function listen() {
+  if (listening || !host.electron) return;
+  listening = true;
+  host.onEvent((e) => {
+    if (e?.type !== 'manimSetup' || !e.state) return;
+    const prev = useManim.getState().setup;
+    useManim.setState({ setup: e.state });
+    // 装完马上重新检测，讲解卡片和「讲解动画」按钮就能直接用了
+    if (e.state.phase === 'done' && prev?.phase !== 'done') void useManim.getState().check(true);
+  });
+}
 
 const clean = (e: unknown) => ((e as Error)?.message ?? String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 /** Python 报错的最后一行（例如 NameError: …），给老师看 */

@@ -1,5 +1,7 @@
 import type { LessonSlot } from '../lib/types';
 
+/** 课表能排课的时间范围（小时） */
+export const DAY_START = 8, DAY_END = 23;
 export const dateKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export function localDate(value: string) { const [y, m, d] = value.split('-').map(Number); return new Date(y, m - 1, d); }
 export function monday(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; }

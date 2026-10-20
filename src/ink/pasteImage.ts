@@ -46,8 +46,16 @@ export function placeImage(aspect: number, ratio: number, view: Pick<View, 'fit'
   return [x, y, x + w, y + h];
 }
 
+function assertCanPaste() {
+  const st = useStore.getState();
+  if (host.role === 'student' && st.drawAuthor === 'student' && st.studentTools !== 'open') throw new Error('老师锁定了学生工具，现在不能贴图');
+}
+
 /** 贴到当前黑板（学生画面不是黑板时先切回黑板）。src 可以是 Blob、data: 地址或 lesson:// 地址 */
 export async function pasteToBoard(src: Blob | string, o: { note?: string } = {}): Promise<string> {
+  // 学生窗口：谁拿着笔，贴图就算谁的（学生书写时贴的图学生自己能挪、能删）
+  const author = host.role === 'student' ? useStore.getState().drawAuthor : 'teacher';
+  assertCanPaste();
   const url = typeof src === 'string' ? src : URL.createObjectURL(src);
   let stored: { url: string; w: number; h: number };
   try { stored = await storeImage(await loadImage(url)); } finally { if (typeof src !== 'string') URL.revokeObjectURL(url); }
@@ -56,7 +64,7 @@ export async function pasteToBoard(src: Blob | string, o: { note?: string } = {}
   const { pgmMat, pgm } = useStore.getState();
   const page = pgmMat.pages[pgm.page] ?? pgmMat.pages[0], ratio = page.h / page.w, key = inkKey(pgmMat.id, pgm.page);
   const [x0, y0, x1, y1] = placeImage(stored.w / stored.h, ratio, pgm, useStore.getState().ink[key] ?? []);
-  const stroke: Stroke = { id: freshId(), tool: 'image', color: 'ink', size: 1, pts: [x0, y0, .5, x1, y1, .5], img: stored.url, author: 'teacher', layer: 'public' };
+  const stroke: Stroke = { id: freshId(), tool: 'image', color: 'ink', size: 1, pts: [x0, y0, .5, x1, y1, .5], img: stored.url, author, layer: 'public' };
   useStore.getState().addStroke(key, stroke);
   if (host.role === 'teacher') toast(o.note ?? '截图已贴到黑板，周围和图上都能直接写字', { action: { label: '挪位置 / 调大小', run: () => useStore.getState().setShared({ tool: 'select', selectedInk: { key, ids: [stroke.id] } }) } });
   return stroke.id;
@@ -76,17 +84,43 @@ export function clipboardImage(e: ClipboardEvent): Blob | null {
   return it?.getAsFile() ?? null;
 }
 
+const NO_IMAGE = '剪贴板里没有图片。微信 / QQ 里请先点开图片，右键「复制」后再按 Ctrl+V；也可以直接把图片拖进来';
+
 /** 窗口级 Ctrl+V：输入框里照常粘贴文字；其余地方有图片就贴到黑板 */
 export function installPaste(enabled: () => boolean, onError: (msg: string) => void) {
   const handler = (e: ClipboardEvent) => {
     const el = e.target as HTMLElement | null;
     if (e.defaultPrevented || el?.closest?.('input,textarea,[contenteditable],select')) return;
     if (!enabled()) return;
-    const blob = clipboardImage(e);
-    if (!blob) return;
+    const blob = clipboardImage(e) ?? [...(e.clipboardData?.files ?? [])].find((f) => /^image\//.test(f.type) || IMAGE_NAME.test(f.name)) ?? null;
+    // 只复制了文字：不当成贴图
+    const text = e.clipboardData?.getData('text/plain')?.trim() ?? '';
+    if (!blob && text && !IMAGE_NAME.test(text)) return;
     e.preventDefault();
-    void pasteToBoard(blob).catch((err) => onError((err as Error).message));
+    const run = async () => {
+      assertCanPaste();
+      if (blob) return pasteToBoard(blob);
+      // 微信 / QQ 复制的图片常常是「文件」，网页事件里拿不到：让主进程从系统剪贴板读
+      if (!host.electron) throw new Error(NO_IMAGE);
+      const data = await host.call<string | null>('clipboardImage');
+      if (!data) throw new Error(NO_IMAGE);
+      return pasteToBoard(data);
+    };
+    void run().catch((err) => onError((err as Error).message));
   };
   window.addEventListener('paste', handler);
   return () => window.removeEventListener('paste', handler);
+}
+
+const IMAGE_NAME = /\.(png|jpe?g|bmp|gif|webp)$/i;
+/** 拖进来的图片文件（从微信、QQ、资源管理器、浏览器拖） */
+export function droppedImages(dt: DataTransfer | null): File[] {
+  return [...(dt?.files ?? [])].filter((f) => /^image\//.test(f.type) || IMAGE_NAME.test(f.name)).slice(0, 6);
+}
+/** 把拖进来的图片依次贴到黑板 */
+export async function dropToBoard(files: File[]): Promise<void> {
+  for (const f of files) {
+    if (f.size > 30 * 1024 * 1024) throw new Error(`「${f.name}」太大了（超过 30 MB）`);
+    await pasteToBoard(f);
+  }
 }

@@ -49,7 +49,8 @@ function authorizeMessage(role,m,state){
  const actor=trusted?(m.actor??m.author??'teacher'):state.drawAuthor??'student';
  const canEdit=s=>s.layer!=='private'&&(trusted||actor==='teacher'||s.author==='student');
  const allowed=new Set((state.ink?.[m.key]??[]).filter(canEdit).map(s=>s.id));
- const clean=s=>{if(!validStroke(s))return null;return {...s,author:trusted?s.author:actor,layer:'public'};};
+ // 学生窗口贴的图只能是软件自己存下的本地图片（lesson:// 地址），不能让老师那边去加载外部网址
+ const clean=s=>{if(!validStroke(s))return null;if(!trusted&&s.img!==undefined&&(typeof s.img!=='string'||!/^lesson:\/\/[0-9a-f]{20,}\//.test(s.img)))return null;return {...s,author:trusted?s.author:actor,layer:'public'};};
  if(m.t==='edit')return {t:'edit',key:m.key,remove:(m.remove??[]).filter(id=>allowed.has(id)),upsert:(m.upsert??[]).map(clean).filter(Boolean),actor,...(trusted&&Array.isArray(m.order)?{order:m.order.filter(x=>typeof x==='string')}: {})};
  if(m.t==='stroke'){const stroke=clean(m.stroke);return stroke?{t:'stroke',key:m.key,stroke}:null;}
  if(m.t==='erase')return {t:'erase',key:m.key,ids:(m.ids??[]).filter(id=>allowed.has(id))};

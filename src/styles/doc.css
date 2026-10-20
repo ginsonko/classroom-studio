@@ -89,3 +89,33 @@
 .doc-web-wait .spin { margin: 0; }
 .doc-web-wait button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 7px; color: #17343a; background: #c3eef3; }
 @keyframes web-wait-in { from { opacity: 0; } }
+
+/* 导入课表 */
+.sch-imp { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); font-size: 12.5px; color: var(--fg-1); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; }
+.sch-imp:hover { color: var(--fg-0); background: var(--bg-3); }
+.record-editor.sch-import { width: min(980px, calc(100vw - 40px)); }
+.si-src { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px dashed var(--line-strong); border-radius: 10px; font-size: 12px; line-height: 1.6; color: var(--fg-2); }
+.si-src.over { border-color: var(--cue); background: var(--cue-soft); }
+.si-src .btn-cue { flex: none; }
+.si-img { display: flex; gap: 12px; align-items: flex-start; }
+.si-img img { max-width: 60%; max-height: 300px; object-fit: contain; border-radius: 8px; background: #fff; }
+.si-img div { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.si-img b { display: inline-flex; gap: 5px; align-items: center; }
+.si-img button { align-self: flex-start; padding: 5px 10px; border-radius: 6px; background: var(--bg-3); }
+.si-meta { font-size: 12.5px; line-height: 1.7; color: var(--fg-1); }
+.si-meta em { display: block; font-style: normal; color: var(--warn); }
+.si-opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 12px; }
+.si-opts .record-check { display: flex; gap: 6px; color: var(--fg-1); }
+.si-table { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: auto; max-height: min(52vh, 460px); }
+.si-row { display: grid; grid-template-columns: 26px minmax(120px, 160px) minmax(170px, 210px) minmax(120px, 1fr) 40px minmax(130px, 220px); gap: 8px; align-items: center; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.si-row:first-child { border-top: 0; }
+.si-head { position: sticky; top: 0; z-index: 1; background: var(--bg-3); color: var(--fg-2); font-size: 11.5px; }
+.record-editor .si-row input[type=checkbox] { width: 15px; height: 15px; justify-self: center; }
+.record-editor .si-row select, .record-editor .si-row input:not([type=checkbox]) { padding: 5px 7px; font-size: 12.5px; }
+.si-row em { font-style: normal; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-row.add em { color: var(--ok, #6fd39a); }
+.si-row.swap em { color: var(--warn); }
+.si-row.skip em, .si-row.bad em { color: #f6a497; }
+.si-row.off { opacity: .55; }
+.si-row.off em { color: var(--fg-3); }
+.si-sum { font-size: 12.5px; color: var(--fg-1); line-height: 1.6; }

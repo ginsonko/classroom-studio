@@ -64,9 +64,10 @@ ok('导入的原卷截图题：只放图、按原卷宽度，不重复印识别�
   let p = emptyPaper();
   for (const q of qs) p = addToPaper(p, q, order);
   const md = paperMarkdown(p, qs, 'student');
-  assert.ok(md.includes('**1.** （4 分）\n\n![题图 w=402](img:0123abcd-0123-4567-89ab-0123456789ab.png)'), md);
+  // 1.2.0 起同分大题不逐题标分
+  assert.ok(md.includes('**1.**\n\n![题图 w=402](img:0123abcd-0123-4567-89ab-0123456789ab.png)'), md);
   assert.ok(!md.includes('识别出来的题干'));
-  assert.ok(md.includes('**2.** （4 分）手写题\n\n![题图](img:'), '自己录的题照旧：文字 + 图');
+  assert.ok(md.includes('**2.** 手写题\n\n![题图](img:'), '自己录的题照旧：文字 + 图');
 });
 
 ok('题库删掉的题自动从卷子里去掉', () => {

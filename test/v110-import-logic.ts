@@ -40,7 +40,8 @@ ok('题内【答案】【解析】：截图到答案前为止', () => {
   const near = (s: { page: number; y0: number; y1: number }[], want: [number, number, number][]) => assert.ok(s.length === want.length && s.every((x, i) => x.page === want[i][0] && Math.abs(x.y0 - want[i][1]) < 1e-9 && Math.abs(x.y1 - want[i][2]) < 1e-9), JSON.stringify(s));
   near(r.pieces[0].segs, [[0, 0.1, 0.141]]);
   near(r.pieces[1].segs, [[0, 0.3, 0.791]]);
-  near(r.pieces[2].segs, [[0, 0.8, 0.83], [1, 0.05, 0.091]]);
+  // 1.2.0：跨页的题在前一页截到页面底部（文字下面可能有配图，空白截图时会裁掉）
+  near(r.pieces[2].segs, [[0, 0.8, 0.97], [1, 0.05, 0.091]]);
   assert.equal(r.pieces[2].stem, '已知函数 f(x)=x²，求 f(2)。');
   assert.equal(r.pieces[2].answer, '4');
 });

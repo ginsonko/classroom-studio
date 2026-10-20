@@ -4,7 +4,7 @@
 /** 一行文字：page 从 0 开始；y / b 是这一行上沿 / 下沿占页高的比例（纯文本没有位置时 y = b = 行号） */
 export interface SrcLine { t: string; page: number; y: number; b: number; nx?: number }
 /** 原卷上的一段区域（截图用）：第 page 页从 y0 到 y1；nx / nb：把左上角 [0, nx] × [y0, nb] 的原题号涂白 */
-export interface Seg { page: number; y0: number; y1: number; nx?: number; nb?: number }
+export interface Seg { page: number; y0: number; y1: number; nx?: number; nb?: number; /** 往上留白的极限（上一行的下沿） */ top?: number }
 export interface Piece {
   n: number;
   stem: string;
@@ -17,27 +17,49 @@ export interface Piece {
 
 const FW = (s: string) => s.replace(/[\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 const CN = '一二三四五六七八九十';
+// PDF 文字层里公式的箭头、上标常被取成控制字符（\0）：去掉
+const clean = (s: string) => FW(s).replace(/[\u0000-\u0008\u000b-\u001f\u007f\ufffd]/g, '').replace(/\s+/g, ' ').trim();
 /** 页眉页脚、页码、装订线 */
-const JUNK = /^(最强网课教辅系统\s*·.*|第\s*\d+\s*页(\s*[,，/]?\s*共\s*\d+\s*页)?|[-—\s]*\d{1,3}[-—\s]*|\d+\s*\/\s*\d+|共\s*\d+\s*页|密\s*封\s*线.*|装\s*订\s*线.*|[○\s]*订[○\s]*线.*)$/;
+const JUNK = /^(最强网课教辅系统\s*·.*|(?:试卷|试题|答案|答题卡|本卷|数学|物理|化学)?\s*第\s*\d+\s*页\s*[,，/（(]?\s*(?:共\s*\d+\s*页)?\s*[)）]?|[-—\s]*\d{1,3}[-—\s]*|\d+\s*\/\s*\d+|共\s*\d+\s*页|密\s*封\s*线.*|装\s*订\s*线.*|[○\s]*订[○\s]*线.*)$/;
+/** 题库网站的水印、页脚（文字层里常有，夹在题目中间会把题拆坏） */
+const WATERMARK = /^.{0,12}(学科网|组卷网|菁优网|21世纪教育网|二一教育|zxxk|jyeoo|21cnjy|www\.[\w-]+\.(?:com|cn|net)).{0,20}$/i;
 const SECTION = new RegExp(`^(?:第?[${CN}]{1,3}\\s*[、.．]|第[${CN}]{1,3}部分|[ⅠⅡⅢⅣⅤⅥ]+\\s*[、.．])\\s*(.{0,40})$`);
-const ANSWER_HEAD = /^[【\[(（]?\s*(?:参考答案|答案(?:与|及|和)?(?:解析|详解|评分标准)?|试题答案|答案速查|参考答案与(?:试题)?解析)\s*[】\])）]?\s*[:：]?$/;
+/** 「数学试卷 第 1 页 共 4 页」这类带卷名的页脚 */
+const PAGE_FOOT = /^.{0,16}第\s*\d+\s*页\s*[,，/（(]?\s*共\s*\d+\s*页\s*[)）]?$/;
+const ANSWER_WORDS = '(?:参考答案|答案(?:与|及|和)?(?:解析|详解|评分标准)?|试题答案|答案速查|参考答案与(?:试题)?解析|试题解析)';
+// 前面带卷名时只认这几种说法（「在横线上填写答案」这类题干不能当成答案区）
+const TITLED_WORDS = '(?:参考答案(?:与(?:试题)?解析)?|答案(?:与|及|和)(?:解析|详解|评分标准)|试题解析|答案解析|答案速查)';
+/** 答案区开头：「参考答案」，也可能带卷名「《10.18 作业-向量和圆》参考答案」「高一数学月考 答案与解析」 */
+const ANSWER_HEAD = new RegExp(`^(?:[【\\[(（]?\\s*${ANSWER_WORDS}\\s*[】\\])）]?|《[^》]{1,60}》\\s*${ANSWER_WORDS}|[^\\d\\s（(【].{0,40}?\\s*${TITLED_WORDS})\\s*[:：]?$`);
 /** 题号：1. / 1、/ 1． / 第1题；半角小数（1.5 m）不算，全角点后面跟数字（3．20 m）算 */
 const QNUM = /^(?:第\s*(\d{1,3})\s*题[:：.．、\s]*|(\d{1,3})\s*(?:[．、]|\.(?!\d)))\s*/;
-const INLINE_ANS = /^[【\[]\s*(答案|解析|详解|分析|点评|解答|考点|答)\s*[】\]]\s*[:：]?\s*|^(答案|解析|详解)\s*[:：]\s*/;
+// 截图经系统 OCR 时【】常被认成（〗〔 之类，括号放宽
+const INLINE_ANS = /^[【\[〖〔(（]\s*(答案|解析|详解|分析|点评|解答|考点|答)\s*[】\]〗〕)）]\s*[:：]?\s*|^(答案|解析|详解)\s*[:：]\s*/;
 const CHOICE_ROW = /(\d{1,3})\s*[.．、:：]?\s*[(（]?([A-H]{1,4})[)）]?(?=[\s,，;；]|$)/g;
 
 const joinLines = (ls: string[]) => ls.reduce((s, l) => (!s ? l : /[\u4e00-\u9fff，。；：、）)】]$/.test(s) && /^[\u4e00-\u9fff，。；：、（(【]/.test(l) ? s + l : s + '\n' + l), '');
 
-/** 每页正文的上下界（截图时跨页的题从这里续上） */
-function bounds(lines: SrcLine[]) {
+/**
+ * 每页正文的上下界（截图时跨页的题从这里续上）。页上最后一题下面常有不带文字的配图：
+ * 下界放到页脚上沿（没有页脚就到页面底部），多出来的空白截图时会裁掉。
+ */
+function bounds(lines: SrcLine[], dropped: SrcLine[]) {
   const m = new Map<number, { top: number; bottom: number }>();
   for (const l of lines) { const v = m.get(l.page); m.set(l.page, v ? { top: Math.min(v.top, l.y), bottom: Math.max(v.bottom, l.b) } : { top: l.y, bottom: l.b }); }
+  // 纯文本没有版面位置（y 是行号），不用放
+  if (lines.some((l) => l.b > 1.001)) return m;
+  for (const [pg, v] of m) {
+    const foot = Math.min(...dropped.filter((l) => l.page === pg && l.y >= v.bottom).map((l) => l.y));
+    v.bottom = Number.isFinite(foot) ? Math.max(v.bottom, foot - 0.003) : Math.max(v.bottom, 0.97);
+  }
   return m;
 }
 
 export function splitQuestions(input: SrcLine[]): { pieces: Piece[]; title: string; answers: number } {
-  const lines = input.map((l) => ({ ...l, t: FW(l.t).replace(/\s+/g, ' ').trim() })).filter((l) => l.t && !JUNK.test(l.t));
-  const box = bounds(lines);
+  const all = input.map((l) => ({ ...l, t: clean(l.t) })).filter((l) => l.t);
+  const junk = (t: string) => JUNK.test(t) || PAGE_FOOT.test(t) || WATERMARK.test(t);
+  const lines = all.filter((l) => !junk(l.t));
+  const box = bounds(lines, all.filter((l) => JUNK.test(l.t) || PAGE_FOOT.test(l.t)));
   const pieces: (Piece & { body: string[]; ans: string[]; ana: string[]; mode: 'stem' | 'ans' | 'ana'; start: SrcLine; end?: SrcLine })[] = [];
   let section = '', last = 0, inAnswers = false, title = '';
   let cur: (typeof pieces)[number] | null = null;
@@ -117,8 +139,12 @@ export function splitQuestions(input: SrcLine[]): { pieces: Piece[]; title: stri
       const y0 = pg === start.page ? start.y : b.top;
       // 下一题的题号框往往比文字高，截到它上沿再往上一点，免得露出一截
       const y1 = end && pg === end.page ? end.y - (end.b - end.y) * 0.3 : b.bottom;
+      // 续页上没有这道题的文字（比如答案区另起一页）就不截
+      const has = pg === start.page || lines.some((x) => x.page === pg && x.y >= y0 - 0.001 && x.b <= y1 + 0.01);
       // 题号常带圆圈 / 方框，比文字高一点，涂白的范围往下多留 0.4 行
-      if (y1 - y0 > 0.004) segs.push({ page: pg, y0, y1, ...(pg === start.page && start.nx ? { nx: start.nx, nb: start.b + (start.b - start.y) * 0.4 } : {}) });
+      // 往上留白时不越过上一行（大题标题）的下沿
+      const above = pg === start.page ? Math.max(0, ...lines.filter((x) => x.page === pg && x.y < start.y && x.b <= start.y + 0.002).map((x) => x.b)) : 0;
+      if (has && y1 - y0 > 0.004) segs.push({ page: pg, y0, y1, ...(above > 0 ? { top: above } : {}), ...(pg === start.page && start.nx ? { nx: start.nx, nb: start.b + (start.b - start.y) * 0.4 } : {}) });
     }
     const a = answers.get(p.n);
     const answer = joinLines(p.ans).trim() || (a ? joinLines(a.ans).trim() : '');
@@ -131,6 +157,25 @@ export function splitQuestions(input: SrcLine[]): { pieces: Piece[]; title: stri
   const dupNums = new Set(out.map((p) => p.n).filter((n, i, a) => a.indexOf(n) !== i));
   if (dupNums.size) for (const p of out) if (dupNums.has(p.n) && !pieces.find((x) => x.n === p.n)?.ans.length) { p.answer = ''; p.analysis = ''; }
   return { pieces: out, title, answers: out.filter((p) => p.answer).length };
+}
+
+/**
+ * 一张题目截图（OCR 行）里的答案部分：从第一个「【答案】/【详解】/答案：」那行起往下都是答案。
+ * cut 是那一行的上沿（占图高的比例），截图裁到这里；答案、解析单独记下。
+ */
+export function answerTail(input: SrcLine[]): { cut?: number; answer: string; analysis: string } {
+  const lines = input.map((l) => ({ ...l, t: clean(l.t) })).filter((l) => l.t);
+  const k = lines.findIndex((l, i) => i > 0 && (INLINE_ANS.test(l.t) || ANSWER_HEAD.test(l.t)));
+  if (k < 0) return { answer: '', analysis: '' };
+  const ans: string[] = [], ana: string[] = [];
+  let into = ans;
+  for (const l of lines.slice(k)) {
+    const m = INLINE_ANS.exec(l.t);
+    if (m) { into = /解析|详解|分析|解答|点评|考点/.test(m[1] ?? m[2] ?? '') ? ana : ans; const rest = l.t.slice(m[0].length); if (rest) into.push(rest); continue; }
+    if (ANSWER_HEAD.test(l.t)) continue;
+    into.push(l.t);
+  }
+  return { cut: lines[k].y, answer: joinLines(ans).trim(), analysis: joinLines(ana).trim() };
 }
 
 /** 大题标题里的题型（选择、填空…）；对不上本学科题型就返回空，交给规则或 AI 判断 */

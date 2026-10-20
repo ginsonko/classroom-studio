@@ -30,11 +30,13 @@ body.doc p.li .dot { flex: none; width: 5pt; height: 5pt; margin: .62em 4pt 0 2p
 body.doc p.li.d1 { padding-left: 1.6em; } body.doc p.li.d2 { padding-left: 3.2em; } body.doc p.li.d3 { padding-left: 4.8em; }
 body.doc p.quote { border-left: 3pt solid var(--c5); background: var(--c4); padding: 4pt 10pt; color: #3a4558; border-radius: 0 6pt 6pt 0; }
 body.doc p.quote.warn { border-color: var(--warn); background: var(--warn-bg); color: #6d3f0f; }
-body.doc p.q { display: flex; gap: 8pt; margin: 12pt 0 4pt; page-break-inside: avoid; }
-body.doc p.q .qn { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 18pt; height: 18pt; margin-top: 1pt; padding: 0 4pt; border-radius: 9pt; background: var(--c2); color: #fff; font-weight: 700; font-size: 10pt; line-height: 1; }
-body.doc p.q .qb { flex: 1; min-width: 0; }
-body.doc p.q .qn { position: relative; }
-body.doc p.q .qn i { position: absolute; right: 3pt; top: 35%; font-style: normal; font-size: 2pt; line-height: 1; color: var(--c2); }
+body.doc p.q, body.doc .q { display: flex; gap: 8pt; margin: 12pt 0 4pt; page-break-inside: avoid; break-inside: avoid; }
+body.doc .qpic .sc { margin: 0 0 2pt; }
+body.doc .qpic figure.orig { margin: 0; }
+body.doc .q .qn { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 18pt; height: 18pt; margin-top: 1pt; padding: 0 4pt; border-radius: 9pt; background: var(--c2); color: #fff; font-weight: 700; font-size: 10pt; line-height: 1; }
+body.doc .q .qb { flex: 1; min-width: 0; }
+body.doc .q .qn { position: relative; }
+body.doc .q .qn i { position: absolute; right: 3pt; top: 35%; font-style: normal; font-size: 2pt; line-height: 1; color: var(--c2); }
 body.doc .ans p.q .qn i { color: var(--ok); }
 body.doc .ans p.q { margin: 10pt 0 2pt; }
 body.doc .ans p.q .qn { background: var(--ok); }

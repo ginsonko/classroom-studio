@@ -1,7 +1,7 @@
-const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification}=require('electron');
+const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,readJSON,within,cleanTemps}=require('./core.cjs');
-const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');
+const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
 const DATA=(()=>{const want=path.resolve(process.env.CS_DATA_DIR||path.join(path.parse(ROOT).root,'ClassroomStudioData'));if(process.env.CS_DATA_DIR)return want;try{fs.mkdirSync(want,{recursive:true});const probe=path.join(want,'.write-probe');fs.writeFileSync(probe,'');fs.unlinkSync(probe);return want;}catch{return path.join(app.getPath('appData'),'ClassroomStudioData');}})();
@@ -38,11 +38,27 @@ function rememberPublic(){
  for(const[k,v]of Object.entries(publicData.ink??{}))merged[k]=[...v,...(prior[k]??[]).filter(s=>s.layer==='private')];
  saved.shared={...full,...publicData,ink:merged};scheduleSave();
 }
+// net.fetch(file:) 收到 Range 时只截了内容，状态仍是 200、没有 Content-Range，Chromium 就认为视频不能拖动进度。
+// 这里自己按 Range 读文件、回 206，本地视频才能任意跳转（Range 不传给 net.fetch，超出文件长度时它会直接报错）。
+const noRange=req=>{const h=new Headers(req.headers);h.delete('range');return h;};
+async function fileResponse(file,req,response,headers){
+ headers.set('Accept-Ranges','bytes');
+ const range=req.headers.get('range');
+ if(!range||response.status!==200)return new Response(response.body,{status:response.status,headers});
+ void response.body?.cancel().catch(()=>{});
+ const size=(await fs.promises.stat(file)).size,m=/^bytes=(\d*)-(\d*)$/.exec(range.trim());
+ let start=m&&m[1]!==''?Number(m[1]):NaN,end=m&&m[2]!==''?Number(m[2]):size-1;
+ if(m&&m[1]===''&&m[2]!==''){start=Math.max(0,size-Number(m[2]));end=size-1;}
+ end=Math.min(end,size-1);
+ if(!Number.isFinite(start)||start>end||start>=size){headers.set('Content-Range',`bytes */${size}`);headers.delete('content-length');return new Response(null,{status:416,headers});}
+ headers.set('Content-Range',`bytes ${start}-${end}/${size}`);headers.set('Content-Length',String(end-start+1));
+ return new Response(require('node:stream').Readable.toWeb(fs.createReadStream(file,{start,end})),{status:206,headers});
+}
 function guardSession(ses){
  ses.protocol.handle('studio',async req=>{try{const u=new URL(req.url);if(u.hostname!=='app')return new Response('Not found',{status:404});let rel=decodeURIComponent(u.pathname).replace(/^\//,'')||'index.html';const base=rel.startsWith('recorder.')||rel.startsWith('snip.')?__dirname:path.join(ROOT,process.env.CS_DIST||'dist');const file=path.resolve(base,rel);if(!within(base,file))return new Response('Denied',{status:403});const response=await net.fetch(pathToFileURL(file).href);const headers=new Headers(response.headers);headers.set('Content-Security-Policy',"default-src 'self' lesson: data: blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' lesson: plugin: data: blob: https: http:; connect-src 'self' lesson: plugin: blob: https: http:; frame-src lesson: plugin: https: http: blob:; media-src 'self' lesson: blob: https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'");return new Response(response.body,{status:response.status,headers});}catch{return new Response('Resource unavailable',{status:404});}});
- ses.protocol.handle('lesson',async req=>{try{const file=files.resolve(req.url);const response=await net.fetch(pathToFileURL(file).href,{headers:req.headers});const headers=new Headers(response.headers);headers.set('Access-Control-Allow-Origin','*');headers.set('X-Content-Type-Options','nosniff');if(/\.html?$/i.test(file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');return new Response(injectCookieShim(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return new Response(response.body,{status:response.status,headers});}catch{return new Response('课件文件已移动或不可读取',{status:404});}});
+ ses.protocol.handle('lesson',async req=>{try{const file=files.resolve(req.url);const response=await net.fetch(pathToFileURL(file).href,{headers:noRange(req)});const headers=new Headers(response.headers);headers.set('Access-Control-Allow-Origin','*');headers.set('X-Content-Type-Options','nosniff');if(/\.html?$/i.test(file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');return new Response(injectCookieShim(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return await fileResponse(file,req,response,headers);}catch{return new Response('课件文件已移动或不可读取',{status:404});}});
  // 插件：plugin://<id>/…，每个插件一个独立来源；页面注入 SDK，内容安全策略只放行 plugin.json 里写明的域名
- ses.protocol.handle('plugin',async req=>{try{const r=plugins?.resolve(req.url);if(!r)return new Response('<meta charset="utf-8"><body style="font:14px system-ui;color:#8a93a3;padding:24px">这个插件已停用，或者文件不存在。</body>',{status:404,headers:{'content-type':'text/html; charset=utf-8'}});const response=await net.fetch(pathToFileURL(r.file).href,{headers:req.headers});const headers=new Headers(response.headers);headers.set('X-Content-Type-Options','nosniff');headers.set('Cache-Control','no-store');headers.set('Access-Control-Allow-Origin','*');headers.set('Content-Security-Policy',plugins.csp(r.manifest||plugins.manifest(r.id)));if(/\.html?$/i.test(r.file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');headers.set('content-type','text/html; charset=utf-8');return new Response(plugins.inject(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return new Response(response.body,{status:response.status,headers});}catch{return new Response('插件文件不可读取',{status:404});}});
+ ses.protocol.handle('plugin',async req=>{try{const r=plugins?.resolve(req.url);if(!r)return new Response('<meta charset="utf-8"><body style="font:14px system-ui;color:#8a93a3;padding:24px">这个插件已停用，或者文件不存在。</body>',{status:404,headers:{'content-type':'text/html; charset=utf-8'}});const response=await net.fetch(pathToFileURL(r.file).href,{headers:noRange(req)});const headers=new Headers(response.headers);headers.set('X-Content-Type-Options','nosniff');headers.set('Cache-Control','no-store');headers.set('Access-Control-Allow-Origin','*');headers.set('Content-Security-Policy',plugins.csp(r.manifest||plugins.manifest(r.id)));if(/\.html?$/i.test(r.file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');headers.set('content-type','text/html; charset=utf-8');return new Response(plugins.inject(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return await fileResponse(r.file,req,response,headers);}catch{return new Response('插件文件不可读取',{status:404});}});
  ses.setPermissionRequestHandler((wc,p,cb)=>cb(roles.get(wc.id)==='recorder'&&['media','display-capture'].includes(p)));
  ses.setPermissionCheckHandler((wc,p)=>!!wc&&roles.get(wc.id)==='recorder'&&['media','display-capture'].includes(p));
  ses.setDisplayMediaRequestHandler(async(req,callback)=>{try{const rec=windows.get('recorder'),student=windows.get('student');if(!rec||req.frame!==rec.webContents.mainFrame||!student||student.isDestroyed())return callback({});const sources=await desktopCapturer.getSources({types:['window'],thumbnailSize:{width:0,height:0}}),source=sources.find(s=>s.id===student.getMediaSourceId());if(!source)return callback({});callback({video:source,...(settings.systemAudio&&process.platform==='win32'?{audio:'loopback'}:{})});}catch(e){notify('notice',{message:'捕获学生窗口失败：'+e.message,error:true});callback({});}});
@@ -225,7 +241,31 @@ async function screenSnip(){
   snipping=null;
  }
 }
-function canUsePath(role,p){if(/^https?:\/\//i.test(p)){const u=new URL(p);if(u.username||u.password)throw Error('网址不能包含凭据');return u.href;}if(role==='teacher'||role==='dock')return files.allowed(p);const mat=publicData.pgmMat;if(mat&&(p===mat.src?.path||p===mat.src?.pdf||mat.pages?.some(x=>x.doc?.pdf===p||x.src===p)))return files.allowed(p);if(publicData.warm?.some(x=>x.path===p))return files.allowed(p);throw Error('只能访问正在展示或老师预加载的课件');}
+/**
+ * 粘贴事件里拿不到图片时，从系统剪贴板兜底：位图；复制的图片文件（微信 / QQ 里「复制」图片常常是文件）；网页里复制的 <img>。
+ * 返回 data: 地址，没有图片返回 null。
+ */
+const IMG_EXT=/\.(png|jpe?g|bmp|gif|webp)$/i;
+async function clipboardImage(){
+ // Electron 44 的剪贴板是网页式接口：位图是 image/png，复制的文件是 text/uri-list（file:/// 地址）
+ const items=await clipboard.read().catch(()=>[]);
+ const get=async(type)=>{for(const it of items)if(it.types.includes(type))try{return await it.getType(type);}catch{}return null;};
+ for(const type of ['image/png','image/jpeg']){const b=await get(type);if(b&&b.size>0&&b.size<40*1024*1024)return 'data:'+type+';base64,'+Buffer.from(await b.arrayBuffer()).toString('base64');}
+ const paths=[],url=require('node:url');
+ const list=await get('text/uri-list');
+ if(list)for(const u of (await list.text()).split(/\r?\n/))if(/^file:\/\//i.test(u.trim()))try{paths.push(url.fileURLToPath(u.trim()));}catch{}
+ const html=await get('text/html'),src=html?/<img[^>]+src=["']([^"']+)["']/i.exec(await html.text())?.[1]:null;
+ if(src&&/^data:image\/(png|jpeg|gif|webp|bmp);base64,/.test(src)&&src.length<40*1024*1024)return src;
+ if(src&&/^file:\/\//i.test(src))try{paths.push(url.fileURLToPath(src));}catch{}
+ for(const p of paths){
+  if(!IMG_EXT.test(p))continue;
+  try{const st=fs.statSync(p);if(!st.isFile()||st.size>30*1024*1024)continue;
+   const ni=nativeImage.createFromPath(p);if(!ni.isEmpty())return ni.toDataURL();
+   const ext=path.extname(p).slice(1).toLowerCase().replace('jpg','jpeg');return 'data:image/'+ext+';base64,'+fs.readFileSync(p).toString('base64');}catch{}
+ }
+ return null;
+}
+function canUsePath(role,p){if(/^https?:\/\//i.test(p)){const u=new URL(p);if(u.username||u.password)throw Error('网址不能包含凭据');return u.href;}if(role==='teacher'||role==='dock')return files.allowed(p);if(within(path.join(files.cache,'images'),path.resolve(p)))return files.allowed(p);const mat=publicData.pgmMat;if(mat&&(p===mat.src?.path||p===mat.src?.pdf||mat.pages?.some(x=>x.doc?.pdf===p||x.src===p)))return files.allowed(p);if(publicData.warm?.some(x=>x.path===p))return files.allowed(p);throw Error('只能访问正在展示或老师预加载的课件');}
 ipcMain.on('cs:sync',(e,{method,value})=>{try{const role=safeRole(e);let result;
  if(method==='init')result={role,test:TEST,dataDir:normal(DATA),cacheDir:normal(files.cache),state:role==='teacher'?{shared:saved.shared,local:saved.local,history:saved.history}:{shared:projection(publicData)}};
  else if(method==='dropPath'&&(role==='teacher'||(role==='student'&&publicData.drawAuthor==='teacher')))result=files.authorize(value,fs.statSync(value).isDirectory());
@@ -256,8 +296,9 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
   saved={...saved,...value,shared:{...value.shared,...publicData,ink}};await saving();return;
  }
  if(method==='convert'&&(trusted||(role==='student'&&publicData.drawAuthor==='teacher')))return files.convert(value.path,progress=>send(BrowserWindow.fromWebContents(e.sender),'cs:event',{type:'convert',id:value.id,progress}));
- // 老师拿着笔在学生窗口里 Ctrl+V 贴截图
- if(method==='saveImage'&&role==='student'&&publicData.drawAuthor!=='teacher')throw Error('学生书写时不能贴图');
+ // 学生窗口里 Ctrl+V / 拖入图片贴到黑板：老师拿着笔，或学生工具开放时都可以
+ if((method==='saveImage'||method==='clipboardImage')&&role==='student'&&publicData.drawAuthor!=='teacher'&&publicData.studentTools!=='open')throw Error('老师锁定了学生工具，现在不能贴图');
+ if(method==='clipboardImage'&&(trusted||role==='student'))return clipboardImage();
  // 学生画面里打开的插件课件：只能存取自己的数据、报告错误
  if(role==='student'&&(method==='plugins.storage'||method==='plugins.error'))return pluginCall(method,value,e);
  if(!trusted&&method!=='saveImage')throw Error('此操作仅在教师窗口可用');
@@ -266,6 +307,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(typeof method==='string'&&method.startsWith('study.'))return studyCall(method,value);
  if(typeof method==='string'&&method.startsWith('notify.'))return notifier.handle(method,value);
  if(typeof method==='string'&&method.startsWith('manim.'))return manim.handle(method,value);
+ if(typeof method==='string'&&method.startsWith('motion.'))return motionCall(method,value);
  if(typeof method==='string'&&method.startsWith('update.'))return updateCall(method,value);
  if(typeof method==='string'&&method.startsWith('plugins.'))return pluginCall(method,value,e);
  if(method==='archive.folder'){if(!TEST)await shell.openPath(archive.dir);return normal(archive.dir);}
@@ -315,6 +357,30 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  default:throw Error('未实现的桌面操作：'+method);
  }
 });
+// 课堂动画导出的 MP4：先存进缓存目录（上屏、预览都用它），老师要留底再另存一份
+async function motionCall(method,value){
+ const dir=path.join(files.cache,'motion'),safe=t=>String(t||'课堂动画').replace(/[\\/:*?"<>|\r\n]/g,'_').slice(0,40);
+ switch(method){
+ case 'motion.save':{
+  const data=value?.data;
+  if(!(data instanceof Uint8Array)||data.length<1024||data.length>2*1024**3||Buffer.from(data.subarray(4,8)).toString()!=='ftyp')throw Error('视频数据无效');
+  await fs.promises.mkdir(dir,{recursive:true});
+  // 缓存里只留最近 7 天的
+  for(const f of await fs.promises.readdir(dir).catch(()=>[])){const p=path.join(dir,f);try{if(Date.now()-(await fs.promises.stat(p)).mtimeMs>7*864e5)await fs.promises.rm(p,{force:true});}catch{}}
+  const file=path.join(dir,safe(value.title)+'-'+Date.now()+'.mp4');
+  await fs.promises.writeFile(file,data);log.info('课堂动画导出',file,data.length);
+  return normal(file);}
+ case 'motion.saveAs':{
+  const src=path.resolve(String(value?.path||''));
+  if(!within(dir,src)||!fs.existsSync(src))throw Error('找不到导出的视频，请重新导出');
+  const to=TEST&&value.to?String(value.to):(await dialog.showSaveDialog(windows.get('teacher'),{title:'保存课堂动画',defaultPath:path.join(settings.recordings||app.getPath('videos'),safe(value.title)+'.mp4'),filters:[{name:'MP4 视频',extensions:['mp4']}]})).filePath;
+  if(!to)return null;
+  await fs.promises.copyFile(src,to);
+  if(!TEST)shell.showItemInFolder(to);
+  return normal(to);}
+ default:throw Error('未知的动画操作：'+method);
+ }
+}
 async function updateCall(method,value){
  switch(method){
  case 'update.state':return {...updater.state,version:VERSION,check:settings.updateCheck!==false,skip:settings.updateSkip||''};
@@ -398,6 +464,7 @@ async function studyCall(method,value){
  case 'study.pickText':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择聊天记录或要求（txt / md）',properties:['openFile'],filters:[{name:'文本',extensions:['txt','md','csv']}]});if(r.canceled)return null;const p=files.authorize(r.filePaths[0]);return {path:p,text:await files.readText(p)};}
  case 'study.pickImport':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'导入题目（Word / PDF / 图片）',properties:['openFile','multiSelections'],filters:[{name:'试卷、作业、截图',extensions:['docx','doc','pdf','rtf','png','jpg','jpeg','bmp','webp','txt','md']}]});return r.canceled?[]:r.filePaths.map(p=>files.authorize(p));}
  case 'study.ocr':return files.ocrImages(value);
+ case 'study.pickSchedule':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'导入课表（Excel / Word / PDF / 图片 / 文字）',properties:['openFile'],filters:[{name:'课表',extensions:['xlsx','xls','et','csv','docx','doc','rtf','pdf','txt','md','png','jpg','jpeg','bmp','webp']}]});return r.canceled?null:files.authorize(r.filePaths[0]);}
  case 'study.skills':return study.skills();
  case 'study.saveSkills':return study.saveSkills(value);
  case 'study.exportSkill':{const f=await study.exportSkill(value||{});if(!TEST)shell.showItemInFolder(f);return f;}
@@ -431,7 +498,7 @@ async function start(){
  reconciler=new Reconciler({ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>{if(m.tasks?.length)agents.refreshCost(m.tasks);notify('ledger',m);}});if(!TEST)reconciler.start();try{files.authorize(agents.dir,true);}catch{}
  study=new Study({dir:path.join(DATA,'study'),exportDoc,log});files.authorize(study.dir,true);study.templateCss=kind=>plugins.templateCss(kind);
  notifier=new Notify({dir:DATA,root:study.dir,test:TEST,log});
- manim=new Manim({dir:path.join(files.cache,'manim'),log,test:TEST});await fs.promises.mkdir(manim.dir,{recursive:true});
+ manim=new Manim({dir:path.join(files.cache,'manim'),log,test:TEST,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),setup:new ManimSetup({dir:path.join(DATA,'tools','manim'),fetch:(u,o)=>net.fetch(u,o),log,emit:state=>notify('manimSetup',{state}),...(TEST&&process.env.CS_MANIM_SETUP?JSON.parse(process.env.CS_MANIM_SETUP):{})})});await fs.promises.mkdir(manim.dir,{recursive:true});
  archive=new Archive({dir:path.join(DATA,'archive'),copyFrom:[manim.dir],log});files.authorize(archive.dir,true);
  reminders=createReminders({getLocal:()=>saved.local,getLead:()=>settings.remindMinutes,onDue:remindLesson,log});
  if(!TEST)reminders.start();

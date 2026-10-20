@@ -15,6 +15,7 @@ import { writeZip, entriesFromDir, zipModes, zipEntryData } from './zipfile.mjs'
 const require = createRequire(import.meta.url);
 const { stageCodex } = require('../electron/codexDist.cjs');
 const { openManifest } = require('../electron/updater.cjs');
+const { PROXIES, BROWSER_PROXIES } = require('../electron/fastget.cjs');
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const { version } = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
@@ -40,6 +41,13 @@ const PLATFORMS = ['win32-x64', 'darwin-arm64', 'darwin-x64'].filter((p) => !onl
 const keep = (src) => !/[\\/]dist[\\/]mock([\\/]|$)/.test(src);
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const shaFile = (f) => sha(fs.readFileSync(f));
+const CHUNK = 4 << 20;
+/** 每 4 MB 一段的 sha256，写进签名清单，下载时每段到手就能校验 */
+function chunkSums(f) {
+  const fd = fs.openSync(f, 'r'), buf = Buffer.allocUnsafe(CHUNK), out = [];
+  try { for (let pos = 0, n; (n = fs.readSync(fd, buf, 0, CHUNK, pos)) > 0; pos += n) out.push(sha(buf.subarray(0, n))); } finally { fs.closeSync(fd); }
+  return { size: CHUNK, sha256: out };
+}
 const log = (...a) => console.log(new Date().toLocaleTimeString('zh-CN', { hour12: false }), ...a);
 
 async function download(url, file, { shasum, shasums } = {}) {
@@ -89,7 +97,8 @@ function gunzipTo(gz, file, mode = 0o755) {
 async function buildWin() {
   const root = path.join(STAGE, 'win32-x64', NAME);
   fs.rmSync(path.dirname(root), { recursive: true, force: true });
-  fs.cpSync(path.join(appRoot, 'node_modules/electron/dist'), root, { recursive: true });
+  // Electron drops debug.log beside its exe when tests run it; shipping it would change the runtime hash and force a full runtime download.
+  fs.cpSync(path.join(appRoot, 'node_modules/electron/dist'), root, { recursive: true, filter: (src) => path.basename(src) !== 'debug.log' });
   fs.renameSync(path.join(root, 'electron.exe'), path.join(root, 'ClassroomStudio.exe'));
   const { rcedit } = await import('rcedit');
   await rcedit(path.join(root, 'ClassroomStudio.exe'), {
@@ -251,7 +260,9 @@ async function finishPlatform(key, root, defs, { zipRoot, mode, links = [], extr
     await writeZip(zipFile, items.map(toEntry), {
       onBytes: (n) => { if (n - last > 200 * 1048576) { last = n; log(key, d.name, Math.round(n / 1048576) + ' MB'); } },
     });
-    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), urls: [GITHUB + `${key}-${d.name}.zip`, MIRROR + `${key}-${d.name}.zip`], paths: d.paths };
+    const gh = GITHUB + `${key}-${d.name}.zip`;
+    // 第一个地址给 1.1.x 及更早的软件用（它们按顺序试，国内多数连不上 GitHub 原站）；1.2.0 起会自动展开成全部加速线路并行下
+    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), chunks: chunkSums(zipFile), urls: [PROXIES[0] + gh, gh, MIRROR + `${key}-${d.name}.zip`], paths: d.paths };
   }
   const full = path.join(OUT, `${NAME}-${version}-${key === 'win32-x64' ? 'win-x64' : 'mac-' + key.split('-')[1]}.zip`);
   log(key, '整包…');
@@ -295,19 +306,20 @@ async function main() {
   fs.writeFileSync(prevFile, JSON.stringify({ signed, sig }));
   openManifest(fs.readFileSync(prevFile, 'utf8'));
   log('latest.json 已签名并自检通过');
+  // 加速代理名单：放到镜像 /update/mirrors.json 和公开仓库根目录，软件和官网运行时读最新的
+  fs.writeFileSync(path.join(OUT, 'mirrors.json'), JSON.stringify({ proxies: PROXIES, browser: BROWSER_PROXIES, updated: manifest.date }, null, 2));
   log('输出目录', OUT);
 }
 
 const NOTES = [
-  '插件平台：左侧栏新增「插件」，计时器、随机点名、立体几何等小工具一键安装、停用、导出分享，沙盒运行，升级不丢',
-  'AI 工坊（原 AI 工作室）：可选思考档位、添加图片 / Word / PDF 附件；说一句需求就能做插件，边做边预览，满意了一键装上',
-  '绘图库：新增数学图形 24 种、化学仪器 18 种；学科标签一键切换，形状菜单和绘图库跟着学科变',
-  '题库导入：Word、PDF、截图或拍照的卷子按题号自动拆题进收件箱；新增「自己组卷」，挑题、配分、导出学生版和答案版',
-  '截图：Ctrl+V 把微信 / QQ 截图贴到黑板，图片周围都能写；监看区新增「截屏」框选',
-  '录课：下课不用等压缩，可直接开下一节（新增「下一节」按钮）；左侧栏新增「回放」页，能换盘、删除；存在 C 盘时会提醒',
-  '答案遮挡：只遮答案部分，不再挡住题目；可以拖动调整遮挡位置、手动标记答案页',
-  '作业 / 试卷模板：表头改为可填写的表格，填空横线不再丢失',
-  'Windows：第一次打开可创建桌面快捷方式，设置里也能随时添加',
+  '课堂动画（新）：说一句要讲什么，AI 写分镜，本机渲染出宣传片级别的动画（三维星空、发光、粒子、镜头运动，自带配乐），自己试看审片；实时播放、导出 1080p MP4 上屏。先点「看样片」看看效果，不用装任何东西',
+  '国内下载加速：更新、安装包、manim 组件从多条线路同时分段下载，每段校验，断了接着下',
+  '讲解动画：manim 不用自己装了，点「一键安装 manim」几分钟装好，走国内镜像',
+  '组卷：修好老师反馈的排版问题，页脚、水印、答案页不再混进题目，导入的题按原卷截图印，题号和图不拆页',
+  '课表：Excel、Word、文字或截图一键导入课表，先预览再导入，能撤销',
+  '学生窗口：可以 Ctrl+V 贴 QQ / 微信截图、拖入图片；学生工具锁定时不贴并提示',
+  '添加学生：小学、初中、高中所有年级都能选',
+  '视频：本地视频拖动进度更顺畅',
 ];
 
 main().catch((e) => { console.error('打包失败：', e.stack || e); process.exit(1); });

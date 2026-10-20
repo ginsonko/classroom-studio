@@ -89,7 +89,38 @@ function buildDocx(parsed, pics) {
     return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ''}<w:t xml:space="preserve">${x(r.text)}</w:t></w:r>`;
   }).join('');
   const para = (inner, ppr = '') => `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ''}${inner}</w:p>`;
-  const body = parsed.blocks.map((b) => {
+  /** 题图：返回一个图片 run；maxPx 是允许的最大宽度（96 dpi 像素） */
+  const imgRun = (b, maxPx) => {
+    const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(b.src || ''); if (!m) return null;
+    const data = Buffer.from(m[2], 'base64'), size = imageSize(data); if (!size) return '';
+    const r = 'rId' + rid++, name = `image${media.length + 1}.${m[1] === 'png' ? 'png' : 'jpeg'}`;
+    media.push({ r, name, data });
+    // 题图按 96 dpi 放（原卷截图「w=宽pt」按原卷宽度放），太宽就缩到允许的宽度
+    const pt = Number(/\bw=(\d{2,4})\b/.exec(b.alt || '')?.[1]), px = pt ? pt * 96 / 72 : size.w;
+    const k = Math.min(px, maxPx) / size.w, w = Math.round(size.w * k * EMU), h = Math.round(size.h * k * EMU);
+    return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${docPr}" name="图片 ${docPr++}"/>`
+      + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+      + `<pic:nvPicPr><pic:cNvPr id="0" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${r}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+      + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  };
+  const BODY_PX = 16.5 / 2.54 * 96;
+  const qHead = (b) => b && b.type === 'p' && !b.quote && b.runs[0]?.t === 'text' && b.runs[0].b && /^\d{1,3}[.、．]$/.test(b.runs[0].text.trim());
+  const origImg = (b) => b && b.type === 'img' && /\bw=\d/.test(b.alt || '');
+  const blocks = parsed.blocks, merged = new Set();
+  const body = blocks.map((b, i) => {
+    // 题号 + 原卷截图：无边框的两栏表格（左题号、右分值和图），整行不跨页
+    if (qHead(b) && origImg(blocks[i + 1])) {
+      const pic = imgRun(blocks[i + 1], (9978 - 520) / 1440 * 96);
+      if (pic) {
+        merged.add(i + 1);
+        const rest = runs(b.runs.slice(1)).trim();
+        const cell = (w, inner) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr>${inner}</w:tc>`;
+        return `<w:tbl><w:tblPr><w:tblW w:w="9978" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="520"/><w:gridCol w:w="9458"/></w:tblGrid>`
+          + `<w:tr><w:trPr><w:cantSplit/></w:trPr>${cell(520, para(runs(b.runs.slice(0, 1)), '<w:spacing w:before="40" w:after="0"/>'))}${cell(9458, (rest ? para(runs(b.runs.slice(1)), '<w:spacing w:before="40" w:after="0"/>') : '') + para(pic, '<w:spacing w:before="0" w:after="0"/>'))}</w:tr></w:tbl>`
+          + para('', '<w:spacing w:before="0" w:after="80"/>');
+      }
+    }
+    if (merged.has(i)) return '';
     switch (b.type) {
       case 'h': return para(runs(b.runs), `<w:pStyle w:val="Heading${Math.min(3, b.level)}"/>`);
       case 'p': return para(runs(b.runs), b.quote ? '<w:pBdr><w:left w:val="single" w:sz="18" w:space="6" w:color="9DB8E8"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="F3F7FD"/><w:ind w:left="240"/>' : '');
@@ -110,17 +141,10 @@ function buildDocx(parsed, pics) {
         return para(b.items.map((f) => label(f) + value(f)).join(sep), '<w:pBdr><w:top w:val="single" w:sz="18" w:space="6" w:color="2F6FD6"/></w:pBdr><w:spacing w:before="120" w:after="200"/><w:ind w:left="120"/>');
       }
       case 'img': {
-        const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(b.src || ''); if (!m) return para(`<w:r><w:t>[图片缺失]</w:t></w:r>`);
-        const data = Buffer.from(m[2], 'base64'), size = imageSize(data); if (!size) return '';
-        const r = 'rId' + rid++, name = `image${media.length + 1}.${m[1] === 'png' ? 'png' : 'jpeg'}`;
-        media.push({ r, name, data });
-        // 正文宽 ≈ 16.5 cm；题图按 96 dpi 放（原卷截图「w=宽pt」按原卷宽度放），太宽就缩到正文宽
-        const pt = Number(/\bw=(\d{2,4})\b/.exec(b.alt || '')?.[1]), px = pt ? pt * 96 / 72 : size.w;
-        const k = Math.min(px, 16.5 / 2.54 * 96) / size.w, w = Math.round(size.w * k * EMU), h = Math.round(size.h * k * EMU);
-        return para(`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${docPr}" name="图片 ${docPr++}"/>`
-          + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
-          + `<pic:nvPicPr><pic:cNvPr id="0" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${r}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
-          + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`, pt ? '<w:ind w:left="360"/>' : '<w:jc w:val="center"/>');
+        // 正文宽 ≈ 16.5 cm
+        const pic = imgRun(b, BODY_PX);
+        if (pic === null) return para(`<w:r><w:t>[图片缺失]</w:t></w:r>`);
+        return pic ? para(pic, origImg(b) ? '<w:ind w:left="360"/>' : '<w:jc w:val="center"/>') : '';
       }
       case 'hr': return para('', '<w:pBdr><w:bottom w:val="dashed" w:sz="6" w:space="1" w:color="B7C0CC"/></w:pBdr>');
       case 'table': {

@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, CirclePlay, Plus, Repeat, Pencil, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CirclePlay, FileUp, Plus, Repeat, Pencil, X } from 'lucide-react';
 import { useStore } from '../lib/store';
 import type { LessonSlot, Student } from '../lib/types';
-import { conflicts, dateKey, inWeek, localDate, monday, nextSlot, onDate } from '../doc/scheduleModel';
+import { DAY_END, DAY_START, conflicts, dateKey, inWeek, localDate, monday, nextSlot, onDate } from '../doc/scheduleModel';
+import { ScheduleImport, type ImportUndo } from './ScheduleImport';
 import '../styles/doc.css';
 
 const DAYS = ['周一','周二','周三','周四','周五','周六','周日'];
-const H0=8,H1=23,ROW=46;
+const H0=DAY_START,H1=DAY_END,ROW=46;
 const hhmm=(h:number)=>`${String(Math.floor(h)).padStart(2,'0')}:${String(Math.round((h%1)*60)).padStart(2,'0')}`;
 
 export function Schedule() {
   const students=useStore(s=>s.students),slots=useStore(s=>s.slots),set=useStore(s=>s.set);
-  const [view,setView]=useState<'week'|'today'|'month'>('week'),[week,setWeek]=useState(()=>monday(new Date())),[now,setNow]=useState(new Date()),[edit,setEdit]=useState<LessonSlot|'new'|null>(null),[removed,setRemoved]=useState<LessonSlot|null>(null);
+  const [view,setView]=useState<'week'|'today'|'month'>('week'),[week,setWeek]=useState(()=>monday(new Date())),[now,setNow]=useState(new Date()),[edit,setEdit]=useState<LessonSlot|'new'|null>(null),[removed,setRemoved]=useState<LessonSlot|null>(null),[importing,setImporting]=useState(false),[imported,setImported]=useState<{undo:ImportUndo;message:string}|null>(null);
   useEffect(()=>{const t=setInterval(()=>setNow(new Date()),30000);return()=>clearInterval(t)},[]);
   const today=(now.getDay()+6)%7,nowH=now.getHours()+now.getMinutes()/60,thisWeek=monday(now).getTime()===week.getTime();
   const visible=slots.filter(s=>students.some(st=>st.id===s.studentId)&&inWeek(s,week));
@@ -20,10 +21,12 @@ export function Schedule() {
   const updateVisible=(changed:LessonSlot[])=>set({slots:useStore.getState().slots.map(s=>changed.find(v=>v.id===s.id)??s)});
   return <div className="sch"><div className="pg-h"><h2>课表</h2><div className="seg"><button className={view==='today'?'on':''} onClick={()=>setView('today')}>今日</button><button className={view==='week'?'on':''} onClick={()=>setView('week')}>周</button><button className={view==='month'?'on':''} onClick={()=>setView('month')}>月</button></div>
     {view==='week'&&<div className="wk-nav"><button onClick={()=>setWeek(new Date(week.getFullYear(),week.getMonth(),week.getDate()-7))} aria-label="上一周"><ChevronLeft size={15}/></button><span className="num">{week.getMonth()+1}/{week.getDate()} – {new Date(week.getFullYear(),week.getMonth(),week.getDate()+6).getMonth()+1}/{new Date(week.getFullYear(),week.getMonth(),week.getDate()+6).getDate()}</span><button onClick={()=>setWeek(new Date(week.getFullYear(),week.getMonth(),week.getDate()+7))} aria-label="下一周"><ChevronRight size={15}/></button>{!thisWeek&&<button className="txt" onClick={()=>setWeek(monday(now))}>本周</button>}</div>}
-    <span className="flex"/><span className="pg-stat">所选周 <b className="num">{total.toFixed(1)}</b> 计划课时 · <b className="num">{visible.length}</b> 节</span><button className="btn-cue" onClick={()=>setEdit('new')} disabled={!students.some(s=>!s.archived)}><Plus size={13}/>排课</button></div>
+    <span className="flex"/><span className="pg-stat">所选周 <b className="num">{total.toFixed(1)}</b> 计划课时 · <b className="num">{visible.length}</b> 节</span><button className="sch-imp" onClick={()=>setImporting(true)} title="把已有的课表（Excel、Word、截图、文字）一次导进来"><FileUp size={13}/>导入课表</button><button className="btn-cue" onClick={()=>setEdit('new')} disabled={!students.some(s=>!s.archived)}><Plus size={13}/>排课</button></div>
+    {imported&&<div className="material-status"><span>{imported.message}。</span><button onClick={()=>{set(imported.undo);setImported(null)}}>撤销导入</button><button onClick={()=>setImported(null)}>关闭</button></div>}
     {removed&&<div className="material-status"><span>已移除「{removed.topic||'课程'}」{removed.repeat?'及其每周安排':''}，课堂录像保持保留。</span><button onClick={()=>{set({slots:[...useStore.getState().slots,removed]});setRemoved(null)}}>撤销</button><button onClick={()=>setRemoved(null)}>关闭</button></div>}
-    {!students.some(s=>!s.archived)&&<div className="material-status"><span>先添加学生，再安排课程。</span><button onClick={()=>set({page:'students'})}>添加学生</button></div>}
+    {!students.some(s=>!s.archived)&&<div className="material-status"><span>先添加学生，再安排课程；已有课表的话可以直接导入，课表里的学生会自动建好。</span><button onClick={()=>set({page:'students'})}>添加学生</button><button onClick={()=>setImporting(true)}>导入课表</button></div>}
     <div className="sch-body"><NextUp next={next?.s} k={next?.k??0} date={next?.date}/>{view==='week'&&<Week slots={visible} setSlots={updateVisible} students={students} today={thisWeek?today:-1} nowH={nowH} week={week} edit={setEdit}/>} {view==='today'&&<Today slots={slots.filter(s=>onDate(s,now))} students={students} nowH={nowH} edit={setEdit}/>} {view==='month'&&<Month slots={slots} students={students} now={now}/>}</div>
+    {importing&&<ScheduleImport onClose={()=>setImporting(false)} onDone={(undo,message)=>{setImporting(false);setImported({undo,message});setRemoved(null)}}/>}
     {edit&&<SlotEditor slot={edit==='new'?null:edit} students={students} week={week} onClose={()=>setEdit(null)} onRemove={(s)=>{set({slots:useStore.getState().slots.filter(x=>x.id!==s.id)});setRemoved(s);setEdit(null)}}/>}
   </div>;
 }

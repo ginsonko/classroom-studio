@@ -3,7 +3,7 @@
 import { ai, type AiConfig } from './ai';
 import { host } from './host';
 import { pdfPageLines, pdfRaster } from '../doc/pdf';
-import { IMPORT_EXT, ocrLines, ocrScale, sectionType, splitQuestions, textLines, type OcrLine, type Piece, type Seg, type SrcLine } from './importLogic';
+import { IMPORT_EXT, answerTail, ocrLines, ocrScale, sectionType, splitQuestions, textLines, type OcrLine, type Piece, type Seg, type SrcLine } from './importLogic';
 import { answersMatch, findDuplicate, guessDifficulty, guessPoints, guessType, looseJSON, qtypesOf, type Question } from './studyLogic';
 import { addQuestion, patchQuestion, useStudy } from './studyStore';
 import { aiConfig, autoReadOn, useReading } from './studyActions';
@@ -47,7 +47,7 @@ export async function cropSegs(segs: Seg[], page: (i: number) => Promise<Page | 
   const got: { s: Seg; p: Page | undefined }[] = [];
   for (const s of segs) got.push({ s, p: await page(s.page) });
   const parts = got.filter((x): x is { s: Seg; p: Page } => !!x.p).map(({ s, p }) => {
-    const pad = 0.006 * p.h, y0 = Math.max(0, s.y0 * p.h - pad), y1 = Math.min(p.h, s.y1 * p.h - 1);
+    const pad = 0.006 * p.h, y0 = Math.max(0, (s.top ?? 0) * p.h + 1, s.y0 * p.h - pad), y1 = Math.min(p.h, s.y1 * p.h - 1);
     return { p, s, y0, h: Math.max(1, Math.round(y1 - y0)) };
   }).filter((x) => x.h > 6);
   if (!parts.length) return { png: '' };
@@ -59,12 +59,19 @@ export async function cropSegs(segs: Seg[], page: (i: number) => Promise<Page | 
   for (const x of parts) {
     g.drawImage(x.p.src, 0, x.y0, x.p.w, x.h, 0, y, x.p.w, x.h);
     // 原卷的题号涂掉：导出时会重新编号
-    if (x.s.nx && x.s.nb) { g.fillStyle = '#fff'; g.fillRect(0, y, Math.round(x.s.nx * x.p.w) - 1, Math.min(x.h, Math.round(x.s.nb * x.p.h - x.y0) + 2)); }
+    // 文字层给的横坐标和渲染出来的字形有几像素偏差，留一点余量，免得把题干第一个字涂掉半边
+    if (x.s.nx && x.s.nb) { g.fillStyle = '#fff'; g.fillRect(0, y, Math.round((x.s.nx - 0.004) * x.p.w), Math.min(x.h, Math.round(x.s.nb * x.p.h - x.y0) + 2)); }
     y += x.h;
   }
   const k = parts[0].p.k;
   try {
-    const d = g.getImageData(0, 0, w, H).data;
+    const img = g.getImageData(0, 0, w, H), d = img.data;
+    // 题库网站的浅灰水印、底纹：很浅且不带颜色的像素直接变白（正文是深色，不受影响）
+    for (let i = 0; i < d.length; i += 4) {
+      const lo = Math.min(d[i], d[i + 1], d[i + 2]), hi = Math.max(d[i], d[i + 1], d[i + 2]);
+      if (lo >= 200 && hi - lo <= 30) { d[i] = d[i + 1] = d[i + 2] = 255; }
+    }
+    g.putImageData(img, 0, 0);
     // 裁掉四周空白（解答题后面留给学生写的大片空白也去掉）
     let L = w, R = 0, T = H, B = 0;
     for (let yy = 0; yy < H; yy += 2) for (let xx = 0; xx < w; xx += 2) { const i = (yy * w + xx) * 4; if (d[i] + d[i + 1] + d[i + 2] < 660) { if (xx < L) L = xx; if (xx > R) R = xx; if (yy < T) T = yy; if (yy > B) B = yy; } }
@@ -74,6 +81,23 @@ export async function cropSegs(segs: Seg[], page: (i: number) => Promise<Page | 
     o.getContext('2d')!.drawImage(c, L, T, R - L, B - T, 0, 0, R - L, B - T);
     try { return { png: o.toDataURL('image/png'), pt: k ? Math.round((R - L) / k) : undefined }; } finally { o.width = 0; o.height = 0; }
   } finally { c.width = 0; c.height = 0; }
+}
+
+/**
+ * 粘贴的题目截图里常连着【答案】【详解】：识别文字，把答案那几行以下裁掉，答案、解析单独返回。
+ * 本机没有文字识别、或者截图里没有答案时原样返回。
+ */
+export async function trimShot(dataUrl: string): Promise<{ png: string; answer: string; analysis: string; text: string }> {
+  const same = { png: dataUrl, answer: '', analysis: '', text: '' };
+  const r = await host.call<{ lines: OcrLine[] }[] | null>('study.ocr', [dataUrl]).catch(() => null);
+  if (!r?.[0]) return same;
+  const lines = ocrLines(r), tail = answerTail(lines);
+  const text = lines.filter((l) => tail.cut === undefined || l.y < tail.cut).map((l) => l.t).join('\n');
+  if (tail.cut === undefined || tail.cut < 0.08) return { ...same, text };
+  const img = await loadImage(dataUrl);
+  const p: Page = { src: img, w: img.naturalWidth, h: img.naturalHeight };
+  const crop = await cropSegs([{ page: 0, y0: 0, y1: tail.cut - 0.004 }], async () => p);
+  return crop.png ? { png: crop.png, answer: tail.answer, analysis: tail.analysis, text } : { ...same, text };
 }
 
 /** 一份文件 → 行 + 每页的图（截题图用） */

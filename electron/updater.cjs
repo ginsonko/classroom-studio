@@ -10,10 +10,13 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { cmpVersion } = require('./codexDist.cjs');
+const { fastGet, expand, cleanProxies, PROXIES } = require('./fastget.cjs');
 
 const PUBLIC_KEY = 'MCowBQYDK2VwAyEARNUkTZas3hGgS3PI6vDyxt+JCTvvV6MMKK9fsa9bJTI=';
-// 国内镜像在前，GitHub 兜底
+// 所有来源同时问，GitHub 地址还会经各个国内加速代理再问一遍，谁先回来用谁（取版本最高的）
 const FEEDS = ['https://classroom.yinziapi.top/update/latest.json', 'https://github.com/ginsonko/classroom-studio/releases/latest/download/latest.json'];
+// 最新的加速代理名单（代理常失效，不用发新版就能换）。内容只影响走哪条线路，下载的文件仍按签名清单里的 sha256 校验
+const MIRROR_LISTS = ['https://classroom.yinziapi.top/update/mirrors.json', 'https://raw.githubusercontent.com/ginsonko/classroom-studio/main/mirrors.json'];
 const PAGE = 'https://classroom.yinziapi.top/#download';
 const STAGE = '.update-stage', BACKUP = '.update-backup';
 
@@ -67,6 +70,29 @@ class Updater {
     this.platform = o.platform || process.platform; this.arch = o.arch || process.arch;
     this.where = install({ execPath: o.execPath, platform: this.platform });
     this.state = { phase: 'idle' }; this.manifest = null; this.job = null;
+    this.mirrorLists = o.mirrorLists || (o.feeds ? [] : MIRROR_LISTS);
+    this.proxies = (o.proxies !== undefined ? o.proxies : cleanProxies(readJSON(this.mirrorCache())?.proxies)) || PROXIES;
+  }
+
+  mirrorCache() { return path.join(this.o.dataDir, 'updates', 'mirrors.json'); }
+
+  /** 拉最新的加速代理名单；拿不到就用上次存的或内置的 */
+  async refreshMirrors() {
+    if (!this.mirrorLists.length) return this.proxies;
+    const urls = expand(this.mirrorLists, this.proxies);
+    try {
+      const list = await Promise.any(urls.map(async (u) => {
+        const r = await this.o.fetch(u + '?t=' + Date.now(), { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const p = cleanProxies((await r.json())?.proxies);
+        if (!p) throw new Error('名单是空的');
+        return p;
+      }));
+      this.proxies = list;
+      fs.mkdirSync(path.dirname(this.mirrorCache()), { recursive: true });
+      fs.writeFileSync(this.mirrorCache(), JSON.stringify({ proxies: list, at: new Date().toISOString() }));
+    } catch { /* 用现有名单 */ }
+    return this.proxies;
   }
 
   get key() { return `${this.platform}-${this.arch}`; }
@@ -83,16 +109,24 @@ class Updater {
     return '';
   }
 
+  /** 所有来源同时问：第一个合格的回来后再等 1.5 秒，取其中版本最高的（防止某个镜像还没同步到新版本） */
   async fetchManifest() {
-    const errs = [];
-    for (const url of this.feeds) {
-      try {
-        const r = await this.o.fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { signal: AbortSignal.timeout(12000) });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return { manifest: openManifest(await r.text(), this.publicKey), from: new URL(url).host };
-      } catch (e) { errs.push(new URL(url).host + '：' + e.message); }
-    }
-    throw new Error('查不到新版本（' + errs.join('；') + '）');
+    const urls = this.o.feeds ? this.feeds : expand(this.feeds, this.proxies);
+    const errs = [], got = [];
+    await new Promise((resolve) => {
+      let left = urls.length, grace = null;
+      const settle = () => { if (--left === 0) resolve(); };
+      for (const url of urls) {
+        (async () => {
+          const r = await this.o.fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { signal: AbortSignal.timeout(12000) });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          got.push({ manifest: openManifest(await r.text(), this.publicKey), from: new URL(url).host });
+          if (!grace) grace = setTimeout(resolve, 1500);
+        })().catch((e) => errs.push(new URL(url).host + '：' + e.message)).finally(settle);
+      }
+    });
+    if (!got.length) throw new Error('查不到新版本（' + errs.slice(0, 4).join('；') + '）');
+    return got.sort((a, b) => cmpVersion(b.manifest.version, a.manifest.version))[0];
   }
 
   /** 查新版本。manual=false 是启动后的静默检查，出错不打扰 */
@@ -133,12 +167,16 @@ class Updater {
     const blocker = this.autoBlocker(); if (blocker) throw new Error(blocker);
     const p = plan(m, this.build(), this.key); if (!p.ok) throw new Error(p.reason);
     const dir = path.join(this.stageDir(), m.version), files = path.join(dir, 'files');
-    fs.rmSync(this.stageDir(), { recursive: true, force: true });
+    // 同一版本上次没下完的保留（断点续传），别的版本清掉
+    for (const old of fs.existsSync(this.stageDir()) ? fs.readdirSync(this.stageDir()) : []) if (old !== m.version) fs.rmSync(path.join(this.stageDir(), old), { recursive: true, force: true });
     fs.mkdirSync(files, { recursive: true });
+    const doneFile = path.join(dir, 'done.json'), finished = readJSON(doneFile) || {};
     const total = p.bytes || 0; let done = 0;
     this.set({ phase: 'downloading', got: 0, total, error: '' });
+    await this.refreshMirrors();
     try {
       for (const part of p.need) {
+        if (finished[part.name] === part.sha256 && part.paths.every((rel) => fs.existsSync(path.join(files, rel)))) { done += Number(part.size) || 0; continue; }
         const zip = path.join(dir, part.name + '.zip');
         await this.fetchFile(part, zip, (n) => this.set({ got: done + n, total, part: part.name }));
         done += Number(part.size) || 0;
@@ -146,44 +184,27 @@ class Updater {
         await this.extract(zip, files);
         fs.rmSync(zip, { force: true });
         for (const rel of part.paths) if (!fs.existsSync(path.join(files, rel))) throw new Error(`更新包「${part.name}」里缺少 ${rel}`);
+        finished[part.name] = part.sha256; fs.writeFileSync(doneFile, JSON.stringify(finished));
       }
       const paths = p.need.flatMap((x) => x.paths);
       fs.writeFileSync(path.join(dir, 'plan.json'), JSON.stringify({ version: m.version, paths }, null, 2));
       this.o.log?.info('更新已下载', m.version, p.need.map((x) => x.name).join(','), Math.round(total / 1048576) + 'MB');
       return this.set({ phase: 'ready', note: '', dir, paths });
     } catch (e) {
-      fs.rmSync(this.stageDir(), { recursive: true, force: true });
+      // 下了一半的留着，下次接着下；只有校验不通过的文件已在下载器里删掉
       this.o.log?.warn('下载更新失败', e.message);
       this.set({ phase: 'available', error: '下载更新失败：' + e.message, note: '' });
       throw e;
     }
   }
 
-  /** 按顺序试每个下载地址；边下边算 sha256 */
+  /** 多线路分段下载（见 fastget.cjs）；校验不过就整块重下一次 */
   async fetchFile(part, file, onBytes) {
-    const errs = [];
-    for (const url of part.urls) {
-      try {
-        const r = await this.o.fetch(url, { signal: AbortSignal.timeout(60 * 60 * 1000) });
-        if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
-        const hash = crypto.createHash('sha256'), out = fs.createWriteStream(file);
-        let got = 0, last = 0;
-        try {
-          const reader = r.body.getReader();
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            hash.update(value); got += value.length;
-            if (!out.write(value)) await new Promise((res) => out.once('drain', res));
-            if (got - last > 512 * 1024) { last = got; onBytes(got); }
-          }
-        } finally { await new Promise((res) => out.end(res)); }
-        if (hash.digest('hex') !== part.sha256) throw new Error('文件校验不通过（可能下载不完整）');
-        onBytes(got);
-        return;
-      } catch (e) { errs.push(new URL(url).host + '：' + e.message); fs.rmSync(file, { force: true }); }
+    const go = () => fastGet({ urls: part.urls, size: Number(part.size) || 0, sha256: part.sha256, file, fetch: this.o.fetch, proxies: this.proxies, onBytes, chunkSize: part.chunks?.size, chunkSums: part.chunks?.sha256, log: this.o.log, ...(this.o.fastget || {}) });
+    try { return await go(); } catch (e) {
+      if (!/校验不通过/.test(e.message)) throw e;
+      return go();
     }
-    throw new Error(errs.join('；'));
   }
 
   async extract(zip, dest) {

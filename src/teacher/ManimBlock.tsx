@@ -1,6 +1,6 @@
 // manim 讲解动画（可选组件）：讲解卡片下面的「做成讲解动画」，以及「讲解动画」卡片的结果区。没装 manim 时只显示一行说明，不打扰。
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, Clapperboard, FolderOpen, Loader2, RotateCcw, Square } from 'lucide-react';
+import { Check, ChevronDown, Clapperboard, Download, FolderOpen, Loader2, RotateCcw, Square } from 'lucide-react';
 import type { Explain } from '../physics/sim/aiSchema';
 import type { Material } from '../lib/types';
 import type { SubjectId } from '../lib/subjects';
@@ -63,6 +63,31 @@ export function ManimView({ r, title, send }: { r: ManimResult; title: string; s
   </div>;
 }
 
+/** 没装 manim 时的「一键安装」：进度、取消、失败重试。compact 用在按钮旁边，只显示一行。 */
+export function ManimInstall({ compact }: { compact?: boolean }) {
+  const status = useManim((s) => s.status), setup = useManim((s) => s.setup), checking = useManim((s) => s.checking);
+  const [showLog, setShowLog] = useState(false);
+  if (!status || status.ok || !status.installable) return null;
+  const run = setup?.phase === 'running', bad = setup?.phase === 'error';
+  const min = run && setup?.started ? Math.floor((Date.now() - setup.started) / 60000) : 0;
+  if (run && compact) return <span className="ai-manim-inst-go"><Loader2 size={12} className="spin" />安装中 {Math.round(setup!.pct)}%</span>;
+  if (run) return <div className="ai-manim-inst run">
+    <div className="ai-manim-row"><Loader2 size={12} className="spin" /><span className="ai-manim-inst-step">正在安装 manim：{setup!.step}</span><span className="flex" /><span className="ai-manim-note num">{Math.round(setup!.pct)}%{min ? ` · 已 ${min} 分钟` : ''}</span><button onClick={() => void useManim.getState().cancelInstall()}><Square size={11} />取消</button></div>
+    <div className="ai-manim-bar"><i style={{ width: Math.max(2, setup!.pct) + '%' }} /></div>
+    <button className="ai-manim-log" onClick={() => setShowLog(!showLog)}><ChevronDown size={12} />安装记录</button>{showLog && <pre>{setup!.lines.join('\n')}</pre>}
+  </div>;
+  if (compact) return <button className="ai-manim-inst-go" disabled={checking} onClick={() => void useManim.getState().install()} data-tip={status.error}><Download size={12} />一键安装 manim</button>;
+  return <div className={'ai-manim-inst' + (bad ? ' bad' : '')}>
+    <div className="ai-manim-row">
+      <Clapperboard size={12} /><span>{bad ? '安装没成功：' + (setup!.error || setup!.step) : '讲解动画要用 manim（可选组件，约 380 MB，从国内镜像下载，3~5 分钟）'}</span>
+      <span className="flex" />
+      <button className="ai-manim-inst-btn" disabled={checking} onClick={() => void useManim.getState().install()}><Download size={12} />{bad ? '重试安装' : '一键安装'}</button>
+      <button onClick={() => void useManim.getState().check(true)} data-tip="已经自己装好 manim 了？点这里重新检测">重新检测</button>
+    </div>
+    {bad && setup!.lines.length > 0 && <><button className="ai-manim-log" onClick={() => setShowLog(!showLog)}><ChevronDown size={12} />安装记录</button>{showLog && <pre>{setup!.lines.join('\n')}</pre>}</>}
+  </div>;
+}
+
 /** 讲解卡片下面的「做成讲解动画」 */
 export function ManimBlock({ e, subject, send }: { e: Explain; subject: SubjectId; send: (m: Material) => ReactNode }) {
   const status = useManim((s) => s.status), checking = useManim((s) => s.checking);
@@ -84,6 +109,7 @@ export function ManimBlock({ e, subject, send }: { e: Explain; subject: SubjectI
   const cancel = () => { signal.current.cancelled = true; void manimApi.cancel(job.current).catch(() => {}); };
 
   if (!status || checking) return <div className="ai-manim dim"><Loader2 size={12} className="spin" />正在检测 manim（可选组件）…</div>;
+  if (!status.ok && status.installable) return <div className="ai-manim"><ManimInstall /></div>;
   if (!status.ok) return <div className="ai-manim dim" data-tip={status.error}><Clapperboard size={12} /><span>讲解动画需要本机装 manim（可选组件）</span><button onClick={() => void useManim.getState().check(true)}>重新检测</button></div>;
 
   return <div className={'ai-manim ' + phase}>

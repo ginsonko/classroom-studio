@@ -133,6 +133,15 @@ function fakeCodexDir(dir, ver) {
     assert.ok(kit.instructions().length > 200 && kit.instructions().length < 4000, '工作手册长度合适');
   });
 
+  await test('工作手册的安装规矩跟着权限走：完全访问允许安装，安全模式不装', () => {
+    for (const kind of ['', 'plugin']) {
+      for (const perm of ['safe', 'full', 'danger']) assert.ok(!kit.instructions(kind, perm).includes('{{'), `${kind}/${perm} 没有残留占位符`);
+      assert.match(kit.instructions(kind, 'danger'), /完全访问.*直接装/);
+      assert.match(kit.instructions(kind, 'safe'), /不要安装/);
+    }
+    assert.equal(kit.instructions('', 'unknown'), kit.instructions('', 'full'));
+  });
+
   process.env.CS_AGENT_CODEX = path.join(__dirname, 'fake-agent.cjs');
   process.env.CS_AGENT_CLAUDE = path.join(__dirname, 'fake-agent.cjs');
   const runner = new Agents({ dir: path.join(tmp, 'agents2'), toolsDir: tools, credentials: () => ({ baseUrl: 'https://x/v1', key: 'k' }) });

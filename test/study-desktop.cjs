@@ -111,13 +111,25 @@ const server = http.createServer((req, res) => {
   await until(() => T(`return document.querySelectorAll('.sd-q').length===1`), 4000, 'wrong list open');
   await click('.sd-pane .ags-tabs button', '全部');
   await until(() => T(`return document.querySelectorAll('.sd-q').length===2`), 4000, 'wrong list all');
-  await click('.ags-go', '导出错题本');
-  const wb = await until(() => T(`const f=[...document.querySelectorAll('.sd-file')].map(b=>b.innerText);return f.length>=2?f:null`), 60000, 'wrongbook export');
-  const wbDir = path.join(process.env.CS_DATA_DIR, 'study', '错题本'), wbFiles = fs.readdirSync(wbDir);
-  const docx = wbFiles.find((f) => f.endsWith('.docx')), pdf = wbFiles.find((f) => f.endsWith('.pdf'));
-  assert.ok(docx && pdf, 'docx + pdf: ' + wbFiles.join(','));
-  const docxBuf = fs.readFileSync(path.join(wbDir, docx));
+  // 学生画面收来的题：识别出文字、题目不涉及图时只印文字（1.2.0 起，截图不和文字重复印）；提到「如图」就印截图
+  const wbDir = path.join(process.env.CS_DATA_DIR, 'study', '错题本');
+  const exportBook = async () => {
+    const t0 = Date.now() - 1000;
+    await T(`document.querySelectorAll('.sd-file').forEach(b=>b.remove());return true`);
+    await click('.ags-go', '导出错题本');
+    const files = await until(() => T(`const f=[...document.querySelectorAll('.sd-file')].map(b=>b.innerText);return f.length>=2?f:null`), 60000, 'wrongbook export');
+    const now = fs.readdirSync(wbDir).map((f) => ({ f, t: fs.statSync(path.join(wbDir, f)).mtimeMs })).filter((x) => x.t >= t0).sort((a, b) => b.t - a.t).map((x) => x.f);
+    const docx = now.find((f) => f.endsWith('.docx')), pdf = now.find((f) => f.endsWith('.pdf'));
+    assert.ok(docx && pdf, 'docx + pdf: ' + now.join(','));
+    return { files, docx: fs.readFileSync(path.join(wbDir, docx)), pdf: path.join(wbDir, pdf) };
+  };
+  const plain = await exportBook();
+  assert.ok(!plain.docx.includes(Buffer.from('word/media/image')), 'text-only capture prints no screenshot');
+  await T(`S.update(d=>({...d,questions:d.questions.map(q=>q.origin==='board'?{...q,stem:'如图所示，'+q.stem}:q)}));return true`);
+  await sleep(300);
+  const { files: wb, docx: docxBuf, pdf: pdfFile } = await exportBook();
   assert.ok(docxBuf.includes(Buffer.from('word/media/image')), 'question image embedded in Word');
+  const pdf = path.basename(pdfFile);
   assert.ok(fs.statSync(path.join(wbDir, pdf)).size > 20000);
   await shot(teacher, 'study-5-wrongbook.png');
   mark('bank attempt buttons feed the wrong book; export Word + PDF with the captured question image embedded', { files: wb });

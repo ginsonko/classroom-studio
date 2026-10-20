@@ -71,7 +71,7 @@ const server = http.createServer((req, res) => {
   const animBtn = await until(() => T(`const b=document.querySelector('.ai-act.a-anim');return b&&!/正在检测/.test(b.dataset.tip||'')?{dis:b.disabled,tip:b.dataset.tip,text:b.innerText}:null`), 90000, 'anim action detection');
 
   if (!status.ok) {
-    assert.equal(animBtn.dis, true); assert.match(animBtn.tip, /没检测到 manim/);
+    assert.equal(animBtn.dis, true); assert.match(animBtn.tip, status.installable ? /还没装 manim/ : /没检测到 manim/);
     await typeAsk(EXPLAIN.problem);
     await T(`document.querySelector('.ai-act.a-explain').click();return true`);
     const st = await until(() => T(`const m=document.querySelector('.ai-card.k-explain .ai-manim');return m&&!m.innerText.includes('正在检测')?{text:m.innerText,ok:!!m.querySelector('.ai-manim-go')}:null`), 30000, 'manim hint');

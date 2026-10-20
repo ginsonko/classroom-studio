@@ -421,7 +421,7 @@ class Agents {
       }
       if (t.pick) c.push('-c', `model=${toml(t.pick)}`);
       if (EFFORTS.includes(t.effort)) c.push('-c', `model_reasoning_effort=${toml(t.effort)}`);
-      c.push('-c', `developer_instructions=${toml(kit.instructions(t.kind))}`);
+      c.push('-c', `developer_instructions=${toml(kit.instructions(t.kind, perm))}`);
       if (t.useStudioKey && this.credentials) {
         // 用导播台的中转站：单独的 provider，Key 只通过环境变量传给 Codex
         const cred = this.credentials();
@@ -437,7 +437,7 @@ class Agents {
     const left = Math.max(0.01, (t.cap - t.cny) / (this.ledger?.budget.usdRate || 7.2) / (this.ledger?.factorFor?.(t.pick || t.model || 'claude') || this.ledger?.factor() || 1));
     const access = perm === 'danger' ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'acceptEdits', '--allowedTools', (perm === 'full' ? FULL_TOOLS : SAFE_TOOLS).join(',')];
     return ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose', ...access, ...(t.pick ? ['--model', t.pick] : []),
-      '--append-system-prompt', kit.instructions(t.kind),
+      '--append-system-prompt', kit.instructions(t.kind, perm),
       '--max-budget-usd', left.toFixed(2), ...(t.session ? ['--resume', t.session] : [])];
   }
 

@@ -18,6 +18,7 @@ export function summarize(out?: AiOut): { title: string; text: string } {
     }
     case 'draw': return { title: out.mat.title, text: out.strokes.map((s) => s.text).filter(Boolean).join(' ') };
     case 'demo': return { title: out.mat.title, text: out.note };
+    case 'motion': return { title: out.spec.title, text: [out.note, ...out.spec.shots.flatMap((s) => [s.name, ...s.items.map((x) => (typeof x.text === 'string' ? x.text : ''))])].filter(Boolean).join('\n') };
   }
 }
 
@@ -45,5 +46,6 @@ export function revive(e: ArchiveEntry): { out?: AiOut; meta?: RunMeta } {
   let out = e.out;
   if (out?.kind === 'demo' && out.preview) out = { ...out, preview: mediaUrl(out.preview) };
   if (out?.kind === 'anim' && out.video?.sheet) out = { ...out, video: { ...out.video, sheet: mediaUrl(out.video.sheet) } };
+  if (out?.kind === 'motion' && out.sheet) out = { ...out, sheet: mediaUrl(out.sheet) };
   return { out, meta };
 }

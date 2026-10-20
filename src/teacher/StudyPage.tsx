@@ -8,7 +8,7 @@ import { useSubject } from '../lib/subjectState';
 import { TexText, clipTex } from './TexText';
 import { addQuestion, ensureStudy, patchQuestion, recordAttempt, useStudy } from '../lib/studyStore';
 import { aiConfig, autoReadOn, captureFromScreen, presetHomework, readInBackground, setAutoRead, useReading } from '../lib/studyActions';
-import { importFiles, type ImportResult } from '../lib/importQuestions';
+import { importFiles, trimShot, type ImportResult } from '../lib/importQuestions';
 import { IMPORT_EXT } from '../lib/importLogic';
 import { Chips, Outputs, QImage, QuestionEditor } from './StudyParts';
 import { CoursewareTab, HomeworkTab, LessonTab } from './StudyTools';
@@ -153,12 +153,20 @@ function InboxTab() {
 
 function PasteDialog({ onClose, onDone }: { onClose: () => void; onDone: (q: Question) => void }) {
   const [text, setText] = useState(''), [img, setImg] = useState(''), [err, setErr] = useState(''), [busy, setBusy] = useState(false);
+  const [tail, setTail] = useState<{ answer: string; analysis: string } | null>(null), [trimming, setTrimming] = useState(false);
   const subject = useSubject();
   const onPaste = (e: React.ClipboardEvent) => {
     const f = [...e.clipboardData.files].find((x) => /^image\/(png|jpeg)$/.test(x.type));
     if (!f) return;
     e.preventDefault();
-    const r = new FileReader(); r.onload = () => setImg(String(r.result)); r.readAsDataURL(f);
+    const r = new FileReader();
+    r.onload = () => {
+      const url = String(r.result);
+      setImg(url); setTail(null); setTrimming(true);
+      // 截图连着【答案】【详解】时裁掉答案部分（组卷时不会把答案印给学生），答案单独记下
+      void trimShot(url).then((t) => { setImg((cur) => (cur === url ? t.png : cur)); if (t.answer || t.analysis) setTail({ answer: t.answer, analysis: t.analysis }); }, () => {}).finally(() => setTrimming(false));
+    };
+    r.readAsDataURL(f);
   };
   const ok = async () => {
     setBusy(true);
@@ -166,7 +174,7 @@ function PasteDialog({ onClose, onDone }: { onClose: () => void; onDone: (q: Que
       const image = img ? await host.call<string>('study.image', img) : undefined;
       // 自动识题开着时先不填规则猜测，否则 AI 的结果会被当成"老师已填"而不覆盖
       const auto = autoReadOn() && !!(image || text.trim());
-      const q = addQuestion({ stem: text.trim(), image, answer: '', analysis: '', points: auto ? [] : guessPoints(text, subject), difficulty: guessDifficulty(text), qtype: auto ? '其他' : guessType(text, subject), origin: 'paste', status: 'inbox', subject });
+      const q = addQuestion({ stem: text.trim(), image, answer: tail?.answer ?? '', analysis: tail?.analysis ?? '', points: auto ? [] : guessPoints(text, subject), difficulty: guessDifficulty(text), qtype: auto ? '其他' : guessType(text, subject), origin: 'paste', status: 'inbox', subject });
       if (auto) void readInBackground(q.id);
       onDone(q);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -176,7 +184,9 @@ function PasteDialog({ onClose, onDone }: { onClose: () => void; onDone: (q: Que
       <div className="card-h"><b>粘贴题目</b><span className="flex" /><button onClick={onClose} aria-label="关闭"><X size={16} /></button></div>
       <p className="ags-sub">粘贴题目文字，或直接 Ctrl+V 粘贴截图（QQ / 微信截图都可以）。</p>
       <textarea autoFocus rows={7} value={text} onChange={(e) => setText(e.target.value)} placeholder="在这里粘贴…" />
-      {img && <div className="sd-paste-img"><img src={img} alt="粘贴的截图" /><button onClick={() => setImg('')}><X size={12} />去掉图片</button></div>}
+      {img && <div className="sd-paste-img"><img src={img} alt="粘贴的截图" /><button onClick={() => { setImg(''); setTail(null); }}><X size={12} />去掉图片</button></div>}
+      {trimming && <p className="ags-sub">正在识别截图…</p>}
+      {tail && <p className="ags-sub">截图里的答案部分已裁掉（组卷时不会印给学生），答案和解析已单独记下。</p>}
       {err && <p className="sd-err">{err}</p>}
       <div className="record-actions"><button onClick={onClose}>取消</button><button className="btn-cue" disabled={busy || (!text.trim() && !img)} onClick={() => void ok()}>收进收件箱</button></div>
     </div>

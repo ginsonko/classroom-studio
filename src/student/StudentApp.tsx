@@ -7,7 +7,7 @@ import { pageLabel } from '../lib/desk';
 import { useToolKeys } from '../ui/ToolPalette';
 import { StudentBar } from './StudentBar';
 import { warm } from '../doc/webKeep';
-import { installPaste } from '../ink/pasteImage';
+import { dropToBoard, droppedImages, installPaste } from '../ink/pasteImage';
 
 /**
  * 学生窗口：腾讯会议只共享这个窗口。
@@ -29,9 +29,11 @@ export function StudentApp() {
   const [sSize, setSSize] = useState(3.5);
   const [flash, setFlash] = useState(false);
 
+  const [msg, setMsg] = useState(''), [over, setOver] = useState(false);
+  const say = useCallback((m: string) => { setMsg(m); window.setTimeout(() => setMsg((cur) => (cur === m ? '' : cur)), 6000); }, []);
   useEffect(() => { document.title = '课堂展示 · 请共享这个窗口'; }, []);
-  // 老师拿着笔时，在学生窗口里 Ctrl+V 也能把截图贴到黑板
-  useEffect(() => installPaste(() => useStore.getState().drawAuthor === 'teacher', (m) => console.warn('贴图失败', m)), []);
+  // 学生窗口里 Ctrl+V 也能把截图贴到黑板（老师拿着笔、或学生工具开放时；锁定时给出提示）
+  useEffect(() => installPaste(() => true, (m) => say('贴图失败：' + m)), [say]);
   const warmList = useStore((s) => s.warm);
   useEffect(() => { warm(warmList ?? []); }, [warmList]);
   useEffect(() => {
@@ -68,7 +70,16 @@ export function StudentApp() {
   const activeTool = who === 'teacher' ? tool : studentLocked ? 'pointer' : sTool;
 
   return (
-    <div className={'sw' + (flash ? ' take' : '')}>
+    <div className={'sw' + (flash ? ' take' : '')}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setOver(true); } }}
+      onDragLeave={(e) => { if (!(e.currentTarget as Node).contains(e.relatedTarget as Node)) setOver(false); }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault(); setOver(false);
+        const imgs = droppedImages(e.dataTransfer);
+        if (!imgs.length) { say('只能把图片拖到黑板上（png、jpg 等）'); return; }
+        void dropToBoard(imgs).catch((err) => say('贴图失败：' + (err as Error).message));
+      }}>
       <div className="sw-stage" style={eye ? { filter: `sepia(${eye * 0.45}) saturate(${1 - eye * 0.25}) brightness(${1 - eye * 0.14})` } : undefined}>
         <Desk
           author={who}
@@ -93,6 +104,8 @@ export function StudentApp() {
         {studentTools === 'hidden' && <b className="num">{pageLabel(mat, pgm)}</b>}
       </div>}
       {studentTools !== 'hidden' && <ZoomBar canPage={canDrive} />}
+      {over && <div className="sw-drop">松手把图片贴到黑板</div>}
+      {msg && <div className="sw-msg" role="status">{msg}</div>}
     </div>
   );
 }

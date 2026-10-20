@@ -7,9 +7,9 @@ import { useStore } from '../lib/store';
 import { packOf } from '../lib/subjects';
 
 const KIND: { id: Action | ''; label: string }[] = [
-  { id: '', label: '全部' }, { id: 'explain', label: '讲题' }, { id: 'ask', label: '问答' }, { id: 'demo', label: '演示' }, { id: 'draw', label: '板书' }, { id: 'anim', label: '动画' },
+  { id: '', label: '全部' }, { id: 'explain', label: '讲题' }, { id: 'ask', label: '问答' }, { id: 'demo', label: '演示' }, { id: 'draw', label: '板书' }, { id: 'motion', label: '课堂动画' }, { id: 'anim', label: '讲解动画' },
 ];
-const LABEL: Record<Action, string> = { demo: '演示', explain: '讲题', draw: '板书', ask: '问答', anim: '讲解动画' };
+const LABEL: Record<Action, string> = { demo: '演示', explain: '讲题', draw: '板书', ask: '问答', anim: '讲解动画', motion: '课堂动画' };
 const day = (t: number) => {
   const d = new Date(t), now = new Date(), diff = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5);
   return diff === 0 ? '今天' : diff === 1 ? '昨天' : d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });

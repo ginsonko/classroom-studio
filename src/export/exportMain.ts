@@ -88,7 +88,17 @@ function docHtml(blocks: Block[]) {
   const out: string[] = [];
   let inAns = false;
   const sheet = isSheet(blocks);
+  let skip = -1;
   blocks.forEach((b, i) => {
+    if (i === skip) return;
+    // 题号后面紧跟原卷截图：题号和图排在同一行、不跨页拆开（分值写在图上方）
+    const next = blocks[i + 1];
+    if (b.type === 'p' && !b.quote && b.runs[0]?.t === 'text' && b.runs[0].b && /^\d{1,3}[.、．]$/.test(b.runs[0].text.trim()) && next?.type === 'img' && /\bw=\d/.test(next.alt)) {
+      skip = i + 1;
+      const rest = runs(dropHead(b.runs.slice(1), 0)).trim();
+      out.push(`<div class="q qpic"><span class="qn">${qn(b.runs[0].text.trim().replace(/[.、．]$/, ''))}</span><div class="qb">${rest ? `<p class="sc">${rest}</p>` : ''}${block(next, 'doc')}</div></div>`);
+      return;
+    }
     if (sheet && b.type === 'li' && b.ordered && b.depth === 0) {
       out.push(`<p class="q"><span class="qn">${qn(String(b.n))}</span><span class="qb">${runs(b.runs)}</span></p>`);
       return;

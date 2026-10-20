@@ -7,7 +7,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { normal } = require('./files.cjs');
 
-const ACTIONS = ['demo', 'explain', 'draw', 'ask', 'anim'];
+const ACTIONS = ['demo', 'explain', 'draw', 'ask', 'anim', 'motion'];
 const DATA_URL = /^data:(image\/(png|jpeg|webp)|video\/mp4);base64,([A-Za-z0-9+/=]+)$/;
 const EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'video/mp4': '.mp4' };
 const MAX_ENTRY = 8 * 1024 * 1024;
@@ -98,7 +98,7 @@ class Archive {
         if (subject && r.subject !== subject) continue;
         if (studentId && r.studentId !== studentId) continue;
         if (words.length) { const hay = `${r.ask} ${r.title} ${r.text} ${r.studentName}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
-        if (out.length < Math.min(200, Number(limit) || 60)) out.push({ id: r.id, at: r.at, action: r.action, subject: r.subject, studentName: r.studentName, ask: clip(r.ask, 240), title: r.title, error: r.error, model: r.meta?.model || '', thumb: r.meta?.image || r.out?.preview || '' });
+        if (out.length < Math.min(200, Number(limit) || 60)) out.push({ id: r.id, at: r.at, action: r.action, subject: r.subject, studentName: r.studentName, ask: clip(r.ask, 240), title: r.title, error: r.error, model: r.meta?.model || '', thumb: r.meta?.image || r.out?.preview || r.out?.sheet || '' });
       }
     }
     return { items: out, total, dir: normal(this.dir) };

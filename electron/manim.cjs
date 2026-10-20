@@ -50,27 +50,31 @@ async function findVideo(dir) {
 }
 
 class Manim {
-  constructor({ dir, log, test }) { this.dir = dir; this.log = log; this.test = test; this.info = null; this.jobs = new Map(); }
+  /** setup：一键安装（manimSetup.cjs）；ffmpeg：软件自带的 ffmpeg，截帧拼图用 */
+  constructor({ dir, log, test, setup, ffmpeg }) { this.dir = dir; this.log = log; this.test = test; this.setup = setup; this.ffmpeg = ffmpeg && fs.existsSync(ffmpeg) ? ffmpeg : 'ffmpeg'; this.info = null; this.jobs = new Map(); }
 
-  /** 找 manim：环境变量 CS_MANIM（"程序|参数1|参数2"，off 表示关闭）→ PATH 里的 manim → py -3 -m manim → python -m manim */
+  /** 找 manim：环境变量 CS_MANIM（"程序|参数1|参数2"；off 表示关闭；own 表示只用一键安装的）→ 一键安装的 → PATH 里的 manim → py -3 -m manim → python -m manim */
   async status(force) {
     if (this.info && !force) return this.info;
-    const tries = [];
-    if (process.env.CS_MANIM) tries.push(process.env.CS_MANIM.split('|'));
-    if (process.env.CS_MANIM !== 'off') tries.push(['manim'], ['py', '-3', '-m', 'manim'], ['python', '-m', 'manim']);
+    const tries = [], env = process.env.CS_MANIM;
+    if (env && env !== 'off' && env !== 'own') tries.push(env.split('|'));
+    const own = env === 'off' ? null : this.setup?.python();
+    if (own) tries.push([own, '-m', 'manim']);
+    if (env !== 'off' && env !== 'own') tries.push(['manim'], ['py', '-3', '-m', 'manim'], ['python', '-m', 'manim']);
     let found = null;
     for (const [cmd, ...pre] of tries) {
       const r = await run(cmd, [...pre, '--version'], { timeout: 60000 });
       const v = /Manim Community v?([\d.]+)/i.exec(r.out);
-      if (r.ok && v) { found = { cmd, pre, version: v[1] }; break; }
+      if (r.ok && v) { found = { cmd, pre, version: v[1], portable: cmd === own }; break; }
     }
-    if (!found) return (this.info = { ok: false, error: '没有找到 manim。这是可选组件：安装 Python 3.10+ 后运行 pip install manim 即可启用。' });
+    const installable = !!this.setup && process.env.CS_MANIM !== 'off';
+    if (!found) return (this.info = { ok: false, installable, error: installable ? '还没有装 manim（可选组件）。点「一键安装」会从国内镜像自动装好（约 380 MB，3~5 分钟），不影响电脑上其它软件。' : '没有找到 manim。这是可选组件：安装 Python 3.10+ 后运行 pip install manim 即可启用。' });
     const tex = await run('latex', ['--version'], { timeout: 15000 });
-    this.info = { ok: true, version: found.version, latex: tex.ok && /TeX/i.test(tex.out), cmd: found.cmd, pre: found.pre };
-    this.log?.info('manim', `v${found.version} latex=${this.info.latex}`);
+    this.info = { ok: true, version: found.version, latex: tex.ok && /TeX/i.test(tex.out), cmd: found.cmd, pre: found.pre, portable: found.portable, installable };
+    this.log?.info('manim', `v${found.version} latex=${this.info.latex} portable=${!!found.portable}`);
     return this.info;
   }
-  view() { const i = this.info; return i ? { ok: i.ok, version: i.version, latex: i.latex, error: i.error } : null; }
+  view() { const i = this.info; return i ? { ok: i.ok, version: i.version, latex: i.latex, error: i.error, portable: !!i.portable, installable: !!i.installable } : null; }
 
   async render({ code, quality = 'normal', title = '讲解动画', job } = {}) {
     const src = checkScript(code);
@@ -103,7 +107,7 @@ class Manim {
     // 中间文件（分段视频、公式缓存）可能有几百 MB，只留成片和脚本
     await fs.promises.rm(path.join(dir, 'media'), { recursive: true, force: true }).catch(() => {});
     this.prune(id).catch(() => {});
-    const ms = Date.now() - t0, { duration, sheet } = await contactSheet(video, dir);
+    const ms = Date.now() - t0, { duration, sheet } = await contactSheet(video, dir, this.ffmpeg);
     return { id, video: normal(video), ms, bytes: (await fs.promises.stat(video)).size, duration, sheet };
   }
   /** 取消一个任务（同一个任务的各版脚本用「任务号-版次」做目录名，按前缀匹配） */
@@ -124,6 +128,12 @@ class Manim {
     if (method === 'manim.check') { checkScript(value?.code); return true; }
     if (method === 'manim.render') return this.render(value || {}).catch((e) => { throw Error(e.message + (e.log ? '\n' + e.log : '')); });
     if (method === 'manim.cancel') return this.cancel(String(value || ''));
+    if (this.setup) {
+      if (method === 'manim.install') { this.info = null; return this.setup.install(); }
+      if (method === 'manim.installState') return this.setup.view();
+      if (method === 'manim.cancelInstall') return this.setup.cancel();
+      if (method === 'manim.uninstall') { this.info = null; return this.setup.uninstall(); }
+    }
     throw Error('未知的 manim 操作');
   }
 }
@@ -143,14 +153,14 @@ async function texError(dir, output) {
   return '\nLaTeX 报错：' + lines.slice(i, i + 4).filter(Boolean).join(' / ') + (body ? '\n出错的公式：' + body.slice(0, 300) : '');
 }
 
-/** 成片按时间均匀截 6 帧拼成 3×2 的 JPEG（给老师预览、给视觉模型审片）。ffmpeg 是 manim 的依赖，没有就跳过。 */
-async function contactSheet(video, dir) {
-  const probe = await run('ffmpeg', ['-hide_banner', '-i', video], { timeout: 20000 });
+/** 成片按时间均匀截 6 帧拼成 3×2 的 JPEG（给老师预览、给视觉模型审片）。用软件自带的 ffmpeg，没有就跳过。 */
+async function contactSheet(video, dir, ffmpeg = 'ffmpeg') {
+  const probe = await run(ffmpeg, ['-hide_banner', '-i', video], { timeout: 20000 });
   const m = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(probe.out);
   const duration = m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : 0;
   if (!duration) return { duration, sheet: '' };
   const file = path.join(dir, 'sheet.jpg');
-  const r = await run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', (duration * 0.06).toFixed(2), '-i', video, '-vf', `fps=6/${(duration * 0.93).toFixed(2)},scale=640:-2,tile=3x2`, '-frames:v', '1', '-q:v', '4', file], { timeout: 60000 });
+  const r = await run(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', (duration * 0.06).toFixed(2), '-i', video, '-vf', `fps=6/${(duration * 0.93).toFixed(2)},scale=640:-2,tile=3x2`, '-frames:v', '1', '-q:v', '4', file], { timeout: 60000 });
   if (!r.ok || !fs.existsSync(file)) return { duration, sheet: '' };
   return { duration, sheet: 'data:image/jpeg;base64,' + (await fs.promises.readFile(file)).toString('base64') };
 }

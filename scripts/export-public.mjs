@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const target = path.resolve(process.argv[2] || '');
 if (!process.argv[2] || target === root || root.startsWith(target + path.sep)) { console.error('用法：node scripts/export-public.mjs <目标目录>'); process.exit(2); }
 
-const INCLUDE = ['src', 'electron', 'public', 'scripts', 'test', 'build', 'index.html', 'export.html', 'office.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'LICENSE', 'README.md'];
+const INCLUDE = ['src', 'electron', 'public', 'scripts', 'test', 'build', 'index.html', 'export.html', 'office.html', 'motion.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'LICENSE', 'README.md'];
 // 内部用的实测脚本、旧版启动器、本机截图脚本：带本机路径或真实资料，不公开
 const EXCLUDE = [/^test\/real(\/|$)/, /^test\/[^/]*-shots\.ps1$/, /^test\/live-dock-click\.ps1$/, /^scripts\/launchers\.ps1$/, /^test\/film-shoot\.cjs$/];
 const GITIGNORE = ['node_modules/', 'dist/', '.out/', 'bin/', '*.pem', '*.log', ''].join('\n');
@@ -42,6 +42,11 @@ const copy = (rel) => {
   }
 };
 for (const rel of INCLUDE) copy(rel);
+// 软件读 raw.githubusercontent.com/…/main/mirrors.json 作为加速代理名单的备用源
+const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const mirrors = path.resolve(root, '../release/dist-' + version, 'mirrors.json');
+if (fs.existsSync(mirrors)) { fs.copyFileSync(mirrors, path.join(target, 'mirrors.json')); count++; }
+else console.warn('没找到 ' + mirrors + '，公开仓库的 mirrors.json 不会更新');
 fs.writeFileSync(path.join(target, '.gitignore'), GITIGNORE);
 fs.writeFileSync(path.join(target, '.gitattributes'), '* text=auto eol=lf\n*.png binary\n*.ico binary\n*.icns binary\n*.wasm binary\n');
 

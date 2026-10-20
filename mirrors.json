@@ -1,0 +1,17 @@
+{
+  "proxies": [
+    "https://gh-proxy.org/",
+    "https://gh.catmak.name/",
+    "https://gh-proxy.com/",
+    "https://cdn.gh-proxy.org/",
+    "https://ghm.078465.xyz/",
+    "https://ghproxy.net/"
+  ],
+  "browser": [
+    "https://gh-proxy.org/",
+    "https://gh-proxy.com/",
+    "https://cdn.gh-proxy.org/",
+    "https://ghm.078465.xyz/"
+  ],
+  "updated": "2026-10-20"
+}

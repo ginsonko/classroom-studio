@@ -1,5 +1,5 @@
 // 自己组卷：老师从题库挑题、分大题、配分，导出学生版和答案版。纯逻辑，Node 里可以直接测试。
-import { imgMd, pictureOnly, questionSubject, themeLine, type Question } from './studyLogic';
+import { pictureOnly, questionSubject, themeLine, viewImgMd, type Question } from './studyLogic';
 import type { SubjectId } from './subjects';
 
 export interface PaperItem { id: string; score: number }
@@ -89,11 +89,13 @@ export function paperMarkdown(p: Paper, questions: Question[], kind: 'student' |
     p.sections.forEach((s, i) => {
       if (!s.items.length) return;
       out.push(`## ${sectionHeading(s, i)}`);
+      // 大题标题已经写了「每题 4 分」，每道题就不再标分
+      const each = s.items.length > 1 && s.items.every((x) => x.score === s.items[0].score);
       for (const it of s.items) {
         const q = qs.get(it.id); n++;
         if (!q) { out.push(`**${n}.** （这道题已从题库删除）`); continue; }
         const [stem, opts] = pictureOnly(q) ? ['', ''] : stemMd(q);
-        out.push([`**${n}.** （${it.score} 分）${stem}`, opts, imgMd(q), gaps(q, it.score)].filter(Boolean).join('\n\n'));
+        out.push([`**${n}.** ${[each ? '' : `（${it.score} 分）`, stem].filter(Boolean).join('')}`.trimEnd(), opts, viewImgMd(q), gaps(q, it.score)].filter(Boolean).join('\n\n'));
       }
     });
   } else {

@@ -15,6 +15,8 @@ import { packOf, studentSubject, type SubjectId } from './subjects';
 import { useStore } from './store';
 import { parsePick, pickByRules, pickPrompt } from '../demos/pick';
 import type { ManimResult } from './manim';
+import type { FilmSpec } from '../motion/core';
+import { motionAgent } from '../motion/agent';
 
 export { makePreset };
 
@@ -41,14 +43,16 @@ const subjectNow = (): SubjectId => { const s = useStore.getState(); return stud
 const systemOf = (subject: SubjectId) => packOf(subject).prompt.assistant;
 
 // ── 结果类型 ─────────────────────────────────────────────
-export type Action = 'demo' | 'explain' | 'draw' | 'ask' | 'anim';
+export type Action = 'demo' | 'explain' | 'draw' | 'ask' | 'anim' | 'motion';
 export interface DemoOut { kind: 'demo'; mat: Material; note: string; issues: string[]; rec?: Recognized; via: 'model' | 'rules'; src: string; steps?: string[]; preview?: string; checked?: boolean; kit?: boolean }
 export interface ExplainOut { kind: 'explain'; data: Explain }
 export interface DrawOut { kind: 'draw'; mat: Material; strokes: Stroke[]; issues: string[] }
 export interface AskOut { kind: 'ask'; text: string }
 /** 讲解动画：先讲题，再按讲解做 manim 视频 */
 export interface AnimOut { kind: 'anim'; data: Explain; video: ManimResult }
-export type AiOut = DemoOut | ExplainOut | DrawOut | AskOut | AnimOut;
+/** 课堂动画：本机动画引擎的片子规格（实时播放、导出 MP4） */
+export interface MotionOut { kind: 'motion'; spec: FilmSpec; sheet?: string; note: string; issues: string[]; checked: boolean; steps?: string[] }
+export type AiOut = DemoOut | ExplainOut | DrawOut | AskOut | AnimOut | MotionOut;
 export interface RunMeta { model?: string; ms?: number; image?: string }
 export interface DemoGuess { preset: string; title: string; src: string }
 /** AI 没搭出可用演示。guess 是规则识别的猜测，只作为老师可选的备选项，不自动替换。 */
@@ -93,7 +97,7 @@ export async function runAction(action: Action, text: string, o: { cfg: AiConfig
   const subj = o.subject ?? subjectNow();
   const online = !!o.cfg?.hasKey && !!(o.cfg.model || o.cfg.visionModel);
   const image = o.image;
-  if (action === 'anim') throw new Error('讲解动画由面板单独处理');
+  if (action === 'anim' || action === 'motion') throw new Error('动画由面板单独处理');
 
   if (action === 'demo') {
     const engine = o.engine ?? demoEngine();
@@ -196,6 +200,24 @@ async function classicDemoModel(text: string, image: string | undefined, cfg: Ai
     ...b.v.issues.slice(0, 3),
   ];
   return { out: { kind: 'demo', mat: simMat(sc, 'AI 演示 · ' + b.v.title), note: head + (b.expect ? '\n应看到：' + b.expect : ''), issues, via: 'model', src: text, steps: res.steps, preview: b.trial.image, checked: res.accepted }, meta };
+}
+
+/** 课堂动画：一句话 → 分镜规格 → 本机试渲染 → AI 看截图审片。几分钟，期间其它 AI 功能照常用。 */
+export async function makeMotion(text: string, o: { cfg: AiConfig | null; image?: string; subject?: SubjectId; onStep?: (t: string) => void; signal?: { cancelled: boolean } }): Promise<{ out: MotionOut; meta: RunMeta }> {
+  const cfg = o.cfg;
+  if (!cfg?.hasKey || !(cfg.model || cfg.visionModel)) throw new Error('课堂动画需要先在「设置」里填写 API Key 和模型。');
+  if (!text.trim() && !o.image) throw new Error('请说说要做什么动画，例如「光的折射，讲清入射角和折射角的关系」，或打开「读学生画面」。');
+  const subj = o.subject ?? subjectNow(), vision = cfg.visionModel || cfg.model;
+  // 一整部片子的 JSON 较长，推理模型要写几分钟，给 8 分钟
+  const res = await motionAgent(text, o.image, packOf(subj).stage, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: '课堂动画', timeout: 8 * 60000, ...(c.images ? { model: vision } : {}) }), o.onStep, o.signal);
+  const b = res.best;
+  if (!b) throw new Error('AI 没能写出可以播放的动画' + (res.issues.length ? '：' + res.issues.slice(0, 3).join('；') : '') + '。可以换个说法，或把要讲的内容说得更具体一些。');
+  const issues = [
+    ...(!res.accepted ? ['AI 没来得及最后确认，请先预览看一遍再上屏'] : []),
+    ...b.problems.slice(0, 3),
+  ];
+  const note = `${b.spec.shots.length} 个镜头 · ${Math.round(b.duration)} 秒` + (b.understand ? '\n' + b.understand : '');
+  return { out: { kind: 'motion', spec: b.spec, sheet: b.sheet ?? undefined, note, issues, checked: res.accepted, steps: res.steps }, meta: { model: res.model, ms: res.ms, image: o.image } };
 }
 
 /** 讲题步骤 → 板书笔迹：中文说明是文字笔迹，公式是 TeX 公式笔迹（学生端可见，可选中、移动、编辑）。排版见 explainBoard.ts。 */
