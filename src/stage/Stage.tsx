@@ -11,6 +11,8 @@ import { KIND_LABEL } from '../lib/library';
 import { inkKey, useStore, ROLE } from '../lib/store';
 import type { Author, Material, PageInfo, Tool, View } from '../lib/types';
 import { SCREEN, isLong } from '../lib/longBoard';
+import { builtOf, clicksOf } from '../lib/slideSteps';
+import { StepPage } from './StepPage';
 
 import { host } from '../lib/host';
 import { Eye, EyeOff, GripHorizontal } from 'lucide-react';
@@ -97,6 +99,7 @@ export function Stage(p: StageProps) {
   const coverStudent = ROLE === 'student' && hidden && !segs.length;
   const coverPart = ROLE === 'student' && hidden && segs.length > 0;
   const showBadge = ROLE !== 'student' && onAir && guard && p.scope === 'program' && isAnswer(mat, view.page);
+  const steps = useStore((s) => clicksOf(mat, view.page, s.slideSteps !== false) > 0);
 
   return (
     <div
@@ -115,7 +118,7 @@ export function Stage(p: StageProps) {
         >
           {/* 长黑板的底纹画在页面上，跟着页面一起滚动 */}
           {long && <div className="long-pattern" data-pattern={pattern} />}
-          {coverStudent ? <AnswerCover /> : <PageContent mat={mat} page={page} index={view.page} scope={p.scope??'preview'} interactive={p.tool==='pointer'}/>}
+          {coverStudent ? <AnswerCover /> : steps ? <StepPage mat={mat} page={page} index={view.page} clicks={builtOf(mat, view)} audible={ROLE === 'student'} /> : <PageContent mat={mat} page={page} index={view.page} scope={p.scope??'preview'} interactive={p.tool==='pointer'}/>}
           {showBadge && <AnswerBadge mat={mat} page={view.page} open={!hidden} segs={segs} />}
           {view.fit === 'region' && view.region && view.region[1] + view.region[3] > 1 && mat.pages[view.page + 1] && !(ROLE === 'student' && hiddenFromStudent(mat, view.page + 1, revealed, guard)) && (
             <div className="page-next" style={{ top: '100%', height: L.pw * (mat.pages[view.page + 1].h / mat.pages[view.page + 1].w) }}>

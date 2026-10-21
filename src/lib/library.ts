@@ -2,6 +2,7 @@ import { pinyin } from 'pinyin-pro';
 import type { Kind, Material, PageInfo } from './types';
 import { host, type ConvertProgress } from './host';
 import { assetUrl, imageSize, pdfPages, pdfRaster } from '../doc/pdf';
+import { withSteps, type StepsResult } from './slideSteps';
 
 /** tree.json 的紧凑格式：{ n, d?: Node[], f?: [name, kind, size][] } */
 interface RawNode { n: string; d?: RawNode[]; f?: [string, Kind, number][] }
@@ -250,6 +251,25 @@ export function rememberMaterial(mat: Material) {
 
 export function clearPrepared() { prepared.clear(); }
 
+// ── PPT 分步：分步画面在后台生成；已有缓存时打开就带上，第一次打开的稍后补进正在显示的课件 ──
+type StepsListener = (id: string, apply: (m: Material) => Material) => void;
+const stepsListeners = new Set<StepsListener>();
+export function onStepsReady(fn: StepsListener) { stepsListeners.add(fn); return () => { stepsListeners.delete(fn); }; }
+
+async function stepsFor(mat: Material, path: string): Promise<Material> {
+  if (!host.electron || !/\.pptx$/i.test(path)) return mat;
+  const job = host.call<StepsResult>('slideSteps', path);
+  const quick = await Promise.race([job.catch(() => null), new Promise<'later'>((r) => setTimeout(r, 400, 'later'))]);
+  if (quick !== 'later') return withSteps(mat, quick, assetUrl);
+  void job.then((r) => {
+    const apply = (m: Material) => withSteps(m, r, assetUrl);
+    const ready = prepared.get(mat.id);
+    if (ready) prepared.set(mat.id, apply(ready));
+    for (const fn of stepsListeners) fn(mat.id, apply);
+  }, () => {});
+  return mat;
+}
+
 /** 只有真实内容准备成功才返回，调用者不得在 await 前替换旧课堂内容。 */
 export async function prepareMaterial(f: FileEntry, onProgress?: (p: ConvertProgress) => void): Promise<Material> {
   if (!f.path) { await loadDocs(); return materialFor(f); }
@@ -274,6 +294,7 @@ export async function prepareMaterial(f: FileEntry, onProgress?: (p: ConvertProg
         await imageSize(pages[0].src!);
       } else throw new Error('转换器没有返回可以显示的页面，请重试或先另存为 PDF。');
       mat = { ...base, pages, total: pages.length, src: { path, render: result.render, pdf: result.pdf, status: 'ready' } };
+      if (f.kind === 'slides') mat = await stepsFor(mat, path);
     } else if (f.kind === 'image') {
       const src = assetUrl(path), dims = await imageSize(src);
       mat = { ...base, pages: [{ src, ...dims }], total: 1, src: { path, render: 'image', status: 'ready' } };

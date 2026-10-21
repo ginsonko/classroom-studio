@@ -4,6 +4,8 @@ const crypto=require('node:crypto');
 const {pathToFileURL}=require('node:url');
 const {within,atomicJSON,readJSON}=require('./core.cjs');
 const {runProcess}=require('./recording.cjs');
+const pptSteps=require('./pptSteps.cjs');
+const STEPS_V=1;
 const EXT={'.pdf':'pdf','.zml':'pdf','.ppt':'slides','.pptx':'slides','.doc':'word','.docx':'word','.rtf':'word','.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.bmp':'image','.gif':'image','.svg':'image','.html':'html','.htm':'html','.mp4':'video','.webm':'video','.m4v':'video','.mov':'video','.wmv':'video','.avi':'video','.asf':'video','.mpg':'video','.flv':'video','.rm':'video','.rmvb':'video','.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.swf':'flash','.zip':'archive','.rar':'archive'};
 const normal=p=>path.resolve(p).replaceAll('\\','/');
 class Files{
@@ -57,6 +59,54 @@ class Files{
    return merge(pages,ocr);
   });
   this.queue=job;return job;
+ }
+  /**
+   * PPT 分步：读 PPTX 里的单击动画，生成分步副本，用转换这份课件的同一种方式出图（失败时用内置排版）。
+   * 返回 { pages: [{ page, clicks, frames: [{ click, wait, path?, w?, h?, pdf?, index? }] }] }，没有图的帧就是整页原图。
+   * 课件要先 convert 过；结果缓存在同一个转换目录的 steps/ 里。
+   */
+  async slideSteps(input){
+  const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
+  if(ext!=='.pptx')return {pages:[]};
+  const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|slides-v3').digest('hex');const folder=path.join(this.cache,'documents',key),dir=path.join(folder,'steps'),file=path.join(dir,'steps.json');
+  const out=r=>({pages:(r.pages||[]).map(p=>({...p,frames:p.frames.map(f=>({...f,...(f.path?{path:normal(f.path)}:{}),...(f.pdf?{pdf:normal(f.pdf)}:{})}))}))});
+  const valid=r=>r&&r.v===STEPS_V&&Array.isArray(r.pages)&&r.pages.every(p=>p.frames.every(f=>!f.path||fs.existsSync(f.path))&&p.frames.every(f=>!f.pdf||fs.existsSync(f.pdf)));
+  const ready=await readJSON(file,null);if(valid(ready))return out(ready);
+  const manifest=await readJSON(path.join(folder,'manifest.json'),null);if(!manifest)throw Error('请先打开这份课件');
+  const job=this.queue.catch(()=>{}).then(async()=>{
+   const again=await readJSON(file,null);if(valid(again))return again;
+   await fs.promises.rm(dir,{recursive:true,force:true});await fs.promises.mkdir(dir,{recursive:true});
+   const save=async r=>{await atomicJSON(file,{v:STEPS_V,...r});return {v:STEPS_V,...r};};
+   let a;try{a=pptSteps.analyze(await fs.promises.readFile(actual));}catch(e){return save({pages:[],error:String(e?.message||e).slice(0,200)});}
+   if(!a.slides.length)return save({pages:[]});
+   const {deck,frames,index}=a.build();
+   const pages=shots=>index.map(s=>({page:s.page,clicks:s.clicks,frames:s.frames.map(f=>({click:f.click,wait:f.wait,...(f.at>=0?shots[f.at]:{})}))}));
+   if(!frames)return save({pages:pages([])});
+   const deckFile=path.join(dir,'steps.pptx');await fs.promises.writeFile(deckFile,deck);
+   try{
+    let shots=null,engine=manifest.engine;
+    if(engine==='local-office-slides'&&process.platform==='win32'){
+     try{
+      const img=path.join(dir,'img');await fs.promises.mkdir(img,{recursive:true});
+      await runProcess('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'ppt-export.ps1'),'-InputFile',deckFile,'-OutputDir',img],{timeout:Math.max(240000,frames*1500)});
+      const m=await readJSON(path.join(img,'manifest.json'),null);
+      const list=Array.from({length:frames},(_,i)=>({path:path.join(img,`slide-${String(i+1).padStart(4,'0')}.png`),w:Number(m?.width)||1600,h:Number(m?.height)||900}));
+      if(list.every(x=>fs.existsSync(x.path)))shots=list;
+     }catch{}
+     engine='内置排版';
+    }
+    if(!shots){
+     if(!this.office)throw Error('当前系统不能生成分步画面');
+     const r=await this.office.convertWith(engine,{input:deckFile,ext:'.pptx',folder:path.join(dir,'conv')});
+     if(r.render==='images'&&r.images?.length===frames)shots=r.images;
+     else if(r.render==='pdf'&&r.pdf)shots=Array.from({length:frames},(_,i)=>({pdf:r.pdf,index:i}));
+     else throw Error('分步画面数量不对');
+    }
+    return save({engine:manifest.engine,pages:pages(shots)});
+   }catch(e){return save({pages:[],error:String(e?.message||e).slice(0,200)});}
+   finally{await fs.promises.rm(deckFile,{force:true}).catch(()=>{});}
+  });
+  this.queue=job;return out(await job);
  }
   /** 题库导入：几张 PNG（data URL）用 Windows 自带 OCR 读出每行文字和上沿位置；其他系统返回 null，交给 AI 看图 */
   async ocrImages(list){

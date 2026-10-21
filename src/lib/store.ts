@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { bus, WINDOW_ID } from './bus';
-import { boardMaterial } from './library';
+import { boardMaterial, onStepsReady } from './library';
 import {STUDENTS,SLOTS} from './mock';
 import { host } from './host';
 import type { Author, Material, Stroke, Tool, View, Student, LessonSlot, ChapterState, AnswerMark, DeskWin } from './types';
@@ -8,6 +8,7 @@ import { BASE, DEFAULT_LIMIT, cascade, deskIds, matOfKey, syncDesk, tileDesk, ti
 import { studentSubject, type SubjectId } from './subjects';
 import type { SimSync } from '../physics/model';
 import { SCREEN, grownFor, isLong, longMaterial, scrollView } from './longBoard';
+import { enterPage, settleView, stepBuild } from './slideSteps';
 
 const W = new URLSearchParams(location.search).get('w');
 export const ROLE = host.role ?? (W === 'student' ? 'student' : W === 'dock' ? 'dock' : 'teacher');
@@ -30,6 +31,7 @@ export interface Shared {
   subject: SubjectId; // 当前学生的学科：浮层等其它窗口靠它隐藏物理专属功能（students/studentId 是本地键，不同步）
   desk: DeskWin[];    // 学生画面里打开着的各项（黑板垫底），各自记住页码；当前项 = pgmMat
   deskLimit: number;  // 同时打开的课件上限（不含黑板），0 不限
+  slideSteps: boolean; // PPT 按单击动画分步出现（关掉就整页显示）
 }
 interface Local {
   students:Student[]; slots:LessonSlot[]; learning:Record<string,ChapterState[][]>;
@@ -69,13 +71,13 @@ interface Actions {
 export type State=Shared&Local&Actions;
 export const inkKey=(materialId:string,page:number)=>`${materialId}#${page}`;
 export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...(isLong(mat)?{y:0}:{}),...p});
-export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit'];
+export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps'];
 const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject'];
 const board=boardMaterial();
 // contextBridge 传进来的对象不可扩展：撤销记录等要原地修改的数据必须先深拷贝，否则第一次在新页面书写就抛错
 const stored = (()=>{if(host.electron)return host.initial?JSON.parse(JSON.stringify(host.initial)):{};if(ROLE!=='teacher')return {};try{return JSON.parse(localStorage.getItem('cs.v2.teacher')||'{}');}catch{return {};}})();
 const history:Histories=ROLE==='teacher'?(stored.history as Histories??{}):{};
-const sharedInit:Shared={pgm:defaultView(board),pgmMat:board,boardSkin:'ivory',pattern:'grid',eyeCare:0,ink:{},studentTools:'open',inkOptions:{eraserMode:'segment',eraserSize:'m',eraserV:2,shapeSnap:true},drawAuthor:'teacher',selectedInk:null,curtain:null,spotlight:null,takeAt:0,sim:null,tool:'pen',color:'ink',size:3,objKind:'block',revealed:[],answerGuard:true,warm:[],subject:'physics',desk:[],deskLimit:DEFAULT_LIMIT,...stored.shared};
+const sharedInit:Shared={pgm:defaultView(board),pgmMat:board,boardSkin:'ivory',pattern:'grid',eyeCare:0,ink:{},studentTools:'open',inkOptions:{eraserMode:'segment',eraserSize:'m',eraserV:2,shapeSnap:true},drawAuthor:'teacher',selectedInk:null,curtain:null,spotlight:null,takeAt:0,sim:null,tool:'pen',color:'ink',size:3,objKind:'block',revealed:[],answerGuard:true,warm:[],subject:'physics',desk:[],deskLimit:DEFAULT_LIMIT,slideSteps:true,...stored.shared};
 if(!Array.isArray(sharedInit.desk))sharedInit.desk=[];
 if(!Number.isFinite(sharedInit.deskLimit))sharedInit.deskLimit=DEFAULT_LIMIT;
 // A restarted simulation resumes paused; no hidden elapsed-time jump.
@@ -206,8 +208,17 @@ else if(inferredSubject)setTimeout(()=>useStore.getState().setShared({subject:us
 // 0.9.1 之前的存档没有 desk：把黑板和当前画面放进去
 if(ROLE==='teacher')setTimeout(()=>{const st=useStore.getState();if(st.desk.some(w=>w.id===BASE)&&st.desk.some(w=>w.id===st.pgmMat.id))return;st.setShared({desk:syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView)});},0);
 
+// PPT 分步画面晚到：补进学生画面里开着的这份课件和预监；正在显示的那一页按「已放完」处理
+if(ROLE==='teacher')onStepsReady((id,apply)=>{
+ const st=useStore.getState(),patch:Partial<Shared>={};
+ if(st.pgmMat.id===id){const m=apply(st.pgmMat);patch.pgmMat=m;patch.pgm=settleView(m,st.pgm);}
+ if(st.desk.some(w=>w.id===id))patch.desk=st.desk.map(w=>{if(w.id!==id)return w;const m=apply(w.mat);return {...w,mat:m,view:settleView(m,w.view)};});
+ if(Object.keys(patch).length)st.setShared(patch);
+ const p=st.pvw;if(p&&p.mat.id===id){const m=apply(p.mat);useStore.setState({pvw:{mat:m,view:settleView(m,p.view)}});}
+});
+
 // ── 翻页：幻灯片模式下逐块前进，跨页自动接续 ─────────────────
-export function stepView(mat: Material, v: View, dir: 1 | -1): View {
+export function stepView(mat: Material, v: View, dir: 1 | -1, o: { pages?: boolean } = {}): View {
   if (isLong(mat)) return scrollView(mat, v, dir * SCREEN / 2);
   if (v.fit === 'slides') {
     const n = mat.pages[v.page]?.slides?.length ?? 1;
@@ -216,8 +227,13 @@ export function stepView(mat: Material, v: View, dir: 1 | -1): View {
     else if (s < 0) { if (p > 0) { p--; s = (mat.pages[p].slides?.length ?? 1) - 1; } else s = 0; }
     return { ...v, page: p, slide: s };
   }
+  // PPT 分步：这一页的单击动画还没放完（或往回还没退到开头）就先在页内走一下
+  const on = !o.pages && useStore.getState().slideSteps !== false;
+  const inPage = stepBuild(mat, v, dir, on);
+  if (inPage) return inPage;
   const page = Math.max(0, Math.min(mat.pages.length - 1, v.page + dir));
-  return { ...v, page, slide: 0, fit: v.fit === 'region' ? 'width' : v.fit, region: undefined };
+  const next = { ...v, page, slide: 0, fit: v.fit === 'region' ? 'width' : v.fit, region: undefined } as View;
+  return page === v.page ? next : enterPage(mat, next, dir, on);
 }
 
 export function addBoardPage() {

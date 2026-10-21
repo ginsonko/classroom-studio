@@ -168,6 +168,8 @@
 .dzoom-row button:disabled { opacity: .45; }
 .dzoom-row b { padding: 0 6px; font-size: 12px; font-weight: 600; color: #fff; }
 .dzoom-sep { width: 1px; height: 16px; margin: 0 3px; background: rgba(255, 255, 255, .16); }
+.dzoom-row button.dzoom-steps { display: flex; gap: 4px; padding: 0 8px 0 7px; margin-left: 2px; color: #aeb5c2; }
+.dzoom-row button.dzoom-steps.on { color: #ffd28a; background: rgba(255, 179, 64, .14); }
 .dzoom-map {
   position: relative;
   width: 120px;

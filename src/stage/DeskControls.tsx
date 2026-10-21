@@ -10,6 +10,7 @@ import { hiddenFromStudent } from '../doc/answers';
 import { curStageAspect } from './Desk';
 import { isLong } from '../lib/longBoard';
 import { longWheel, seekLastInk, seekLong } from './longNav';
+import { StepToggle } from './StepToggle';
 
 function useOpen(key: string, init: boolean) {
   const [open, setOpen] = useState(() => { const v = localStorage.getItem(key); return v === null ? init : v === '1'; });
@@ -192,6 +193,7 @@ export function ZoomBar({ canPage }: { canPage: boolean }) {
           {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, -1), selectedInk: null })} data-tip="上一页　← / PageUp" aria-label="上一页"><ChevronLeft size={16} /></button>}
           <b className="num">{label}</b>
           {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, 1), selectedInk: null })} data-tip="下一页　→ / PageDown" aria-label="下一页"><ChevronRight size={16} /></button>}
+          {canPage && <StepToggle className="dzoom-steps" />}
         </>}
         {canPage && zoomable && <>
           {label && <span className="dzoom-sep" />}

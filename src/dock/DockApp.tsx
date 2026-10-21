@@ -13,6 +13,7 @@ import { addBoardPage, defaultView, inkKey, stepView, useStore } from '../lib/st
 import { boardMaterial } from '../lib/library';
 import { isLong, screenLabel } from '../lib/longBoard';
 import { seekLastInk, seekLong } from '../stage/longNav';
+import { StepToggle } from '../stage/StepToggle';
 import { saveBoard, type ExportMode } from '../ink/boardExport';
 import { answerKey, isAnswer, toggleAnswerPage, toggleReveal } from '../doc/answers';
 import { host } from '../lib/host';
@@ -217,6 +218,7 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
           <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, 1) })} data-tip="下一页 →"><ChevronRight size={18} /></button>
         </div>
       )}
+      {!long && mat.kind === 'slides' && mat.pages.some((p) => p.clicks) && <div className="tdock-row"><StepToggle className="tdock-steps" size={15} /></div>}
       {grid && <PageGrid anchor={counter.current} mat={mat} page={pgm.page} onClose={() => setGrid(false)}
         onPick={(i) => { st().setShared({ pgm: { ...pgm, page: i, slide: 0, region: undefined, fit: pgm.fit === 'region' ? 'page' : pgm.fit } }); setGrid(false); }} />}
       {guard && isAnswer(mat, pgm.page) && <AnswerRow mat={mat} page={pgm.page} />}

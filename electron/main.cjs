@@ -316,6 +316,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'scanTree':return files.scan(value.root,value.opts);
  case 'listDir':return files.listDir(value);
  case 'slideTexts':return files.slideTexts(value);
+ case 'slideSteps':return files.slideSteps(value);
  case 'warmup.html':{const p=String(value?.path||''),url=/^https?:\/\//i.test(p)?new URL(p).href:files.url(p);if(!/^(https?|lesson):/i.test(url))throw Error('只能检查网页课件');const ses=session.fromPartition('persist:studio-public');if(!ses.csReady){guardSession(ses);ses.csReady=true;}return warmup.checkHtml({url,session:ses,log});}
  case 'pickFolder':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'添加课件目录',properties:['openDirectory']});return r.canceled?null:files.authorize(r.filePaths[0],true);}
  case 'pickFiles':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'打开课件',properties:['openFile','multiSelections']});return r.canceled?[]:r.filePaths.map(p=>files.authorize(p));}

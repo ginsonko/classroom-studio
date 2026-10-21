@@ -162,6 +162,19 @@ class OfficeConverter {
     throw new Error(advice(ext) + (errors.length ? '（已尝试：' + errors.join('；') + '）' : ''));
   }
 
+  /** 用指定的转换方式（和原课件同一种，画面才一致）；没有或失败时换内置排版 */
+  async convertWith(engine, { input, ext, folder, progress = () => {} }) {
+    const steps = this.plan(input, ext), builtin = steps.find((s) => s.name === '内置排版');
+    const step = steps.find((s) => s.name === engine) ?? builtin;
+    if (!step) throw new Error('没有可用的转换方式');
+    try { return { ...await step.run({ input, folder, progress }), engine: step.name }; }
+    catch (e) {
+      if (!builtin || builtin === step) throw e;
+      this.log?.warn('分步画面转换失败，改用内置排版', step.name, e?.message);
+      return { ...await builtin.run({ input, folder, progress }), engine: builtin.name };
+    }
+  }
+
   async libre(soffice, { input, folder }) {
     const out = path.join(folder, 'lo');
     await fs.promises.rm(out, { recursive: true, force: true });

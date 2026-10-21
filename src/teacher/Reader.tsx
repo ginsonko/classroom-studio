@@ -85,9 +85,9 @@ export function Reader() {
       {split && pairMat && <Pane mat={pairMat} view={{ ...view, materialId: pairMat.id, page: Math.min(view.page, pairMat.pages.length - 1) }} setView={() => {}} following={following} secondary />}
     </div>
     <div className="rd-foot">
-      <button onClick={() => setView(stepView(mat, view, -1))} aria-label="上一页"><ChevronLeft size={16} /></button>
+      <button onClick={() => setView(stepView(mat, view, -1, { pages: true }))} aria-label="上一页"><ChevronLeft size={16} /></button>
       <PageNumber mat={mat} view={view} onPage={(page) => setView({ page, slide: 0 })} />
-      <button onClick={() => setView(stepView(mat, view, 1))} aria-label="下一页"><ChevronRight size={16} /></button>
+      <button onClick={() => setView(stepView(mat, view, 1, { pages: true }))} aria-label="下一页"><ChevronRight size={16} /></button>
       <Filmstrip mat={mat} view={view} onPick={(page, slide) => setView({ page, slide })} />
       <button className="btn-cue" onClick={() => publish('cue')} data-tip="放到预监，按 Enter 切给学生">放预监</button>
       <button className="btn-live" onClick={() => publish('student')} data-tip="立刻展示给学生"><MonitorUp size={14} /><span>上屏这一页</span></button>

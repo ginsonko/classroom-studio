@@ -21,6 +21,17 @@ export interface PageInfo {
   doc?: { pdf: string; index: number };   // 用 pdf.js 渲染 pdf 的第 index 页（0 起）
   w: number; h: number;
   slides?: number[][];
+  /** PPT 分步：按 clicks 下翻页笔才放完这一页；steps 是中间画面（没有 src / doc 的就是整页原图） */
+  clicks?: number;
+  steps?: StepFrame[];
+}
+
+/** PPT 分步的一帧：按了 click 下之后显示；同一下里的后几帧等 wait 毫秒自动接着出 */
+export interface StepFrame {
+  click: number;
+  wait: number;
+  src?: string;
+  doc?: { pdf: string; index: number };
 }
 
 export interface Material {
@@ -56,6 +67,7 @@ export interface View {
   region?: [number, number, number, number]; // 归一化区域（相对页面）
   zoom: number;
   y?: number;             // 长黑板：画面上沿在页面里的位置（按页宽计，和笔迹坐标同单位）
+  build?: [number, number]; // PPT 分步：[页, 已按几下]；页对不上（换页、跳页）就是从这一页开头放
 }
 
 /**

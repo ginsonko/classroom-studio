@@ -19,6 +19,11 @@
 .page.cropped { box-shadow: none; }
 .page-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none; }
 .page-next { position: absolute; left: 0; width: 100%; background: #fff; container-type: size; }
+/* PPT 分步：新画面盖在上一帧上淡入 */
+.step-layer { position: absolute; inset: 0; }
+.step-layer.in { animation: step-in .28s var(--ease-out) both; }
+@keyframes step-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .step-layer.in { animation-duration: .01s; } }
 
 /* 底纹：同时用于铺满的黑板、单页黑板和皮肤预览 */
 [data-pattern="grid"] {

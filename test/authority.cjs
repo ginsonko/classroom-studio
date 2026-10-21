@@ -20,3 +20,11 @@ test('0.9.1 desk: ink of every open window is projected; students switch only am
  assert.equal(authorizeMessage('student',{t:'shared',patch:{pgm:{materialId:'board',page:1}}},{...s,studentTools:'locked'}),null);
  assert.equal(authorizeMessage('student',{t:'shared',patch:{pgm:{materialId:'board',page:1}}},s).patch.pgm.page,1);
 });
+test('1.2.2 PPT step toggle syncs from teacher, dock and open student tools; value is always boolean; projected to new windows',()=>{
+ const s={...state(),drawAuthor:'teacher',studentTools:'open'};
+ assert.deepEqual(authorizeMessage('teacher',{t:'shared',patch:{slideSteps:false}},s).patch,{slideSteps:false});
+ assert.deepEqual(authorizeMessage('dock',{t:'shared',patch:{slideSteps:'x'}},s).patch,{slideSteps:true});
+ assert.deepEqual(authorizeMessage('student',{t:'shared',patch:{slideSteps:false,pgm:{materialId:'board',page:0,build:[0,0]}}},s).patch,{slideSteps:false,pgm:{materialId:'board',page:0,build:[0,0]}});
+ assert.equal(authorizeMessage('student',{t:'shared',patch:{slideSteps:false}},{...s,studentTools:'locked',drawAuthor:'student'}),null);
+ assert.equal(projection({...s,slideSteps:false}).slideSteps,false);
+});

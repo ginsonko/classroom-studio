@@ -1,4 +1,4 @@
-const SHARED=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit'];
+const SHARED=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps'];
 const clone=v=>JSON.parse(JSON.stringify(v));
 // 学生画面里打开着的各项（当前项 + 桌面上的窗口）：笔迹都要同步过去
 const deskIds=state=>new Set([state.pgmMat?.id,...(Array.isArray(state.desk)?state.desk:[]).map(w=>w&&w.id)].filter(x=>typeof x==='string'));
@@ -25,7 +25,7 @@ function authorizeMessage(role,m,state){
  if(m.t==='snapshot')return role==='teacher'?{t:'snapshot',to:String(m.to),shared:projection(m.shared)}:null;
  if(m.t==='shared'){
   // 学生工具栏开放时，学生和老师一样可以翻页、切换 / 摆放窗口、放大、聚光灯和幕布；不能开新课件
-  const keys=trusted?SHARED:state.drawAuthor==='teacher'||state.studentTools==='open'?['selectedInk','pgm','pgmMat','desk','sim','curtain','spotlight','objKind','inkOptions']:['selectedInk'];
+  const keys=trusted?SHARED:state.drawAuthor==='teacher'||state.studentTools==='open'?['selectedInk','pgm','pgmMat','desk','sim','curtain','spotlight','objKind','inkOptions','slideSteps']:['selectedInk'];
   const patch=Object.fromEntries(Object.entries(m.patch??{}).filter(([k])=>keys.includes(k)));
   // 学生端工具栏开放时，学生点工具即「接过笔」；只能把书写权交给自己，不能交还或冒充老师
   if(!trusted&&state.studentTools==='open'&&m.patch?.drawAuthor==='student')patch.drawAuthor='student';
@@ -33,6 +33,7 @@ function authorizeMessage(role,m,state){
   if(!trusted&&patch.objKind!==undefined&&(typeof patch.objKind!=='string'||patch.objKind.length>60))delete patch.objKind;
   if(!trusted&&patch.inkOptions!==undefined){const o=patch.inkOptions||{},was=state.inkOptions||{};patch.inkOptions={...was,eraserMode:o.eraserMode==='stroke'?'stroke':'segment',eraserSize:['s','m','l'].includes(o.eraserSize)?o.eraserSize:(was.eraserSize??'m'),shapeSnap:o.shapeSnap!==false};}
   if(patch.deskLimit!==undefined)patch.deskLimit=num(Math.round(patch.deskLimit),0,999,10);
+  if(patch.slideSteps!==undefined)patch.slideSteps=patch.slideSteps!==false;
   // 学生只能切到桌面上已经打开的项，课件内容用现有的那份
   if(!trusted&&patch.pgmMat){const id=patch.pgmMat.id,w=id===state.pgmMat?.id?{mat:state.pgmMat}:(Array.isArray(state.desk)?state.desk:[]).find(x=>x&&x.id===id);if(w?.mat)patch.pgmMat=w.mat;else{delete patch.pgmMat;delete patch.pgm;delete patch.sim;delete patch.desk;}}
   const matId=(patch.pgmMat??state.pgmMat)?.id;
