@@ -29,6 +29,7 @@ export interface Material {
   title: string;
   path?: string;          // 资料库内相对路径（样稿）
   pages: PageInfo[];      // 黑板也有页
+  long?: boolean;         // 长黑板（kind = 'board'）：只有一页，往下滚、写到底自动加长
   total: number;          // 文件真实总页数（样稿只渲染了前几页）
   pairId?: string;        // 自动配对的答案 / 原卷
   pairRole?: 'question' | 'answer';
@@ -54,6 +55,7 @@ export interface View {
   fit: FitMode;
   region?: [number, number, number, number]; // 归一化区域（相对页面）
   zoom: number;
+  y?: number;             // 长黑板：画面上沿在页面里的位置（按页宽计，和笔迹坐标同单位）
 }
 
 /**

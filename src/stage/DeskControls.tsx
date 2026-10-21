@@ -1,13 +1,15 @@
 // 学生画面上的三样小控件：左边「打开的课件」切换栏、右边页面缩略图、右下角翻页和放大。
 // 都可以收起成一枚小标签，展开状态只记在本机。
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, ChevronLeft, ChevronRight, Columns2, GalleryVertical, Layers, Plus, Presentation, Scan, X, ZoomIn, ZoomOut, Atom, Globe, Image as ImageIcon, FileText, PanelTop } from 'lucide-react';
+import { AppWindow, ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, GalleryVertical, Layers, Plus, Presentation, Scan, ScrollText, X, ZoomIn, ZoomOut, Atom, Globe, Image as ImageIcon, FileText, PanelTop } from 'lucide-react';
 import { ROLE, defaultView, stepView, useStore } from '../lib/store';
 import { BASE, deskOrder, pageLabel, panRegion, zoomRegion } from '../lib/desk';
 import type { DeskWin, Material } from '../lib/types';
 import { PageThumb, usePageImage } from '../ui/PageThumb';
 import { hiddenFromStudent } from '../doc/answers';
 import { curStageAspect } from './Desk';
+import { isLong } from '../lib/longBoard';
+import { longWheel, seekLastInk, seekLong } from './longNav';
 
 function useOpen(key: string, init: boolean) {
   const [open, setOpen] = useState(() => { const v = localStorage.getItem(key); return v === null ? init : v === '1'; });
@@ -75,6 +77,7 @@ export function DeskRail({ canArrange }: { canArrange: boolean }) {
       {canArrange && (
         <footer>
           {ROLE !== 'student' && <button onClick={() => st().newBoard()} data-tip="再开一块空白黑板"><Plus size={13} />新黑板</button>}
+          {ROLE !== 'student' && <button onClick={() => st().newLongBoard()} data-tip="长黑板：一整条往下写，滚轮 / 翻页键往下滚，写到底自动加长"><ScrollText size={13} />长黑板</button>}
           <button disabled={docs < 2} onClick={() => st().tileWins()} data-tip={docs < 2 ? '打开两个以上课件后可以并排' : '当前课件和最近用过的课件并排摆开（最多 4 个）'}><Columns2 size={13} />并排</button>
           {pgmMat.id !== BASE && <button onClick={() => st().setWin(pgmMat.id, { mode: (desk.find((w) => w.id === pgmMat.id)?.mode === 'normal' ? 'max' : 'normal') })} data-tip="当前课件在「占满画面」和「浮动窗口」之间切换"><AppWindow size={13} />{desk.find((w) => w.id === pgmMat.id)?.mode === 'normal' ? '占满' : '窗口'}</button>}
         </footer>
@@ -128,7 +131,7 @@ export function PagePanel({ canPage }: { canPage: boolean }) {
 /** 放大 / 缩小当前项：factor > 1 放大；cx, cy 是页面坐标（不给就以画面中心为准） */
 export function zoomBy(factor: number, cx = -1, cy = -1) {
   const st = useStore.getState(), m = st.pgmMat, v = st.pgm;
-  if (m.kind === 'html' || m.kind === 'sim' || m.kind === 'video' || m.kind === 'audio') return;
+  if (m.kind === 'html' || m.kind === 'sim' || m.kind === 'video' || m.kind === 'audio' || isLong(m)) return;
   const page = m.pages[Math.min(v.page, m.pages.length - 1)];
   if (!page) return;
   const r = zoomRegion(v, page, factor, curStageAspect(), cx, cy);
@@ -143,7 +146,8 @@ export function resetZoom() {
 export function ZoomBar({ canPage }: { canPage: boolean }) {
   const pgm = useStore((s) => s.pgm);
   const mat = useStore((s) => s.pgmMat);
-  const zoomable = !(mat.kind === 'html' || mat.kind === 'sim' || mat.kind === 'video' || mat.kind === 'audio');
+  const long = isLong(mat);
+  const zoomable = !(mat.kind === 'html' || mat.kind === 'sim' || mat.kind === 'video' || mat.kind === 'audio' || long);
   const zoomed = pgm.fit === 'region' && !!pgm.region;
   const pct = zoomed ? Math.round(100 / pgm.region![2]) : 100;
   const label = pageLabel(mat, pgm);
@@ -177,7 +181,14 @@ export function ZoomBar({ canPage }: { canPage: boolean }) {
         </div>
       )}
       <div className="dzoom-row">
-        {label && <>
+        {label && long && <>
+          {canPage && <button onClick={() => seekLong(0)} data-tip="回到顶部" aria-label="回到顶部"><ArrowUpToLine size={15} /></button>}
+          {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, -1), selectedInk: null })} data-tip="往上半屏　↑ / PageUp / 滚轮" aria-label="往上半屏"><ChevronUp size={16} /></button>}
+          <b className="num">{label}</b>
+          {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, 1), selectedInk: null })} data-tip="往下半屏　↓ / PageDown / 滚轮" aria-label="往下半屏"><ChevronDown size={16} /></button>}
+          {canPage && <button onClick={seekLastInk} data-tip="跳到最后写的地方" aria-label="跳到最后写的地方"><ArrowDownToLine size={15} /></button>}
+        </>}
+        {label && !long && <>
           {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, -1), selectedInk: null })} data-tip="上一页　← / PageUp" aria-label="上一页"><ChevronLeft size={16} /></button>}
           <b className="num">{label}</b>
           {canPage && <button onClick={() => st().setShared({ pgm: stepView(st().pgmMat, st().pgm, 1), selectedInk: null })} data-tip="下一页　→ / PageDown" aria-label="下一页"><ChevronRight size={16} /></button>}
@@ -195,6 +206,7 @@ export function ZoomBar({ canPage }: { canPage: boolean }) {
 
 /** 滚轮：Ctrl + 滚轮以鼠标处为中心放大缩小；已放大时普通滚轮平移 */
 export function deskWheel(e: React.WheelEvent) {
+  if (longWheel(e)) return;
   const st = useStore.getState(), v = st.pgm, m = st.pgmMat;
   const stage = (e.currentTarget as HTMLElement).querySelector('.page') as HTMLElement | null;
   if (e.ctrlKey) {

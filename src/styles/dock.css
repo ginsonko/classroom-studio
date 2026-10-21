@@ -71,6 +71,11 @@ html, body, #root { background: transparent !important; overflow: hidden; }
 .tdock-pages header b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
 .tdock-pages header span { color: #8b93a3; font-size: 11px; }
 .tdock-pages footer { font-size: 10.5px; color: #8b93a3; padding: 0 2px; }
+.tdock-save { gap: 4px; }
+.tdock-save > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border-radius: 10px; text-align: left; color: #eef1f6; background: rgba(255, 255, 255, .05); cursor: pointer; }
+.tdock-save > button:hover { background: rgba(61, 217, 235, .14); }
+.tdock-save > button b { font-size: 12.5px; font-weight: 600; }
+.tdock-save > button span { font-size: 11px; color: #8b93a3; }
 .tdock-pages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; overflow-y: auto; min-height: 0; padding: 2px; }
 .pthumb { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 3px; border-radius: 9px; cursor: pointer; }
 .pthumb:hover { background: rgba(255, 255, 255, .06); }

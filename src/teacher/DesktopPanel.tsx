@@ -5,6 +5,8 @@ import {isLive,useRecording} from '../lib/recording';
 import {toast} from '../lib/toast';
 import {useStore} from '../lib/store';
 import {redetect,setAnswerAutoDetect} from '../doc/answers';
+import {saveBoard} from '../ink/boardExport';
+import {isLong} from '../lib/longBoard';
 import '../styles/desktop.css';
 type Settings={recordings:string;microphone:boolean;systemAudio:boolean;bitrate:number;captureGuard?:boolean;remindMinutes?:number;autostart?:boolean};
 type Recording={id:string;createdAt:string;phase:string;bytes:number;folder:string;mp4:string;title?:string;studentId?:string|null};
@@ -22,11 +24,17 @@ export function DesktopPanel(){
  useEffect(()=>{Promise.all([host.call<Settings>('settings'),host.displays(),host.call<Recording[]>('recordings')]).then(([s,d,r])=>{setSettings(s);setDisplays(d);setRows(r);}).catch(e=>setError(e.message));},[]);
  useEffect(()=>{if(phase==='complete'||phase==='recoverable')void refresh();},[phase]);
  const run=async(fn:()=>Promise<unknown>)=>{try{setError('');await fn();}catch(e){setError((e as Error).message);}};
+ const multi=st.pgmMat.kind==='board'&&!isLong(st.pgmMat)&&st.pgmMat.pages.length>1;
+ const done=(f:string[]|null)=>{if(f?.length)toast(f.length>1?`板书已保存，共 ${f.length} 张`:'板书已保存');};
  const update=(p:Partial<Settings>)=>void run(async()=>setSettings(await host.call<Settings>('setSettings',p)));
  return <div className="desktop-backdrop" onClick={()=>useRecording.setState({panel:false})}><section className="desktop-panel" onClick={e=>e.stopPropagation()}>
   <header><div><small>LOCAL STUDIO</small><h2>窗口、录课与回放</h2></div><button className="ico" aria-label="关闭设置" onClick={()=>useRecording.setState({panel:false})}><X size={19}/></button></header>
   <div className="desktop-body">
-   <div className="desktop-section"><h3>四屏工作区</h3><p>腾讯会议共享「课堂展示」窗口。教师工具是单独窗口；首次授课前请用会议预览确认共享范围。</p><div className="desktop-actions"><button onClick={()=>host.openStudentWindow()}><MonitorUp size={15}/>打开学生画面</button><button onClick={()=>host.openDock()}>打开教师工具</button><button onClick={()=>void run(()=>host.call('exportBoard'))}><Download size={15}/>保存当前板书 PNG</button></div><div className="display-list">{displays.map((d,i)=><button key={d.id} onClick={()=>host.placeStudent(d.id,true)}>显示器 {i+1}{d.primary?' · 主屏':''}<small>{d.bounds.width} × {d.bounds.height} · 学生全屏</small></button>)}</div></div>
+   <div className="desktop-section"><h3>四屏工作区</h3><p>腾讯会议共享「课堂展示」窗口。教师工具是单独窗口；首次授课前请用会议预览确认共享范围。</p><div className="desktop-actions"><button onClick={()=>host.openStudentWindow()}><MonitorUp size={15}/>打开学生画面</button><button onClick={()=>host.openDock()}>打开教师工具</button>{multi?<>
+    <button onClick={()=>void run(()=>saveBoard('stitch').then(done))} data-tip="所有页从上到下拼成一张长图"><Download size={15}/>保存板书 · 拼成长图</button>
+    <button onClick={()=>void run(()=>saveBoard('pages').then(done))} data-tip="每页一张，按「名字-01、-02…」编号">每页一张</button>
+    <button onClick={()=>void run(()=>saveBoard('page').then(done))}>只存第 {st.pgm.page+1} 页</button>
+   </>:<button onClick={()=>void run(()=>saveBoard().then(done))} data-tip={isLong(st.pgmMat)?'整块长黑板存成一张长图':undefined}><Download size={15}/>保存当前板书 PNG</button>}</div><div className="display-list">{displays.map((d,i)=><button key={d.id} onClick={()=>host.placeStudent(d.id,true)}>显示器 {i+1}{d.primary?' · 主屏':''}<small>{d.bounds.width} × {d.bounds.height} · 学生全屏</small></button>)}</div></div>
    {settings&&<div className="desktop-section"><h3>腾讯会议怎么共享</h3><div className="share-guide"><div className="good"><b>推荐：共享窗口 →「课堂展示」</b>学生只看到课堂展示窗口；教师浮层、导播台和你桌面上的其他东西都不会被共享。</div><div className="bad"><b>不推荐：共享整个屏幕</b>浮层、导播台和弹窗都会被学生看到。必须共享屏幕时，可以打开下面的防截屏。</div></div><label className="setting-check"><input type="checkbox" checked={!!settings.captureGuard} onChange={e=>update({captureGuard:e.target.checked})}/>防截屏：教师浮层和导播台在任何共享、截图里都不显示</label><p>注意：开启后，部分会议软件全屏共享时会在浮层位置显示一块黑色。只共享「课堂展示」窗口时不需要开启。</p></div>}
    {settings&&<div className="desktop-section"><h3>课前提醒</h3><label className="quality">按课表提前提醒<select value={settings.remindMinutes??10} onChange={e=>update({remindMinutes:Number(e.target.value)})}><option value={0}>不提醒</option><option value={5}>提前 5 分钟</option><option value={10}>提前 10 分钟</option><option value={15}>提前 15 分钟</option><option value={30}>提前 30 分钟</option></select></label><label className="setting-check"><input type="checkbox" checked={!!settings.autostart} onChange={e=>update({autostart:e.target.checked})}/>开机自动启动导播台（这样提醒不会漏）</label><p>提醒以 Windows 系统通知弹出，导播台里也会显示一条横幅。导播台没开着的时候不会提醒。微信、邮件提醒会在后续版本加入。</p></div>}
    <div className="desktop-section"><h3>答案页</h3><label className="setting-check"><input type="checkbox" checked={st.answerGuard!==false} onChange={e=>st.setShared({answerGuard:e.target.checked})}/>答案页对学生遮住，老师点「揭晓」后才显示</label><label className="setting-check"><input type="checkbox" disabled={st.answerGuard===false} checked={st.answerAutoDetect} onChange={e=>setAnswerAutoDetect(e.target.checked)}/>打开 PDF / PPT 时自动识别答案页（文字识别在本机完成，不上传）</label><p>页面中间出现「答案：」「【解析】」时只遮住下半部分，题目照常显示。识别不准时，在教师工具里点页码，可以把当前页设为或取消答案页，会按文件记住。{st.pgmMat.src?.path&&<button className="link-btn" onClick={()=>void redetect()}>重新识别当前课件</button>}</p></div>

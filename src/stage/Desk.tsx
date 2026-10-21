@@ -6,6 +6,7 @@ import { useStore } from '../lib/store';
 import { BASE, pageLabel, visibleLayers } from '../lib/desk';
 import type { Author, DeskWin, Tool } from '../lib/types';
 import { Stage } from './Stage';
+import { seekLong } from './longNav';
 import '../styles/desk.css';
 
 type Rect = DeskWin['rect'];
@@ -83,6 +84,7 @@ export function Desk({ author, tool, color, size, canArrange, compact, onWheel }
       overlays={cur}
       boardFill
       onWheel={cur ? onWheel : undefined}
+      onSeek={cur && canArrange ? seekLong : undefined}
     />
   );
 

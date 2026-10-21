@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { AppWindow, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, Scissors, X } from 'lucide-react';
+import { AppWindow, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, Scissors, ScrollText, X } from 'lucide-react';
+import { isLong } from '../lib/longBoard';
+import { longWheel } from '../stage/longNav';
 import { useStore } from '../lib/store';
 import { BASE, deskOrder, pageLabel } from '../lib/desk';
 import { Desk } from '../stage/Desk';
@@ -48,7 +50,7 @@ export function PgmMonitor({ onOpenStudent }: { onOpenStudent: () => void }) {
       </div>
       <DeskTabs />
       <div className="mon-body" key={takeAt}>
-        <Desk author="teacher" tool={tool} color={color} size={size} canArrange compact />
+        <Desk author="teacher" tool={tool} color={color} size={size} canArrange compact onWheel={longWheel} />
       </div>
       {over && <div className="drop-hint">松手 · 立刻展示给学生</div>}
     </div>
@@ -70,16 +72,17 @@ function DeskTabs() {
     <div className="dtabs" role="tablist" aria-label="学生画面里打开的课件">
       {list.map((w) => (
         <button key={w.id} role="tab" aria-selected={w.id === pgmMat.id} className={'dtab' + (w.id === pgmMat.id ? ' cur' : '') + (w.mode === 'min' ? ' min' : '')}
-          onClick={() => st().focusWin(w.id)} data-tip={w.mat.title + (pageLabel(w.mat, w.view) ? ' · 第 ' + pageLabel(w.mat, w.view) + ' 页' : '') + (w.mode === 'normal' ? ' · 窗口' : w.mode === 'min' ? ' · 已收起' : '')}>
+          onClick={() => st().focusWin(w.id)} data-tip={w.mat.title + (!pageLabel(w.mat, w.view) ? '' : isLong(w.mat) ? ' · ' + pageLabel(w.mat, w.view) : ' · 第 ' + pageLabel(w.mat, w.view) + ' 页') + (w.mode === 'normal' ? ' · 窗口' : w.mode === 'min' ? ' · 已收起' : '')}>
           {w.mode === 'normal' && w.id !== BASE ? <AppWindow size={11} /> : null}
           <span>{w.mat.title}</span>
-          {pageLabel(w.mat, w.view) && <small className="num">{w.view.page + 1}</small>}
+          {pageLabel(w.mat, w.view) && !isLong(w.mat) && <small className="num">{w.view.page + 1}</small>}
           {w.id !== BASE && <i className="x" role="button" aria-label={'关闭 ' + w.mat.title} onClick={(e) => { e.stopPropagation(); st().closeWin(w.id); }}><X size={10} /></i>}
         </button>
       ))}
     </div>
     <div className="dtabs-acts">
       <button className="dtabs-act" onClick={() => st().newBoard()} data-tip="再开一块空白黑板"><Plus size={12} />黑板</button>
+      <button className="dtabs-act" onClick={() => st().newLongBoard()} data-tip="长黑板：一整条往下写，滚轮 / 翻页键往下滚，写到底自动加长"><ScrollText size={12} />长黑板</button>
       <button className="dtabs-act" onClick={() => void snipToBoard().catch((e) => reportMaterialError(e, '截屏', 'student'))} data-tip="框选屏幕上任意区域贴到黑板。也可以用微信 / QQ 截图后直接 Ctrl+V"><Scissors size={12} />截屏</button>
       {cur && cur.id !== BASE && <button className="dtabs-act" onClick={() => st().setWin(cur.id, { mode: cur.mode === 'normal' ? 'max' : 'normal' })} data-tip="当前课件在「占满画面」和「浮在黑板上的窗口」之间切换"><AppWindow size={12} />{cur.mode === 'normal' ? '占满' : '窗口'}</button>}
       <button className="dtabs-act" disabled={docs < 2} onClick={() => st().tileWins()} data-tip={docs < 2 ? '打开两个以上课件后可以并排' : '当前课件和最近用过的课件并排（最多 4 个）'}><Columns2 size={12} />并排</button>

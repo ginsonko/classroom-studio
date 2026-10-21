@@ -1,6 +1,7 @@
 // 学生画面的「桌面」：黑板垫底，打开过的课件各占一项、各自记住页码。
 // 这里只放纯函数（store 和测试共用）；正在操作的一项始终是 pgm / pgmMat。
 import type { DeskWin, Material, View } from './types';
+import { isLong, screenLabel } from './longBoard';
 
 export const BASE = 'board';
 /** 学生窗口同时打开的课件数默认上限（不含黑板）；0 表示不限 */
@@ -105,6 +106,7 @@ export function tileDesk(desk: DeskWin[], ids: string[]): DeskWin[] {
 
 /** 页码文字：3 / 12，幻灯片模式带块序号 */
 export function pageLabel(mat: Material, v: View): string {
+  if (isLong(mat)) return screenLabel(mat, v);
   if (mat.kind === 'html' || mat.kind === 'image' || mat.kind === 'sim' || mat.kind === 'video' || mat.kind === 'audio') return '';
   const s = v.fit === 'slides' && (mat.pages[v.page]?.slides?.length ?? 0) > 1 ? ` · ${v.slide + 1}` : '';
   return `${v.page + 1}${s} / ${Math.max(mat.total || 0, mat.pages.length)}`;

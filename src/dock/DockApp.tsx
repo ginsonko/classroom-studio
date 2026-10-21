@@ -5,12 +5,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PageThumb } from '../ui/PageThumb';
 import {
-  ChevronLeft, ChevronRight, Eye, EyeOff, GripVertical, LayoutGrid, Lock, LockOpen,
+  ArrowUpToLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, EyeOff, ImageDown, ScrollText, GripVertical, LayoutGrid, Lock, LockOpen,
   Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2,
 } from 'lucide-react';
 import { snipToBoard } from '../ink/pasteImage';
 import { addBoardPage, defaultView, inkKey, stepView, useStore } from '../lib/store';
 import { boardMaterial } from '../lib/library';
+import { isLong, screenLabel } from '../lib/longBoard';
+import { seekLastInk, seekLong } from '../stage/longNav';
+import { saveBoard, type ExportMode } from '../ink/boardExport';
 import { answerKey, isAnswer, toggleAnswerPage, toggleReveal } from '../doc/answers';
 import { host } from '../lib/host';
 import { ToolPalette } from '../ui/ToolPalette';
@@ -184,6 +187,16 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
   const [grid, setGrid] = useState(false), [snip, setSnip] = useState(false);
   const guard = useStore((s) => s.answerGuard !== false);
   useEffect(() => setGrid(false), [mat.id]);
+  const long = isLong(mat), screen = long ? screenLabel(mat, pgm).replace(' 屏', '').split(' / ') : [];
+  const saveBtn = useRef<HTMLButtonElement>(null);
+  const [saveMenu, setSaveMenu] = useState(false), [saving, setSaving] = useState(false), [saved, setSaved] = useState(false);
+  useEffect(() => setSaveMenu(false), [mat.id]);
+  const save = (mode: ExportMode) => {
+    setSaving(true);
+    void saveBoard(mode).then((files) => { if (files?.length) { setSaved(true); setTimeout(() => setSaved(false), 2500); } })
+      .catch((e) => { host.call('notice', '保存板书失败：' + String((e as Error).message)).catch(() => {}); })
+      .finally(() => setSaving(false));
+  };
   return (
     <>
       <div className="tdock-row">
@@ -191,16 +204,26 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
         <button className="tp-b" onClick={() => st().redo(key, 'teacher')} data-tip="重做 Ctrl+Shift+Z"><Redo2 size={17} /></button>
         <button className="tp-b" onClick={() => st().clearInk(key, 'teacher')} data-tip="清除我在这一页的笔迹"><Trash2 size={17} /></button>
       </div>
-      <div className="tdock-row tdock-pager">
-        <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, -1) })} data-tip="上一页 ←"><ChevronLeft size={18} /></button>
-        <button ref={counter} className={'tdock-page num' + (grid ? ' on' : '')} onClick={() => setGrid(!grid)} data-tip="点开所有页面，点缩略图直接跳转">{pgm.page + 1}<i>/{mat.total}</i></button>
-        <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, 1) })} data-tip="下一页 →"><ChevronRight size={18} /></button>
-      </div>
+      {long ? (
+        <div className="tdock-row tdock-pager">
+          <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, -1), selectedInk: null })} data-tip="往上半屏 ↑（学生画面上用滚轮也行）"><ChevronUp size={18} /></button>
+          <button className="tdock-page num" onClick={seekLastInk} data-tip="第几屏 / 共几屏 · 点一下跳到最后写的地方">{screen[0]}<i>/{screen[1]}</i></button>
+          <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, 1), selectedInk: null })} data-tip="往下半屏 ↓（写到底自动加长）"><ChevronDown size={18} /></button>
+        </div>
+      ) : (
+        <div className="tdock-row tdock-pager">
+          <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, -1) })} data-tip="上一页 ←"><ChevronLeft size={18} /></button>
+          <button ref={counter} className={'tdock-page num' + (grid ? ' on' : '')} onClick={() => setGrid(!grid)} data-tip="点开所有页面，点缩略图直接跳转">{pgm.page + 1}<i>/{mat.total}</i></button>
+          <button className="tp-b" onClick={() => st().setShared({ pgm: stepView(mat, pgm, 1) })} data-tip="下一页 →"><ChevronRight size={18} /></button>
+        </div>
+      )}
       {grid && <PageGrid anchor={counter.current} mat={mat} page={pgm.page} onClose={() => setGrid(false)}
         onPick={(i) => { st().setShared({ pgm: { ...pgm, page: i, slide: 0, region: undefined, fit: pgm.fit === 'region' ? 'page' : pgm.fit } }); setGrid(false); }} />}
       {guard && isAnswer(mat, pgm.page) && <AnswerRow mat={mat} page={pgm.page} />}
       <div className="tdock-row">
-        {mat.kind === 'board' ? (
+        {long ? (
+          <button className="tp-b" onClick={() => seekLong(0)} data-tip="回到长黑板顶部"><ArrowUpToLine size={17} /></button>
+        ) : mat.kind === 'board' ? (
           <button className="tp-b" onClick={addBoardPage} data-tip="黑板加一页"><Plus size={17} /></button>
         ) : (
           <button className="tp-b" onClick={() => st().focusWin('board')} data-tip="切到黑板（回到上次写的那页）"><LayoutGrid size={17} /></button>
@@ -215,6 +238,15 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
         <button className={'tp-b' + (snip ? ' on' : '')} disabled={snip} onClick={() => { setSnip(true); void snipToBoard().catch((e) => { host.call('notice', String((e as Error).message)).catch(() => {}); }).finally(() => setSnip(false)); }} data-tip="截屏：框选屏幕上任意区域，贴到黑板（微信 / QQ 截图后直接在学生画面按 Ctrl+V 也行）"><Scissors size={17} /></button>
       </div>
       <div className="tdock-row">
+        <button className="tp-b" onClick={() => st().newLongBoard()} data-tip="新开一块长黑板：一整条往下写，滚轮 / 翻页往下滚，写到底自动加长"><ScrollText size={17} /></button>
+        <button ref={saveBtn} className={'tp-b' + (saving || saveMenu ? ' on' : '')} disabled={saving}
+          onClick={() => { if (mat.kind === 'board' && !long && mat.pages.length > 1) setSaveMenu(!saveMenu); else save('stitch'); }}
+          data-tip={long ? '保存板书：整块长黑板存成一张长图' : mat.kind === 'board' ? (mat.pages.length > 1 ? '保存板书：拼成一张长图，或每页一张' : '保存板书为图片') : '保存学生画面为图片'}>
+          {saved ? <Check size={17} /> : <ImageDown size={17} />}
+        </button>
+      </div>
+      {saveMenu && <SaveMenu anchor={saveBtn.current} pages={mat.pages.length} page={pgm.page} onPick={(m) => { setSaveMenu(false); save(m); }} onClose={() => setSaveMenu(false)} />}
+      <div className="tdock-row">
         <SubjectPicker className="tdock-subj" vertical compact />
         <DockPlugins />
         <button className="tp-b tdock-zoom" onClick={onZoom} data-tip="浮层大小：点一下放大，再点循环">
@@ -222,6 +254,35 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
         </button>
       </div>
     </>
+  );
+}
+
+/** 多页黑板保存方式：拼长图 / 每页一张 / 只存这一页 */
+function SaveMenu({ anchor, pages, page, onPick, onClose }: { anchor: HTMLElement | null; pages: number; page: number; onPick: (m: ExportMode) => void; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const W = 232;
+  useLayoutEffect(() => {
+    const railEl = anchor?.closest('.tdock') as HTMLElement | null;
+    if (!anchor || !railEl) return;
+    const r = railEl.getBoundingClientRect(), a = anchor.getBoundingClientRect(), h = box.current?.offsetHeight ?? 160;
+    const left = r.right + 10 + W <= innerWidth ? r.right + 10 : Math.max(8, r.left - 10 - W);
+    setPos({ left, top: Math.max(8, Math.min(a.top - 40, innerHeight - h - 8)) });
+  }, [anchor]);
+  useEffect(() => {
+    const away = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !anchor?.contains(t)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    addEventListener('pointerdown', away, true); addEventListener('keydown', key);
+    return () => { removeEventListener('pointerdown', away, true); removeEventListener('keydown', key); };
+  }, [anchor, onClose]);
+  return createPortal(
+    <div ref={box} data-ink-pop className="tdock-pages tdock-save" style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 8 }}>
+      <header><b>保存板书</b><span className="num">共 {pages} 页</span></header>
+      <button onClick={() => onPick('stitch')}><b>拼成一张长图</b><span>{pages} 页从上到下接起来，方便发给家长</span></button>
+      <button onClick={() => onPick('pages')}><b>每页一张</b><span>按「名字-01、-02…」编号保存</span></button>
+      <button onClick={() => onPick('page')}><b>只存这一页</b><span>第 {page + 1} 页</span></button>
+    </div>,
+    document.body,
   );
 }
 

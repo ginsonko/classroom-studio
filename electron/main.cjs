@@ -350,13 +350,41 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'shortcut.state':return shortcutState();
  case 'openRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');const err=await shell.openPath(item.phase==='complete'?item.mp4:item.raw);if(err)throw Error(err);return;}
  case 'recordingsFolder':await fs.promises.mkdir(settings.recordings,{recursive:true});return shell.openPath(settings.recordings);
- case 'exportBoard':{const w=await makeWindow('student'),r=await dialog.showSaveDialog(windows.get('teacher'),{title:'保存当前板书',defaultPath:path.join(settings.recordings,'课堂板书-'+Date.now()+'.png'),filters:[{name:'PNG',extensions:['png']}]});if(r.canceled)return null;await fs.promises.writeFile(r.filePath,(await w.webContents.capturePage()).toPNG());return r.filePath;}
+ case 'exportBoard':return exportBoard(value,role);
  case 'screenSnip':return screenSnip();
  case 'notice':notify('notice',{message:String(value||'').slice(0,300),error:true});return;
  case 'saveImage':{if(typeof value!=='string'||value.length>50*1024*1024||!value.startsWith('data:image/png;base64,'))throw Error('图片数据无效');const file=path.join(files.cache,'images',require('node:crypto').randomUUID()+'.png');await fs.promises.mkdir(path.dirname(file),{recursive:true});await fs.promises.writeFile(file,Buffer.from(value.split(',')[1],'base64'));return normal(file);}
  default:throw Error('未实现的桌面操作：'+method);
  }
 });
+// 保存板书：渲染端按矢量重画好的 PNG（长黑板一张长图；多页黑板拼成一张或每页一张）。
+// 没给图片（当前是课件、网页等）就截学生画面。多张时按「名字-01.png、名字-02.png」排。
+async function exportBoard(value,role){
+ const stamp=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16).replace('T',' ').replace(':','.');
+ const safe=String(value?.title||'课堂板书').replace(/[\\/:*?"<>|\r\n]/g,'_').trim().slice(0,40)||'课堂板书';
+ const pngs=Array.isArray(value?.pngs)?value.pngs:null;
+ if(pngs){
+  if(!pngs.length||pngs.length>200)throw Error('板书图片数量不对');
+  let total=0;for(const p of pngs){if(typeof p!=='string'||!p.startsWith('data:image/png;base64,')||p.length>80*1024*1024)throw Error('板书图片数据无效');total+=p.length;}
+  if(total>600*1024*1024)throw Error('板书太大，请分成几次保存');
+ }
+ // 从教师浮层点的：对话框挂在学生画面上（老师这时在看学生画面）
+ const owner=role==='dock'?(windows.get('student')||windows.get('teacher')):windows.get('teacher');
+ const to=TEST&&value?.to?String(value.to):(await dialog.showSaveDialog(owner,{title:pngs&&pngs.length>1?`保存板书（共 ${pngs.length} 张，自动编号）`:'保存板书',defaultPath:path.join(settings.recordings,`${safe}-${stamp}.png`),filters:[{name:'PNG 图片',extensions:['png']}]})).filePath;
+ if(!to)return null;
+ let out;
+ if(!pngs){const w=await makeWindow('student');await fs.promises.writeFile(to,(await w.webContents.capturePage()).toPNG());out=[to];}
+ else{
+  const bufs=pngs.map(p=>Buffer.from(p.slice(22),'base64'));
+  if(bufs.some(b=>b.length<8||b.readUInt32BE(0)!==0x89504e47))throw Error('板书图片数据无效');
+  const base=to.replace(/\.png$/i,'');
+  out=bufs.length===1?[to]:bufs.map((_,i)=>`${base}-${String(i+1).padStart(2,'0')}.png`);
+  await Promise.all(bufs.map((b,i)=>fs.promises.writeFile(out[i],b)));
+ }
+ log.info('保存板书',out.length,out[0]);
+ if(!TEST)shell.showItemInFolder(out[0]);
+ return out.map(normal);
+}
 // 课堂动画导出的 MP4：先存进缓存目录（上屏、预览都用它），老师要留底再另存一份
 async function motionCall(method,value){
  const dir=path.join(files.cache,'motion'),safe=t=>String(t||'课堂动画').replace(/[\\/:*?"<>|\r\n]/g,'_').slice(0,40);

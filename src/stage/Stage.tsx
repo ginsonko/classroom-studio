@@ -10,6 +10,7 @@ import { S3DHost } from '../scene3d/S3DHost';
 import { KIND_LABEL } from '../lib/library';
 import { inkKey, useStore, ROLE } from '../lib/store';
 import type { Author, Material, PageInfo, Tool, View } from '../lib/types';
+import { SCREEN, isLong } from '../lib/longBoard';
 
 import { host } from '../lib/host';
 import { Eye, EyeOff, GripHorizontal } from 'lucide-react';
@@ -30,12 +31,19 @@ export interface StageProps {
   overlays?: boolean;      // 聚光灯、幕布
   children?: ReactNode;
   onWheel?: (e: React.WheelEvent) => void;
+  /** 长黑板：拖右侧滑条跳到某个位置（y 是画面上沿，按页宽计）；不给就只显示位置 */
+  onSeek?: (y: number) => void;
 }
 
 /** 计算页面在容器内的像素矩形 */
-export function layout(view: View, page: PageInfo, W: number, H: number, pad: number) {
+export function layout(view: View, page: PageInfo, W: number, H: number, pad: number, long = false) {
   const r = page.h / page.w;
   const aw = Math.max(1, W - pad * 2), ah = Math.max(1, H - pad * 2);
+  if (long) {
+    // 长黑板：取景框固定 16:9，整条页面在框里上下移动
+    const pw = Math.min(aw, ah / SCREEN);
+    return { pw, ph: pw * r, left: (W - pw) / 2, top: (H - pw * SCREEN) / 2 - (view.y ?? 0) * pw, scroll: false };
+  }
   let box: number[] | undefined;
   if (view.fit === 'slides') box = page.slides?.[view.slide] ?? page.slides?.[0];
   if (view.fit === 'region') box = view.region;
@@ -69,7 +77,8 @@ export function Stage(p: StageProps) {
   }, []);
 
   const page = mat.pages[Math.min(view.page, mat.pages.length - 1)] ?? { w: 1600, h: 900 };
-  const L = useMemo(() => layout(view, page, size.W, size.H, pad), [view, page, size, pad]);
+  const long = isLong(mat);
+  const L = useMemo(() => layout(view, page, size.W, size.H, pad, long), [view, page, size, pad, long]);
   const isBoard = mat.kind === 'board';
   const ratio = page.h / page.w;
   // 切分 / 框选：裁掉相邻幻灯片；跨页框选不裁（下一页接在下方）
@@ -92,18 +101,20 @@ export function Stage(p: StageProps) {
   return (
     <div
       ref={box}
-      className={'stage' + (L.scroll ? ' scroll' : '') + (isBoard && p.boardFill ? ' board-fill' : '')}
+      className={'stage' + (L.scroll ? ' scroll' : '') + (isBoard && p.boardFill ? ' board-fill' : '') + (long ? ' long' : '')}
       data-board={boardSkin}
-      data-pattern={fill ? pattern : 'none'}
+      data-pattern={fill && !long ? pattern : 'none'}
       style={fill ? { ['--ox' as string]: L.left + 'px', ['--oy' as string]: L.top + 'px', ['--cell' as string]: L.pw / 32 + 'px' } : undefined}
       onWheel={p.onWheel}
     >
       {size.W > 0 && (
         <div
           className={'page' + (isBoard ? ' board' : '') + (view.fit === 'slides' || view.fit === 'region' ? ' cropped' : '')}
-          data-pattern={isBoard && !fill ? pattern : 'none'}
+          data-pattern={isBoard && !fill && !long ? pattern : 'none'}
           style={{ width: L.pw, height: L.ph, left: L.left, top: L.top, clipPath: clip, ['--cell' as string]: L.pw / 32 + 'px' }}
         >
+          {/* 长黑板的底纹画在页面上，跟着页面一起滚动 */}
+          {long && <div className="long-pattern" data-pattern={pattern} />}
           {coverStudent ? <AnswerCover /> : <PageContent mat={mat} page={page} index={view.page} scope={p.scope??'preview'} interactive={p.tool==='pointer'}/>}
           {showBadge && <AnswerBadge mat={mat} page={view.page} open={!hidden} segs={segs} />}
           {view.fit === 'region' && view.region && view.region[1] + view.region[3] > 1 && mat.pages[view.page + 1] && !(ROLE === 'student' && hiddenFromStudent(mat, view.page + 1, revealed, guard)) && (
@@ -122,6 +133,7 @@ export function Stage(p: StageProps) {
             enabled={p.inkEnabled && p.tool !== 'pointer'}
             showPrivate={p.showPrivate}
             inkLayer={p.inkLayer}
+            band={long ? longBand(view.y ?? 0) : undefined}
           />}
           {coverPart && segs.map(([a, b], i) => <AnswerCover key={i} from={a} to={b} />)}
           {p.overlays !== false && curtain !== null && (
@@ -139,10 +151,34 @@ export function Stage(p: StageProps) {
           )}
         </div>
       )}
+      {long && size.W > 0 && (
+        <div className={'long-rail' + (p.onSeek ? ' seek' : '')} aria-hidden onPointerDown={p.onSeek ? railDrag(ratio, p.onSeek) : undefined} data-tip={p.onSeek ? '拖动跳到长黑板的其它位置' : undefined}>
+          <i style={{ top: Math.min(1, (view.y ?? 0) / ratio) * 100 + '%', height: Math.min(1, SCREEN / ratio) * 100 + '%' }} />
+        </div>
+      )}
       {p.children}
     </div>
   );
 }
+
+/** 长黑板的画布段：上沿按半屏取整、高两屏，总能盖住画面里那一屏；滚动时每过半屏才挪一次、重画一次 */
+export function longBand(y: number): [number, number] {
+  const step = SCREEN / 2;
+  return [Math.max(0, (Math.floor(y / step + 1e-6) - 1) * step), SCREEN * 2];
+}
+
+/** 按住滑条拖动：滑块中心跟着指针走，40ms 发一次 */
+const railDrag = (ratio: number, seek: (y: number) => void) => (e: React.PointerEvent<HTMLDivElement>) => {
+  if (e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const el = e.currentTarget, B = el.getBoundingClientRect();
+  try { el.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
+  const to = (ev: { clientY: number }) => seek((ev.clientY - B.top) / Math.max(1, B.height) * ratio - SCREEN / 2);
+  let t = 0;
+  const move = (ev: PointerEvent) => { const now = performance.now(); if (now - t < 40) return; t = now; to(ev); };
+  const up = (ev: PointerEvent) => { to(ev); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+  to(e); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+};
 
 function AnswerCover({ from = 0, to = 1 }: { from?: number; to?: number }) {
   if (from > 0 || to < 1) {

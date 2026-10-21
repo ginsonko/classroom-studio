@@ -12,7 +12,13 @@ import { imgTick } from './imgCache';
 import { canRotate, duplicateStroke, eraseSegment, freshId, insideLasso, moveStroke, rotateStroke, scaleStroke, selectionBounds, withObject, type Box, type Point } from './geometry';
 import '../styles/objects.css';
 
-interface Props { ikey: string; ratio: number; onPage: boolean; author: Author; tool: Tool; color: string; size: number; enabled: boolean; showPrivate?: boolean; inkLayer?: 'public' | 'private' }
+interface Props {
+  ikey: string; ratio: number; onPage: boolean; author: Author; tool: Tool; color: string; size: number; enabled: boolean; showPrivate?: boolean; inkLayer?: 'public' | 'private';
+  /** 长黑板：画布只覆盖页面里的这一段 [上沿, 高度]（按页宽计），整页画布太大画不动 */
+  band?: [number, number];
+}
+const boxes = new WeakMap<Stroke, Box>();
+const boxOf = (s: Stroke) => { let b = boxes.get(s); if (!b) { b = selectionBounds([s]); boxes.set(s, b); } return b; };
 const TWO_POINT: Tool[] = ['line', 'dashed', 'arrow', 'darrow', 'rect', 'ellipse', 'triangle', 'axes', 'force'];
 const FREE: Tool[] = ['pen', 'marker', 'highlighter', 'curve'];
 // 局部擦除能切断的笔迹；箭头、图形、文字、器材切开就没有意义了，仍然整个擦掉
@@ -22,6 +28,8 @@ export const eraserRadius = () => ERASER_R[useStore.getState().inkOptions.eraser
 const remoteDraft = new Map<string, { key: string; stroke: Stroke; at: number }>();
 const laserTrails = new Map<string, { key: string; pts: number[]; at: number[] }>();
 let remoteTick = 0, focusedCanvas: symbol | null = null;
+// Windows Ink 在笔尖接触板面时会藏起系统光标，抬笔才显示，写字时十字一闪一闪；用笔时改为自己画十字
+let penMode = false;
 const offRemote = bus.on((m) => {
   if (m.t === 'live' && m.from !== WINDOW_ID) {
     const s = m.stroke as Stroke | null;
@@ -56,6 +64,15 @@ export function InkLayer(props: Props) {
   const token = useRef(Symbol('ink')), draft = useRef<Stroke | null>(null), gesture = useRef<Gesture | null>(null), preview = useRef<Stroke[]>([]);
   const selected = useRef<string[]>([]), lasso = useRef<number[] | null>(null), dirty = useRef(true), still = useRef(0), snapTimer = useRef(0), sendRaf = useRef(0);
   const myLaser = useRef<{ pts: number[]; at: number[] }>({ pts: [], at: [] }), lastTick = useRef(-1), textOpened = useRef(0), eraserAt = useRef<Point | null>(null);
+  const penAt = useRef<Point | null>(null), overlayDirty = useRef(false), [pen, setPen] = useState(penMode);
+  const bandTop = props.band?.[0] ?? 0, bandH = props.band?.[1] ?? 0, bandRef = useRef(bandTop), repaint = useRef<(() => void) | null>(null);
+  const pointerKind = (e: { pointerType: string }) => {
+    // 拿笔写字时部分驱动会夹杂 mouse 事件：只有没在写的时候的鼠标移动才算换回鼠标
+    const next = e.pointerType === 'pen' ? true : e.pointerType === 'mouse' && !gesture.current ? false : penMode;
+    if (next !== penMode) penMode = next;
+    if (next !== pen) setPen(next);
+  };
+  const crossTool = !['eraser', 'text', 'select', 'lasso', 'laser', 'spotlight', 'curtain', 'pointer'].includes(tool);
   const dark = !onPage && DARK_BOARDS.includes(boardSkin);
   const visible = (s: Stroke) => s.layer !== 'private' || (showPrivate && ROLE !== 'student');
   const editable = (s: Stroke) => visible(s) && (s.layer ?? 'public') === layer && (author === 'teacher' || s.author === author);
@@ -92,23 +109,31 @@ export function InkLayer(props: Props) {
 
   useEffect(() => {
     const b = base.current, c = live.current; if (!b || !c || !px.w) return;
-    for (const canvas of [b, c]) { canvas.width = Math.round(px.w * px.dpr); canvas.height = Math.round(px.h * px.dpr); }
+    const cssH = bandH ? bandH * px.w : px.h;
+    for (const canvas of [b, c]) { canvas.width = Math.round(px.w * px.dpr); canvas.height = Math.round(cssH * px.dpr); }
     const bc = b.getContext('2d')!, ctx = c.getContext('2d')!; let raf = 0;
-    const setup = (context: CanvasRenderingContext2D) => { context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, c.width, c.height); context.setTransform(px.w * px.dpr, 0, 0, px.w * px.dpr, 0, 0); };
+    const setup = (context: CanvasRenderingContext2D) => { context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, c.width, c.height); context.setTransform(px.w * px.dpr, 0, 0, px.w * px.dpr, 0, -bandRef.current * px.w * px.dpr); };
     const context = (canvas: CanvasRenderingContext2D): DrawCtx => ({ ctx: canvas, scale: px.w, dark, color: (id) => resolveColor(id, boardSkin, onPage) });
-    const loop = () => {
-      raf = requestAnimationFrame(loop); const now = performance.now();
+    // 长黑板只画落在画布这一段里的笔迹
+    const inBand = (s: Stroke) => { if (!bandH) return true; const bx = boxOf(s), top = bandRef.current; return bx.y1 >= top - .05 && bx.y0 <= top + bandH + .05; };
+    const loop = () => { raf = requestAnimationFrame(loop); paint(); };
+    const paint = () => {
+      const now = performance.now();
       for (const [id, r] of remoteDraft) if (now - r.at > 5000) { remoteDraft.delete(id); remoteTick++; }
       const lasers = [...laserTrails.values(), myLaser.current].filter((t) => (!('key' in t) || t.key === ikey) && t.at.length);
       const ticks = remoteTick + texTick() + imgTick();
-      if (!dirty.current && lastTick.current === ticks && !lasers.length) return;
-      dirty.current = false; lastTick.current = ticks; setup(bc); setup(ctx); const bd = context(bc), ld = context(ctx);
+      const full = dirty.current || lastTick.current !== ticks;
+      if (!full && !overlayDirty.current && !lasers.length) return;
+      dirty.current = false; overlayDirty.current = false; lastTick.current = ticks; setup(ctx); const ld = context(ctx);
       const remote = [...remoteDraft.values()].filter((r) => r.key === ikey && r.stroke.layer !== 'private');
-      const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id)]);
-      const list = gesture.current?.type === 'erase' ? gesture.current.working : all();
-      // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
-      for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id)) draw(bd, s);
-      for (const s of list) if (s.tool !== 'image' && visible(s) && !hidden.has(s.id)) draw(bd, s);
+      if (full) {
+        setup(bc); const bd = context(bc);
+        const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id)]);
+        const list = gesture.current?.type === 'erase' ? gesture.current.working : all();
+        // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
+        for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
+        for (const s of list) if (s.tool !== 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
+      }
       for (const r of remote) draw(ld, r.stroke); for (const s of preview.current) draw(ld, s); if (draft.current) draw(ld, draft.current);
       for (const tr of lasers) drawLaser(ctx, tr, now);
       const ea = eraserAt.current;
@@ -123,9 +148,13 @@ export function InkLayer(props: Props) {
       }
       const selection = preview.current.length ? preview.current : chosen();
       if (selection.length && ['select', 'lasso'].includes(tool)) drawSelection(ctx, selectionBounds(selection), px.w, selection.every(canRotate));
+      if (penAt.current && penMode && crossTool) drawCross(ctx, penAt.current, px.w, dark);
     };
-    dirty.current = true; loop(); return () => cancelAnimationFrame(raf);
-  }, [px, ikey, boardSkin, onPage, showPrivate, tool, author, layer]);
+    repaint.current = () => { dirty.current = true; paint(); };
+    dirty.current = true; loop(); return () => { cancelAnimationFrame(raf); repaint.current = null; };
+  }, [px, ikey, boardSkin, onPage, showPrivate, tool, author, layer, bandH]);
+  // 画布挪到新位置的同一帧里重画，滚动时笔迹不会跳一下
+  useLayoutEffect(() => { if (bandRef.current === bandTop) return; bandRef.current = bandTop; repaint.current?.(); }, [bandTop]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -156,6 +185,7 @@ export function InkLayer(props: Props) {
   const beginTransform = (type: 'move' | 'scale' | 'rotate', p: Point, items: Stroke[], pointer: number) => { const box = selectionBounds(items); gesture.current = { type, start: p, center: { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }, before: items, pointer }; };
   const down = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!enabled || e.button > 0 && e.button !== 5) return;
+    pointerKind(e); if (e.pointerType === 'pen') { penAt.current = point(e); overlayDirty.current = true; }
     if (gesture.current) {
       // 第二根手指不打断正在写的一笔；其它情况说明上一笔的抬笔信号丢了，先把它存好再开始新的一笔
       if (e.pointerType === 'touch' && gesture.current.pointer !== e.pointerId) return;
@@ -198,6 +228,8 @@ export function InkLayer(props: Props) {
   };
   const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!enabled) return; const p = point(e);
+    pointerKind(e);
+    if (penMode) { penAt.current = p; overlayDirty.current = true; } else if (penAt.current) { penAt.current = null; overlayDirty.current = true; }
     if (tool === 'eraser' || gesture.current?.type === 'erase') { eraserAt.current = p; dirty.current = true; }
     if (tool === 'laser') { const tr = myLaser.current; tr.pts.push(p.x, p.y); tr.at.push(performance.now()); if (tr.at.length > 160) { tr.pts.splice(0, 2); tr.at.shift(); } if (layer === 'public') bus.post({ t: 'laser', key: ikey, pts: [p.x, p.y], from: WINDOW_ID }); dirty.current = true; return; }
     if (foreign(e)) return;
@@ -250,10 +282,11 @@ export function InkLayer(props: Props) {
     commitText();
   };
   const selectedList = (strokes ?? []).filter((s) => selectedIds.includes(s.id) && editable(s));
-  const cursor = !enabled ? 'default' : tool === 'eraser' ? 'none' : tool === 'text' ? 'text' : tool === 'select' || tool === 'lasso' ? 'default' : tool === 'laser' || tool === 'spotlight' ? 'none' : tool === 'curtain' ? 'ns-resize' : 'crosshair';
+  const bandStyle = bandH ? { top: bandTop * px.w, height: bandH * px.w, bottom: 'auto' } : undefined;
+  const cursor = !enabled ? 'default' : tool === 'eraser' ? 'none' : tool === 'text' ? 'text' : tool === 'select' || tool === 'lasso' ? 'default' : tool === 'laser' || tool === 'spotlight' ? 'none' : tool === 'curtain' ? 'ns-resize' : pen ? 'none' : 'crosshair';
   return <div ref={wrap} className="ink" tabIndex={enabled ? 0 : -1} aria-label={layer === 'private' ? '教师私有批注画布' : '课堂板书画布'} onFocus={() => { focusedCanvas = token.current; }} style={{ pointerEvents: enabled ? 'auto' : 'none', cursor }}>
-    <canvas ref={base} className="ink-c" />
-    <canvas ref={live} className="ink-c" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={(e) => { if (!foreign(e)) finish(); }} onLostPointerCapture={(e) => { if (!foreign(e)) finish(); }} onPointerLeave={() => { eraserAt.current = null; dirty.current = true; if (tool === 'laser') { myLaser.current = { pts: [], at: [] }; dirty.current = true; } }} style={{ touchAction: 'none' }} />
+    <canvas ref={base} className="ink-c" style={bandStyle} />
+    <canvas ref={live} className="ink-c" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={(e) => { if (!foreign(e)) finish(); }} onLostPointerCapture={(e) => { if (!foreign(e)) finish(); }} onPointerLeave={() => { eraserAt.current = null; penAt.current = null; dirty.current = true; if (tool === 'laser') { myLaser.current = { pts: [], at: [] }; dirty.current = true; } }} style={{ ...bandStyle, touchAction: 'none' }} />
     {snap && <div className="snap-flash" style={{ left: snap.x * 100 + '%', top: snap.y / ratio * 100 + '%' }} />}
     {text && <textarea autoFocus className="ink-text" style={{ left: text.x * 100 + '%', top: text.y / ratio * 100 + '%', fontSize: Math.max(16, size * 8) * px.w / 1000, color: resolveColor(color, boardSkin, onPage) }} value={text.value} placeholder="输入文字，Ctrl+Enter 完成" ref={(el) => { if (el && document.activeElement !== el && performance.now() - textOpened.current < 400) requestAnimationFrame(() => el.isConnected && el.focus({ preventScroll: true })); }} onPointerDown={(e) => e.stopPropagation()} onChange={(e) => setText({ ...text, value: e.target.value })} onBlur={textBlur} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') setText(null); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitText(); }} />}
     {layer === 'private' && ROLE !== 'student' && selectedList.length > 0 && createPortal(<div className="obj-private-editor"><SelectionEditor ikey={ikey} strokes={selectedList} actor={author} onClose={() => setSelection([])} onSelection={(ids) => setSelection(ids)} /></div>, document.body)}
@@ -266,6 +299,15 @@ function drawSelection(ctx: CanvasRenderingContext2D, b: Box, width: number, rot
   ctx.save(); ctx.strokeStyle = '#3dd9eb'; ctx.fillStyle = '#14232a'; ctx.lineWidth = 1.3 * u; ctx.setLineDash([5 * u, 4 * u]); ctx.strokeRect(b.x0 - pad, b.y0 - pad, b.x1 - b.x0 + 2 * pad, b.y1 - b.y0 + 2 * pad); ctx.setLineDash([]);
   for (const [x, y] of [[b.x0 - pad, b.y0 - pad], [b.x1 + pad, b.y0 - pad], [b.x0 - pad, b.y1 + pad], [b.x1 + pad, b.y1 + pad]]) { ctx.fillRect(x - 4 * u, y - 4 * u, 8 * u, 8 * u); ctx.strokeRect(x - 4 * u, y - 4 * u, 8 * u, 8 * u); }
   if (rotatable) { ctx.beginPath(); ctx.moveTo(cx, b.y0 - pad); ctx.lineTo(cx, b.y0 - pad - 24 * u); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, b.y0 - pad - 24 * u, 5 * u, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } ctx.restore();
+}
+function drawCross(ctx: CanvasRenderingContext2D, p: Point, width: number, dark: boolean) {
+  const u = 1 / width, arm = 9 * u, gap = 2.5 * u;
+  ctx.save(); ctx.lineCap = 'round'; ctx.beginPath();
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(p.x + dx * gap, p.y + dy * gap); ctx.lineTo(p.x + dx * arm, p.y + dy * arm); }
+  // 双色描边：深色黑板、浅色黑板、白纸、课件图片上都看得清
+  ctx.lineWidth = 3.2 * u; ctx.strokeStyle = dark ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.85)'; ctx.stroke();
+  ctx.lineWidth = 1.3 * u; ctx.strokeStyle = dark ? 'rgba(255,255,255,.95)' : 'rgba(20,20,20,.9)'; ctx.stroke();
+  ctx.restore();
 }
 function drawLaser(ctx: CanvasRenderingContext2D, trail: { pts: number[]; at: number[] }, now: number) {
   const life = 650; while (trail.at.length && now - trail.at[0] > life) { trail.at.shift(); trail.pts.splice(0, 2); } if (!trail.at.length) return;

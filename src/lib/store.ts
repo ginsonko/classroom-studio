@@ -7,6 +7,7 @@ import type { Author, Material, Stroke, Tool, View, Student, LessonSlot, Chapter
 import { BASE, DEFAULT_LIMIT, cascade, deskIds, matOfKey, syncDesk, tileDesk, tileIds, topZ, trimDesk } from './desk';
 import { studentSubject, type SubjectId } from './subjects';
 import type { SimSync } from '../physics/model';
+import { SCREEN, grownFor, isLong, longMaterial, scrollView } from './longBoard';
 
 const W = new URLSearchParams(location.search).get('w');
 export const ROLE = host.role ?? (W === 'student' ? 'student' : W === 'dock' ? 'dock' : 'teacher');
@@ -60,12 +61,14 @@ interface Actions {
   closeWin:(id:string)=>void;
   /** 再开一块黑板 */
   newBoard:()=>void;
+  /** 开一块长黑板（一整条往下写） */
+  newLongBoard:()=>void;
   /** 当前项和最近用过的课件并排摆开 */
   tileWins:()=>void;
 }
 export type State=Shared&Local&Actions;
 export const inkKey=(materialId:string,page:number)=>`${materialId}#${page}`;
-export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...p});
+export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...(isLong(mat)?{y:0}:{}),...p});
 export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit'];
 const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject'];
 const board=boardMaterial();
@@ -163,7 +166,8 @@ export const useStore=create<State>()((set,get)=>{
   if(id===st.pgmMat.id){const rest=desk.filter(x=>x.id!==id);const next=rest.filter(x=>x.mode!=='min'||x.id===BASE).sort((a,b)=>b.at-a.at)[0]??rest.find(x=>x.id===BASE)!;const j=rest.indexOf(next);rest[j]={...next,mode:next.mode==='min'?(next.prev??'max'):next.mode,z:topZ(rest)+1,at:Date.now()};
    get().setShared({desk:rest,pgmMat:next.mat,pgm:next.view,curtain:null,spotlight:null,selectedInk:null,sim:simFor(next.mat,st.sim,next.sim)});return;}
   get().setShared({desk:desk.filter(x=>x.id!==id)});},
- newBoard:()=>{const n=get().desk.filter(w=>w.mat.kind==='board').length+1;const b:Material={...boardMaterial(),id:'board-'+Date.now().toString(36),title:'黑板 '+n};get().showNow(b);},
+ newBoard:()=>{const n=get().desk.filter(w=>w.mat.kind==='board'&&!isLong(w.mat)).length+1;const b:Material={...boardMaterial(),id:'board-'+Date.now().toString(36),title:'黑板 '+n};get().showNow(b);},
+ newLongBoard:()=>{get().showNow(longMaterial(get().desk.filter(w=>isLong(w.mat)).length+1));},
  tileWins:()=>{const st=get();const desk=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);const ids=tileIds(desk,st.pgmMat.id);if(ids.length<2)return;const next=tileDesk(desk,ids);const cur=next.find(w=>w.id===ids[0])!;cur.at=Date.now();cur.z=topZ(next)+1;
   if(cur.id===st.pgmMat.id)get().setShared({desk:next});else get().setShared({desk:next,pgmMat:cur.mat,pgm:cur.view,curtain:null,spotlight:null,selectedInk:null,sim:simFor(cur.mat,st.sim,cur.sim)});},
  pgmTo:p=>get().setShared({pgm:{...get().pgm,...p},selectedInk:null}),
@@ -180,6 +184,8 @@ export function flushStore(){
 useStore.subscribe(()=>{if(ROLE!=='teacher')return;clearTimeout(saveTimer);saveTimer=window.setTimeout(flushStore,600);});
 // 自由课堂里切换的学科（教师端或浮层都能切）记下来，下次不绑学生时沿用
 if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if(s.subject!==prev.subject&&s.subject!==s.freeSubject&&!s.students.some((x)=>x.id===s.studentId))useStore.setState({freeSubject:s.subject});});
+// 长黑板滚到离底不到一屏时加长；只由教师窗口改，学生窗口滚动也会经过这里
+if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if((s.pgm===prev.pgm&&s.pgmMat===prev.pgmMat)||!isLong(s.pgmMat))return;const g=grownFor(s.pgmMat,s.pgm.y??0);if(g)queueMicrotask(()=>{const cur=useStore.getState();if(cur.pgmMat.id===g.id)cur.setShared({pgmMat:g});});});
 window.addEventListener('pagehide',()=>{void flushStore();});
 bus.on(m=>{
  const st=useStore.getState();
@@ -202,6 +208,7 @@ if(ROLE==='teacher')setTimeout(()=>{const st=useStore.getState();if(st.desk.some
 
 // ── 翻页：幻灯片模式下逐块前进，跨页自动接续 ─────────────────
 export function stepView(mat: Material, v: View, dir: 1 | -1): View {
+  if (isLong(mat)) return scrollView(mat, v, dir * SCREEN / 2);
   if (v.fit === 'slides') {
     const n = mat.pages[v.page]?.slides?.length ?? 1;
     let s = v.slide + dir, p = v.page;
@@ -215,7 +222,7 @@ export function stepView(mat: Material, v: View, dir: 1 | -1): View {
 
 export function addBoardPage() {
   const st = useStore.getState();
-  if (st.pgmMat.kind !== 'board') return;
+  if (st.pgmMat.kind !== 'board' || isLong(st.pgmMat)) return;
   const mat = { ...st.pgmMat, pages: [...st.pgmMat.pages, { w: 1600, h: 900 }], total: st.pgmMat.total + 1 };
   st.setShared({ pgmMat: mat, pgm: { ...st.pgm, page: mat.pages.length - 1 } });
 }
