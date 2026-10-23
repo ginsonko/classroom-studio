@@ -14,6 +14,7 @@ import {
 } from '../src/lib/sortLogic';
 import { MANUAL } from '../src/help/manual';
 import { looseJSON } from '../src/lib/studyLogic';
+import { keepAttr, protectMath, restoreMath } from '../src/office/mdView';
 import { GUIDE_STUDENT, STEPS, nextChapter, nextOpen, normAngle, pickCorner, placeCard, stepsOf, summary, type GuideBase, type GuideCtx } from '../src/guide/steps';
 
 let n = 0;
@@ -408,6 +409,27 @@ ok('上课彩排：引导卡换角，别挡住要点的按钮和 AI 抽屉', () 
   assert.deepEqual(placeCard(view, 300, [aiDock], m), { corner: 'bl', slim: false });
   // 要点的按钮权重大：宁可挡一点对话框，也不挡按钮
   assert.equal(pickCorner({ w: 1280, h: 800 }, { w: 300, h: 300 }, [{ x: 260, y: 60, w: 760, h: 700 }, { x: 900, y: 700, w: 110, h: 30, weight: 20 }], m), 'tr');
+});
+
+ok('Markdown 课件：公式先摘出来，代码里的 $ 和 \\$ 不算公式', () => {
+  const src = ['价格 \\$5，行内 $a_1*b_2$ 和 \\(x^2\\)', '', '$$\\frac{a}{b}$$', '', '`$不是$`', '', '```', '$也不是$', '```'].join('\n');
+  const { text, maths } = protectMath(src);
+  assert.deepEqual(maths.map((m) => [m.tex, m.display]), [['\\frac{a}{b}', true], ['x^2', false], ['a_1*b_2', false]]);
+  assert.ok(text.includes('\\$5') && text.includes('`$不是$`') && text.includes('$也不是$'));
+  assert.ok(!text.includes('a_1'), '公式里的下划线不留给 Markdown');
+  assert.ok(restoreMath(text, maths, (m) => `[${m.tex}]`).includes('[a_1*b_2]'));
+  assert.equal(protectMath('只有一个 $ 符号').maths.length, 0);
+});
+
+ok('Markdown 课件：外来 HTML 只留排版属性', () => {
+  assert.equal(keepAttr('IMG', 'src', 'data:image/png;base64,AA'), true);
+  assert.equal(keepAttr('IMG', 'src', 'file:///C:/a.png'), false);
+  assert.equal(keepAttr('IMG', 'onerror', 'alert(1)'), false);
+  assert.equal(keepAttr('A', 'href', 'javascript:alert(1)'), false);
+  assert.equal(keepAttr('A', 'href', 'https://example.com'), true);
+  assert.equal(keepAttr('TD', 'colspan', '2'), true);
+  assert.equal(keepAttr('DIV', 'style', 'position:fixed'), false);
+  assert.equal(keepAttr('INPUT', 'type', 'text'), false);
 });
 
 console.log(`PASS ${n} v130-logic`);

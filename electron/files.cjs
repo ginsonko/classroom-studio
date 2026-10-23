@@ -6,7 +6,7 @@ const {within,atomicJSON,readJSON}=require('./core.cjs');
 const {runProcess}=require('./recording.cjs');
 const pptSteps=require('./pptSteps.cjs');
 const STEPS_V=1;
-const EXT={'.pdf':'pdf','.zml':'pdf','.ppt':'slides','.pptx':'slides','.doc':'word','.docx':'word','.rtf':'word','.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.bmp':'image','.gif':'image','.svg':'image','.html':'html','.htm':'html','.mp4':'video','.webm':'video','.m4v':'video','.mov':'video','.wmv':'video','.avi':'video','.asf':'video','.mpg':'video','.flv':'video','.rm':'video','.rmvb':'video','.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.swf':'flash','.zip':'archive','.rar':'archive'};
+const EXT={'.pdf':'pdf','.zml':'pdf','.ppt':'slides','.pptx':'slides','.doc':'word','.docx':'word','.rtf':'word','.md':'word','.markdown':'word','.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.bmp':'image','.gif':'image','.svg':'image','.html':'html','.htm':'html','.mp4':'video','.webm':'video','.m4v':'video','.mov':'video','.wmv':'video','.avi':'video','.asf':'video','.mpg':'video','.flv':'video','.rm':'video','.rmvb':'video','.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.swf':'flash','.zip':'archive','.rar':'archive'};
 const normal=p=>path.resolve(p).replaceAll('\\','/');
 class Files{
  constructor(cache){this.cache=cache;this.roots=new Set();this.tokens=new Map();this.urls=new Map();this.scans=new Map();this.queue=Promise.resolve();}
@@ -126,15 +126,18 @@ class Files{
   async convert(input,progress){
   const actual=this.allowed(input),stat=await fs.promises.stat(actual),ext=path.extname(actual).toLowerCase();
   if(['.pdf','.zml'].includes(ext)){const h=await fs.promises.open(actual,'r');try{const buf=Buffer.alloc(1024);const {bytesRead}=await h.read(buf,0,buf.length,0);if(!buf.subarray(0,bytesRead).includes(Buffer.from('%PDF-')))throw Error('这份文件不是有效 PDF');}finally{await h.close();}return {render:'pdf',pdf:normal(actual),cached:true,engine:'passthrough'};}
-  if(!['.ppt','.pptx','.doc','.docx','.rtf'].includes(ext))throw Error('此格式暂不能转换为文档');
-  const mode=['.ppt','.pptx'].includes(ext)?'slides':'pdf';
-  const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|'+mode+'-v3').digest('hex');const folder=path.join(this.cache,'documents',key),pdf=path.join(folder,'document.pdf');
+  const md=['.md','.markdown'].includes(ext);
+  if(!md&&!['.ppt','.pptx','.doc','.docx','.rtf'].includes(ext))throw Error('此格式暂不能转换为文档');
+  const mode=['.ppt','.pptx'].includes(ext)?'slides':md?'md-v1':'pdf';
+  const extra=md?'|'+await require('./mdInline.cjs').stamp(actual).catch(()=>''):'';
+  const key=crypto.createHash('sha256').update(actual.toLowerCase()+'|'+stat.size+'|'+stat.mtimeMs+'|'+mode+'-v3'+extra).digest('hex');const folder=path.join(this.cache,'documents',key),pdf=path.join(folder,'document.pdf');
   const out=r=>({...r,pdf:r.pdf?normal(r.pdf):undefined,images:r.images?.map(x=>({...x,path:normal(x.path)}))});
   const existing=await readJSON(path.join(folder,'manifest.json'),null);if(existing&&(existing.render==='images'?existing.images?.length&&existing.images.every(x=>fs.existsSync(x.path)):existing.pdf&&fs.existsSync(existing.pdf)))return {...out(existing),cached:true};
   progress({stage:'queued',message:'等待本机文档转换'});
   // Windows 用 Office / WPS 自动化；其他系统（或 Windows 上没装 Office / WPS）交给 office.cjs 的多级转换
   const fallback=async()=>{const r={...await this.office.convert({input:actual,ext,folder,progress}),cached:false};await atomicJSON(path.join(folder,'manifest.json'),r);progress({stage:'done',done:r.images?.length??1,total:r.images?.length??1});return out(r);};
-  if(process.platform!=='win32'){
+  // Markdown 不经过 Office / WPS：直接内置排版
+  if(process.platform!=='win32'||md){
    if(!this.office)throw Error('当前系统还不能转换 PPT / Word，请先另存为 PDF 后再打开。');
    const job=this.queue.catch(()=>{}).then(async()=>{await fs.promises.mkdir(folder,{recursive:true});return fallback();});this.queue=job;return job;
   }

@@ -6,6 +6,10 @@ import { init as initPptx } from 'pptx-preview';
 import { EMFJS, RTFJS, WMFJS } from 'rtf.js';
 import { fixDocxXml, fixPresentationXml, fixSlideXml } from './ooxml';
 import { wmfToPng } from './wmf';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import { marked } from 'marked';
+import { DROP_TAGS, KEEP_TAGS, keepAttr, protectMath, restoreMath } from './mdView';
 
 type Line = { t: string; y: number };
 const view = document.getElementById('v')!;
@@ -217,4 +221,77 @@ async function metaPng(url: string) {
   return 'data:image/png;base64,' + btoa(s);
 }
 
-Object.assign(window, { csOffice: { slides: openSlides, show: showSlide, docx: openDocx, rtf: openRtf, metaPng } });
+/** 外来 HTML 清理：只留排版用的标签和属性（Markdown 里可以夹 HTML，表格常这样写） */
+function clean(node: ParentNode) {
+  for (const el of [...node.children]) {
+    if (DROP_TAGS.has(el.tagName)) { el.remove(); continue; }
+    clean(el);
+    if (!KEEP_TAGS.has(el.tagName)) { el.replaceWith(...el.childNodes); continue; }
+    for (const a of [...el.attributes]) if (!keepAttr(el.tagName, a.name, a.value)) el.removeAttribute(a.name);
+    if (el.tagName === 'INPUT') (el as HTMLInputElement).disabled = true;
+    if (el.tagName === 'IMG' && !el.getAttribute('src')) {
+      const note = document.createElement('strong');
+      note.textContent = `[图片无法显示${el.getAttribute('alt') ? '：' + el.getAttribute('alt') : ''}]`;
+      el.replaceWith(note);
+    }
+  }
+}
+
+/** 图片最多等这么久（网上的图片可能一直不回） */
+const imagesReady = () => Promise.all([...view.querySelectorAll('img')].map((i) => Promise.race([i.decode().catch(() => {}), new Promise((r) => setTimeout(r, 8000))])));
+
+/** Markdown → A4 分页文档（主进程随后打印成 PDF）。本地图片主进程已换成 data URL */
+async function openMarkdown(text: string, title: string) {
+  const { text: body, maths } = protectMath(text);
+  const html = await marked.parse(body, { gfm: true, breaks: true, async: true });
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  clean(tpl.content);
+  const box = document.createElement('div');
+  box.append(tpl.content);
+  // 公式只在文字里换回来（不碰属性），KaTeX 的结构不再经过清理
+  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), texts: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\u27E6m\d+\u27E7/.test(n.nodeValue ?? '')) texts.push(n as Text);
+  for (const t of texts) {
+    const holder = document.createElement('template');
+    holder.innerHTML = restoreMath(t.nodeValue!.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!), maths, (m) => katex.renderToString(m.tex, { throwOnError: false, displayMode: m.display, strict: 'ignore', output: 'html' }));
+    t.replaceWith(holder.content);
+  }
+  const style = document.createElement('style');
+  style.textContent = MD_CSS;
+  document.head.appendChild(style);
+  document.title = title;
+  view.replaceChildren();
+  const article = document.createElement('article');
+  article.className = 'md';
+  article.append(...box.childNodes);
+  if (!article.textContent?.trim() && !article.querySelector('img')) throw new Error('Markdown 里没有可显示的内容');
+  view.appendChild(article);
+  await imagesReady();
+  await settle();
+  return { ok: true };
+}
+const MD_CSS = `@page { size: A4; margin: 16mm 16mm 18mm; }
+html, body { overflow: visible !important; }
+#v { width: auto !important; }
+article.md { font-size: 11pt; line-height: 1.75; color: #111; word-break: break-word; }
+article.md h1 { font-size: 17pt; text-align: center; margin: 0 0 10pt; }
+article.md h2 { font-size: 14pt; margin: 14pt 0 6pt; }
+article.md h3, article.md h4 { font-size: 12pt; margin: 10pt 0 4pt; }
+article.md h1, article.md h2, article.md h3, article.md h4 { break-after: avoid; }
+article.md p { margin: 0 0 6pt; }
+article.md img { max-width: 100%; max-height: 240mm; vertical-align: middle; break-inside: avoid; }
+article.md p > img:only-child { display: block; margin: 4pt 0; }
+article.md table { border-collapse: collapse; margin: 6pt 0; max-width: 100%; }
+article.md th, article.md td { border: 0.75pt solid #666; padding: 3pt 6pt; vertical-align: top; }
+article.md th { background: #f2f2f2; }
+article.md tr { break-inside: avoid; }
+article.md blockquote { margin: 6pt 0; padding: 2pt 10pt; border-left: 3pt solid #ccc; color: #444; }
+article.md pre { white-space: pre-wrap; background: #f6f6f6; padding: 6pt; font-size: 9.5pt; }
+article.md code { font-family: Consolas, Menlo, monospace; font-size: 0.92em; }
+article.md hr { border: 0; border-top: 0.75pt solid #999; margin: 10pt 0; }
+article.md ul, article.md ol { margin: 0 0 6pt; padding-left: 22pt; }
+article.md .katex-display { margin: 6pt 0; overflow: hidden; }
+article.md .katex { font-size: 1.08em; }`;
+
+Object.assign(window, { csOffice: { slides: openSlides, show: showSlide, docx: openDocx, rtf: openRtf, md: openMarkdown, metaPng } });

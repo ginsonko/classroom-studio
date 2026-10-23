@@ -36,7 +36,7 @@ export interface Library {
   list: FileEntry[];
 }
 
-const EXT = /(\.zml)?\.(pdf|docx?|pptx?|jpe?g|png|gif|webp|bmp|mp4|wmv|avi|asf|mpg|flv|mov|rmvb|rm|mp3|wav|m4a|html?|swf|zip|rar|zml)$/i;
+const EXT = /(\.zml)?\.(pdf|docx?|rtf|md|markdown|pptx?|jpe?g|png|gif|webp|bmp|mp4|wmv|avi|asf|mpg|flv|mov|rmvb|rm|mp3|wav|m4a|html?|swf|zip|rar|zml)$/i;
 
 export function titleOf(name: string) {
   return name.replace(EXT, '').trim();
@@ -133,7 +133,7 @@ export function normalizePath(path: string) { return path.replace(/\\/g, '/').re
 export function kindForPath(path: string): Kind | null {
   const ext = path.split('.').at(-1)?.toLowerCase();
   if (ext && ['pdf', 'zml'].includes(ext)) return 'pdf';
-  if (ext && ['doc', 'docx', 'odt', 'rtf'].includes(ext)) return 'word';
+  if (ext && ['doc', 'docx', 'odt', 'rtf', 'md', 'markdown'].includes(ext)) return 'word';
   if (ext && ['ppt', 'pptx', 'odp'].includes(ext)) return 'slides';
   if (ext && ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'avif'].includes(ext)) return 'image';
   if (ext && ['mp4', 'webm', 'mov', 'm4v', 'wmv', 'avi', 'asf', 'mpg', 'mpeg', 'flv', 'rm', 'rmvb'].includes(ext)) return 'video';

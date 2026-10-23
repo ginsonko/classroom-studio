@@ -14,6 +14,8 @@ const { pathToFileURL } = require('node:url');
 const MAC = process.platform === 'darwin';
 const SLIDES = ['.ppt', '.pptx'];
 const WORD = ['.doc', '.docx', '.rtf'];
+const MD = ['.md', '.markdown'];
+const { readMarkdown } = require('./mdInline.cjs');
 
 function run(cmd, args, timeout, label) {
   return new Promise((resolve, reject) => {
@@ -124,6 +126,8 @@ class OfficeConverter {
 
   /** 本机能用的转换方式（按尝试顺序） */
   plan(input, ext) {
+    // Markdown 只有内置排版认（公式、表格、图片都在这里排）
+    if (MD.includes(ext)) return [{ name: '内置排版', run: (o) => this.builtinMarkdown(o) }];
     const steps = [], natives = [];
     const libre = findLibreOffice();
     if (libre) steps.push({ name: 'LibreOffice', run: (o) => this.libre(libre, o) });
@@ -159,6 +163,7 @@ class OfficeConverter {
         this.log?.warn('课件转换失败，换下一种方式', step.name, path.basename(input), e?.message);
       }
     }
+    if (MD.includes(ext) && errors.length === 1) throw new Error(errors[0].replace(/^内置排版：/, ''));
     throw new Error(advice(ext) + (errors.length ? '（已尝试：' + errors.join('；') + '）' : ''));
   }
 
@@ -275,6 +280,21 @@ class OfficeConverter {
       const pdf = await w.webContents.printToPDF({ preferCSSPageSize: true, printBackground: true });
       const file = path.join(folder, 'document.pdf');
       await fs.promises.writeFile(file, pdf);
+      return this.keepPdf(file, folder);
+    } finally { await closeWindow(w); }
+  }
+
+  async builtinMarkdown({ input, folder, progress }) {
+    const { text, missing } = await readMarkdown(input);
+    if (!text.trim()) throw new Error('这份 Markdown 是空的');
+    const [w, call] = await this.page();
+    try {
+      progress({ stage: 'exporting', message: '正在排版成 PDF' });
+      await call('md', text, path.basename(input).replace(/\.(md|markdown)$/i, ''));
+      const pdf = await w.webContents.printToPDF({ preferCSSPageSize: true, printBackground: true });
+      const file = path.join(folder, 'document.pdf');
+      await fs.promises.writeFile(file, pdf);
+      if (missing.length) this.log?.warn('Markdown 里有图片没找到', path.basename(input), missing.slice(0, 5));
       return this.keepPdf(file, folder);
     } finally { await closeWindow(w); }
   }
