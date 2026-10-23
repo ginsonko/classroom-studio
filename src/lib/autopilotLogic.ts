@@ -5,6 +5,7 @@ import type { LessonSlot, Student } from './types';
 import { DIFF_NAME, looseJSON, pointLabel, themeLine, type Prep, type Question, type StudentNote, type StudyData } from './studyLogic';
 import { packOf, type SubjectId } from './subjects';
 import type { CatEntry } from './catalogLogic';
+import { isDefaultTopic } from './groups';
 
 export interface AutoSettings {
   on: boolean;
@@ -28,23 +29,33 @@ export function cleanSettings(v: unknown): AutoSettings {
   return { on: b('on'), lesson: b('lesson'), homework: b('homework'), original: b('original'), prep: b('prep'), prepHours: n('prepHours', 2, 72), courseware: b('courseware'), agent: b('agent'), agentCap: n('agentCap', 1, 20), catalog: b('catalog'), hwCount: n('hwCount', 3, 20), dailyJobs: n('dailyJobs', 1, 60) };
 }
 
-export interface DueLesson { studentId: string; date: string; topic: string; minutes?: number; slotId?: string; key: string }
+export interface DueLesson { studentId: string; date: string; topic: string; minutes?: number; slotId?: string; key: string; groupId?: string }
 /**
  * 该写课后总结的课：今天排了课、下课超过 15 分钟；或者今天有作答记录、最后一次作答已过 40 分钟（没排课的临时课）。
  * 已经有当天总结、或已处理过（done 里有）的跳过。
  */
 export function dueLessons(now: Date, slots: LessonSlot[], students: Student[], data: StudyData, done: Set<string>): DueLesson[] {
   const today = dateKey(now), hour = now.getHours() + now.getMinutes() / 60, out: DueLesson[] = [];
-  const has = (sid: string) => data.lessons.some((l) => l.studentId === sid && l.date === today);
+  const has = (sid: string, date = today) => data.lessons.some((l) => l.studentId === sid && l.date === date);
   const live = students.filter((s) => !s.archived);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   for (const s of slots) {
     const st = live.find((x) => x.id === s.studentId);
-    if (!st || !onDate(s, now) || s.start + s.len + 0.25 > hour) continue;
-    const key = `lesson:${s.studentId}:${today}`;
-    if (done.has(key) || has(s.studentId) || out.some((x) => x.key === key)) continue;
-    out.push({ studentId: s.studentId, date: today, topic: s.topic && s.topic !== '一对一课程' ? s.topic : st.lastTopic, minutes: Math.round(s.len * 60), slotId: s.id, key });
+    if (!st) continue;
+    // 今天开始的课，或者昨天开始、过了午夜才下课的课（记在开课那天）
+    const day = onDate(s, now) && s.start + s.len + 0.25 <= hour ? now : onDate(s, yesterday) && s.start + s.len > 24 && s.start + s.len - 24 + 0.25 <= hour ? yesterday : null;
+    if (!day) continue;
+    const date = dateKey(day), topic = !isDefaultTopic(s.topic) ? s.topic : st.lastTopic;
+    // 班组课：每位成员各写一份总结（各自的作答、各自的家长）
+    const who = st.kind ? (st.members ?? []).map((id) => live.find((x) => x.id === id && !x.kind)).filter((x): x is Student => !!x) : [st];
+    for (const m of who) {
+      const key = `lesson:${m.id}:${date}`;
+      if (done.has(key) || has(m.id, date) || out.some((x) => x.key === key)) continue;
+      out.push({ studentId: m.id, date, topic, minutes: Math.round(s.len * 60), slotId: s.id, key, ...(st.kind ? { groupId: st.id } : {}) });
+    }
   }
   for (const st of live) {
+    if (st.kind) continue;
     const key = `lesson:${st.id}:${today}`;
     if (done.has(key) || has(st.id) || out.some((x) => x.key === key)) continue;
     const mine = data.attempts.filter((a) => a.studentId === st.id && dateKey(new Date(a.at)) === today);

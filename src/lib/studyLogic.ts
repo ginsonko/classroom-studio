@@ -28,12 +28,19 @@ export interface Question {
   needsAi?: boolean;         // 拍照的卷子没配 AI：先存原图，配好 AI 后再拆题、识题
 }
 export interface Attempt { id: string; studentId: string; questionId: string; result: Result; at: string; note?: string }
+/** 班组 id → 成员。按学生查的函数（掌握度、错题本、画像、组作业）传班组 id 时汇总全部成员 */
+const GROUP = new Map<string, Set<string>>();
+export function indexGroups(list: { id: string; kind?: string; members?: string[] }[]) { GROUP.clear(); for (const s of list) if (s.kind) GROUP.set(s.id, new Set(s.members ?? [])); }
+export const belongs = (sid: string, target: string) => sid === target || !!GROUP.get(target)?.has(sid);
+export const isGroupId = (id: string) => GROUP.has(id);
 export interface LessonNote {
   id: string; studentId: string; date: string; at: string; topic: string; minutes?: number;
   /** 上这节课时学生的学科；0.8 之前的记录没有这个字段，算在每个学科里 */
   subject?: SubjectId;
   summary: string; strengths: string[]; problems: string[]; next: string[]; parent: string; homework?: string;
   via: 'ai' | 'rules'; files?: string[]; sends?: SendRecord[];
+  /** 班组课：每位成员一份总结，记下是哪个班组的课 */
+  groupId?: string;
 }
 export interface SendRecord { channel: 'wecom' | 'email'; ok: boolean; at: string; to: string; error?: string }
 export interface Homework { id: string; studentId: string; title: string; at: string; questionIds: string[]; points: string[]; files: string[] }
@@ -160,7 +167,7 @@ export function mastery(studentId: string, d: Pick<StudyData, 'attempts' | 'ques
   const qs = new Map(d.questions.map((q) => [q.id, q]));
   const per = new Map<string, Attempt[]>();
   for (const a of d.attempts) {
-    if (a.studentId !== studentId) continue;
+    if (!belongs(a.studentId, studentId)) continue;
     const q = qs.get(a.questionId);
     if (!q || (subject && questionSubject(q) !== subject)) continue;
     for (const k of q.points) (per.get(k) ?? per.set(k, []).get(k)!).push(a);
@@ -187,14 +194,15 @@ export interface WrongItem { q: Question; history: Attempt[]; status: 'open' | '
 export function wrongBook(studentId: string, d: Pick<StudyData, 'attempts' | 'questions'>): WrongItem[] {
   const qs = new Map(d.questions.map((q) => [q.id, q]));
   const by = new Map<string, Attempt[]>();
-  for (const a of d.attempts) if (a.studentId === studentId && qs.has(a.questionId)) (by.get(a.questionId) ?? by.set(a.questionId, []).get(a.questionId)!).push(a);
+  for (const a of d.attempts) if (belongs(a.studentId, studentId) && qs.has(a.questionId)) (by.get(a.questionId) ?? by.set(a.questionId, []).get(a.questionId)!).push(a);
   const out: WrongItem[] = [];
   for (const [qid, list] of by) {
     list.sort((a, b) => a.at.localeCompare(b.at));
     const wrongs = list.filter((a) => a.result !== 'right');
     if (!wrongs.length) continue;
-    const latest = list[list.length - 1];
-    out.push({ q: qs.get(qid)!, history: list, status: latest.result === 'right' ? 'fixed' : 'open', wrongCount: wrongs.length, lastWrong: wrongs[wrongs.length - 1].at });
+    // 班组：哪位成员最近一次还没做对，这道就还没订正
+    const latest = new Map(list.map((a) => [a.studentId, a] as const));
+    out.push({ q: qs.get(qid)!, history: list, status: [...latest.values()].every((a) => a.result === 'right') ? 'fixed' : 'open', wrongCount: wrongs.length, lastWrong: wrongs[wrongs.length - 1].at });
   }
   return out.sort((a, b) => (a.status === b.status ? b.lastWrong.localeCompare(a.lastWrong) : a.status === 'open' ? -1 : 1));
 }
@@ -209,7 +217,7 @@ export const lessonIn = (l: LessonNote, subject?: SubjectId) => !subject || !l.s
 export const portraitKey = (studentId: string, subject: SubjectId = 'physics') => (subject === 'physics' ? studentId : `${studentId}@${subject}`);
 export function profile(studentId: string, d: StudyData, now = Date.now(), subject?: SubjectId): Profile {
   const qs = subject ? new Map(d.questions.map((q) => [q.id, q])) : null;
-  const mine = d.attempts.filter((a) => { if (a.studentId !== studentId) return false; if (!qs) return true; const q = qs.get(a.questionId); return !!q && questionSubject(q) === subject; });
+  const mine = d.attempts.filter((a) => { if (!belongs(a.studentId, studentId)) return false; if (!qs) return true; const q = qs.get(a.questionId); return !!q && questionSubject(q) === subject; });
   const acc = (list: Attempt[]) => (list.length ? list.reduce((s, a) => s + VALUE[a.result], 0) / list.length : null);
   const month = now - 30 * 864e5;
   const m = [...mastery(studentId, d, subject).values()];
@@ -220,7 +228,8 @@ export function profile(studentId: string, d: StudyData, now = Date.now(), subje
     const day = new Date(start + 864e5);
     return { label: `${day.getMonth() + 1}/${day.getDate()}`, acc: acc(list), n: list.length };
   });
-  const lessons = d.lessons.filter((l) => l.studentId === studentId && lessonIn(l, subject)).sort((a, b) => b.at.localeCompare(a.at));
+  // 班组的课：每位成员各有一份总结，按日期算一节
+  const lessons = (isGroupId(studentId) ? [...new Map(d.lessons.filter((l) => l.groupId === studentId && lessonIn(l, subject)).map((l) => [l.date, l])).values()] : d.lessons.filter((l) => l.studentId === studentId && lessonIn(l, subject))).sort((a, b) => b.at.localeCompare(a.at));
   return {
     attempts: mine.length, accuracy: acc(mine), recentAccuracy: acc(mine.filter((a) => Date.parse(a.at) > month)),
     open: wb.filter((w) => w.status === 'open').length, fixed: wb.filter((w) => w.status === 'fixed').length,
@@ -239,7 +248,7 @@ export function pickHomework(o: PickOptions, d: StudyData): { picked: Picked[]; 
   const now = o.now ?? Date.now();
   const m = mastery(o.studentId, d, o.subject);
   const points = o.points.length ? o.points : [...m.values()].filter((x) => x.score < 0.6).sort((a, b) => a.score - b.score).map((x) => x.key).slice(0, 4);
-  const mine = d.attempts.filter((a) => a.studentId === o.studentId);
+  const mine = d.attempts.filter((a) => belongs(a.studentId, o.studentId));
   const recent = new Set(mine.filter((a) => now - Date.parse(a.at) < o.avoidDays * 864e5).map((a) => a.questionId));
   const solved = new Set(mine.filter((a) => a.result === 'right').map((a) => a.questionId));
   const picked: Picked[] = [];

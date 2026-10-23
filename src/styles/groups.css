@@ -1,0 +1,57 @@
+/* ── 班组：一对二 / 小组课 / 班课 ─────────────────────────── */
+
+/* 学生列表 */
+.stu-sec { margin: 12px 16px 4px; font-size: 11px; font-weight: 650; letter-spacing: .04em; color: var(--fg-3); }
+.stu-i.grp .ava { border-radius: 9px; }
+.stu-i.grp i { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stu-members { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.stu-members > i { font-style: normal; font-size: 12px; color: var(--fg-2); }
+.stu-members button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 12.5px; color: var(--fg-0); background: hsl(var(--h) 70% 55% / .14); box-shadow: inset 0 0 0 1px hsl(var(--h) 70% 60% / .28); transition: background var(--dur); }
+.stu-members button:hover { background: hsl(var(--h) 70% 55% / .26); }
+.stu-members button > svg { margin-left: 5px; color: hsl(var(--h) 80% 70%); }
+
+/* 顶栏学生选择 */
+.stu-pop button.grp .ava { border-radius: 7px; }
+.stu-pop button.grp i { white-space: nowrap; }
+
+/* 班组编辑 */
+.grp-editor { width: min(560px, calc(100vw - 40px)); max-height: calc(100vh - 60px); overflow-y: auto; }
+.grp-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grp-kinds button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 11px; border-radius: var(--r-md); text-align: left; background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); transition: background var(--dur), box-shadow var(--dur); }
+.grp-kinds button b { font-size: 13px; }
+.grp-kinds button span { font-size: 11px; color: var(--fg-2); }
+.grp-kinds button:hover { background: var(--bg-3); }
+.grp-kinds button.on { background: var(--cue-soft); box-shadow: inset 0 0 0 1.5px var(--cue); }
+.grp-pick { display: flex; flex-direction: column; gap: 6px; }
+.grp-pick-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.grp-pick-h em { font-style: normal; color: var(--cue); }
+.grp-pick-h input { width: 140px; padding: 4px 8px; font-size: 12px; }
+.grp-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; max-height: 210px; overflow-y: auto; padding: 6px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
+.record-editor .grp-m { display: flex; flex-direction: row; align-items: center; gap: 7px; padding: 5px 7px; border-radius: var(--r-sm); font-size: 12.5px; color: var(--fg-0); cursor: pointer; }
+.grp-m:hover { background: var(--bg-3); }
+.grp-m.on { background: hsl(var(--h) 70% 55% / .16); }
+.grp-m input { margin: 0; }
+.grp-m i { margin-left: auto; font-style: normal; font-size: 11px; color: var(--fg-3); }
+.grp-none { grid-column: 1 / -1; margin: 6px; font-size: 12px; color: var(--fg-2); }
+
+/* 课堂上的学生卡：记给谁、每人结果 */
+.scard-who { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 11.5px; color: var(--fg-2); }
+.scard-who button { padding: 2px 9px; border-radius: 999px; font-size: 11.5px; color: var(--fg-1); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background var(--dur); }
+.scard-who button:hover { background: var(--bg-3); }
+.scard-who button.on { color: var(--fg-0); background: hsl(var(--h) 70% 55% / .24); box-shadow: inset 0 0 0 1px hsl(var(--h) 70% 62% / .6); }
+.scard-each { display: flex; flex-wrap: wrap; gap: 5px; }
+.scard-each button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 7px; font-size: 11.5px; color: var(--fg-1); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); }
+.scard-each button b { font-weight: 650; color: var(--fg-3); }
+.scard-each button.r-right b { color: var(--ok); }
+.scard-each button.r-half b { color: var(--warn); }
+.scard-each button.r-wrong b { color: var(--live); }
+
+/* 课后总结：成员切换 */
+.sd-members { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
+.sd-members > span { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--fg-1); }
+.sd-members button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 12px; color: var(--fg-1); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sd-members button:hover { background: var(--bg-3); }
+.sd-members .ags-go { margin-left: auto; }
+.sd-members button.done svg { color: var(--ok); }
+.sd-members button.on { color: var(--fg-0); background: hsl(var(--h) 70% 55% / .24); box-shadow: inset 0 0 0 1px hsl(var(--h) 70% 62% / .6); }
+[data-skin="paper"] .stu-members button > svg { color: hsl(var(--h) 60% 38%); }

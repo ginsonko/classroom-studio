@@ -135,7 +135,10 @@ const students = [S('a', '俊宇'), S('b', '欣怡'), S('c', '王浩然', { arch
     rows[0].use = false;
     const off = planImport({ ...base, rows, mode: 'merge', onConflict: 'keep' });
     assert.equal(off.states[rows[0].id].kind, 'off');
-    const bad = planImport({ ...base, rows: [{ id: 'x', studentId: 'a', use: true, lesson: { ...lessons[0], start: 22.5, len: 1 } }], mode: 'merge', onConflict: 'keep' });
+    // 1.4.0 起全天都能排课，22:30 开始的一小时课（过了午夜）可以导入；不满半小时的仍然不行
+    const late = planImport({ ...base, rows: [{ id: 'x', studentId: 'a', use: true, lesson: { ...lessons[0], start: 22.5, len: 1 } }], mode: 'merge', onConflict: 'keep' });
+    assert.equal(late.states.x.kind, 'add');
+    const bad = planImport({ ...base, rows: [{ id: 'x', studentId: 'a', use: true, lesson: { ...lessons[0], start: 22.5, len: 0.25 } }], mode: 'merge', onConflict: 'keep' });
     assert.equal(bad.states.x.kind, 'invalid');
     assert.equal(whenText({ day: 3, date: '', start: 19, len: 1.5, repeat: true }), '每周四 19:00–20:30');
     assert.equal(whenText({ day: 5, date: '2026-10-24', start: 14, len: 2, repeat: false }), '10月24日 周六 14:00–16:00');

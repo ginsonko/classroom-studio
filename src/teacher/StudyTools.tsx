@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, Download, FolderPlus, ImageDown, ListChecks, Loader2, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { Check, Copy, Download, FolderPlus, ImageDown, ListChecks, Loader2, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { isGroup, membersOf } from '../lib/groups';
 import { PaperComposer } from './PaperComposer';
 import { useStore } from '../lib/store';
 import { host } from '../lib/host';
@@ -114,7 +115,12 @@ function SmartHomework() {
 // ── 课后总结 + 家长反馈 + 分享长图 ───────────────────────
 export function LessonTab() {
   const data = useStudy((s) => s.data), update = useStudy((s) => s.update);
-  const studentId = useStore((s) => s.studentId), student = useStore((s) => s.students.find((x) => x.id === s.studentId));
+  const bound = useStore((s) => s.students.find((x) => x.id === s.studentId)), students = useStore((s) => s.students);
+  // 班组课：每位成员一份总结，上面切换成员
+  const members = useMemo(() => (bound && isGroup(bound) ? membersOf(bound, students) : []), [bound, students]);
+  const [memberId, setMemberId] = useState('');
+  const student = members.length ? members.find((m) => m.id === memberId) ?? members[0] : bound;
+  const studentId = student?.id ?? '', groupId = members.length ? bound!.id : undefined;
   const { recordings } = useRecordings();
   const ai = useOnline();
   const [date, setDate] = useState(today()), [topic, setTopic] = useState(''), [minutes, setMinutes] = useState(''), [notes, setNotes] = useState(''), [homework, setHomework] = useState('');
@@ -125,8 +131,9 @@ export function LessonTab() {
   const todays = useMemo(() => data.attempts.filter((a) => a.studentId === studentId && localDay(a.at) === date && qs.has(a.questionId)).map((a) => ({ a, q: qs.get(a.questionId)! })), [data.attempts, studentId, date, qs]);
   useEffect(() => {
     if (!student) return;
-    setTopic(student.lastTopic || ''); setNote(null); setOut(null);
-    const rec = recordings.find((r) => r.studentId === studentId && r.createdAt && localDay(r.createdAt) === date);
+    const saved = groupId ? data.lessons.find((l) => l.studentId === studentId && l.date === date && l.groupId === groupId) : undefined;
+    setTopic(saved?.topic || (groupId ? bound?.lastTopic : '') || student.lastTopic || ''); setNote(saved ?? null); setOut(saved?.files?.length ? { out: saved.files, errors: [] } : null);
+    const rec = recordings.find((r) => r.studentId === (groupId ?? studentId) && r.createdAt && localDay(r.createdAt) === date);
     const m = rec ? recordingMinutes(rec) : null; setMinutes(m ? String(Math.round(m)) : '');
     const hw = data.homework.find((h) => h.studentId === studentId && localDay(h.at) === date); setHomework(hw?.title ?? '');
   }, [studentId, date, recordings.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -134,8 +141,26 @@ export function LessonTab() {
   const make = async () => {
     setBusy('gen'); setErr(''); setOut(null);
     try {
-      const r = await buildLessonNote({ studentId, name: student.name, date, topic, minutes: Number(minutes) || undefined, notes, homework, id: note?.id });
+      const r = await buildLessonNote({ studentId, name: student.name, date, topic, minutes: Number(minutes) || undefined, notes, homework, id: note?.id, groupId });
       setNote(r.note); if (r.warning) setErr(r.warning);
+    } finally { setBusy(''); }
+  };
+  /** 班组：每位成员都按各自的作答生成并保存（已有当天总结的不重写） */
+  const makeAll = async () => {
+    setBusy('all'); setErr('');
+    const warn: string[] = [];
+    try {
+      for (const [i, m] of members.entries()) {
+        setBusy(`all:${i + 1}/${members.length}`);
+        const old = useStudy.getState().data.lessons.find((l) => l.studentId === m.id && l.date === date && l.groupId === groupId);
+        if (old) continue;
+        const r = await buildLessonNote({ studentId: m.id, name: m.name, date, topic, minutes: Number(minutes) || undefined, notes, homework, groupId });
+        saveLesson(r.note);
+        if (r.warning) warn.push(`${m.name}：${r.warning}`);
+      }
+      const mine = useStudy.getState().data.lessons.find((l) => l.studentId === studentId && l.date === date && l.groupId === groupId);
+      if (mine) setNote(mine);
+      if (warn.length) setErr(warn.join('\n'));
     } finally { setBusy(''); }
   };
   const save = saveLesson;
@@ -157,6 +182,8 @@ export function LessonTab() {
   const past = data.lessons.filter((l) => l.studentId === studentId).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10);
   return <div className="sd-pane sd-two">
     <section className="sd-form">
+      {members.length > 0 && <div className="sd-members"><span>{bound!.name} · 每人一份</span>{members.map((m) => { const done = data.lessons.some((l) => l.studentId === m.id && l.date === date); return <button key={m.id} className={(m.id === studentId ? 'on' : '') + (done ? ' done' : '')} style={{ ['--h' as string]: m.hue }} onClick={() => setMemberId(m.id)}>{done && <Check size={11} />}{m.name}</button>; })}
+        <button className="ags-go" disabled={!!busy} onClick={() => void makeAll()} data-tip="按每个人当天的作答分别写总结和家长反馈，写好的先保存，再逐个确认、发送">{busy.startsWith('all') ? <Loader2 size={13} className="ags-spin" /> : <Sparkles size={13} />}{busy.startsWith('all:') ? busy.slice(4) : '全组每人生成'}</button></div>}
       <h3>{student.name} · 课后总结</h3>
       <div className="sd-grid"><label>日期<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>时长（分钟）<input value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ''))} /></label></div>
       <label>本节课主题<input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="例如：带电粒子在磁场中的运动" /></label>

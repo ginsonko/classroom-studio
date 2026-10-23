@@ -101,14 +101,30 @@ const timer = setTimeout(() => { console.error('dock-ui timed out'); app.exit(1)
   await call(dock, `document.querySelector('.tp-fly .tp-fi').click(); true`); await until(() => call(dock, '!document.querySelector(".tp-fly")'));
   mark('tool group flyout opens, is exposed by the shape, and closes on pick');
 
-  // 放大
+  // 放大：1.4.0 起放不下会自动缩回屏幕里，所以先把学生窗口拉到够高（主屏工作区内）
+  const sb0 = student.getBounds(), wa = require('electron').screen.getPrimaryDisplay().workArea;
+  student.setBounds({ x: wa.x, y: wa.y, width: Math.min(1400, wa.width), height: wa.height }); api.dock.place();
+  await sleep(300);
   const z0 = await call(dock, `document.querySelector('.tdock').getBoundingClientRect().height`);
-  await call(dock, `document.querySelector('.tdock-zoom').click(); true`); await sleep(200);
-  const z1 = await call(dock, `document.querySelector('.tdock').getBoundingClientRect().height`);
-  assert.ok(z1 > z0 * 1.12, `zoom ${z0} -> ${z1}`);
-  const bounds = dock.getBounds(); assert.ok(bounds.height >= z1, 'dock window grows with the rail');
-  await call(dock, `document.querySelector('.tdock-zoom').click(); document.querySelector('.tdock-zoom').click(); true`);
-  mark('dock size button enlarges the rail and the window follows', { z0, z1 });
+  // 1.4.0 起缩放按钮打开菜单：标准 / 大一点 / 最大，外加「恢复默认布局」
+  const pickZoom = async (pct) => {
+    await call(dock, `document.querySelector('.tdock-zoom').click(); true`);
+    await until(() => call(dock, `!!document.querySelector('.tdock-zooms button')`), 3000);
+    await call(dock, `[...document.querySelectorAll('.tdock-zooms button')].find(b=>b.innerText.includes('${pct}%')).click(); true`);
+  };
+  await pickZoom(120);
+  const z1 = await until(async () => { const h = await call(dock, `document.querySelector('.tdock').getBoundingClientRect().height`); return h > z0 * 1.12 && h; }, 3000).catch(async () => call(dock, `document.querySelector('.tdock').getBoundingClientRect().height`));
+  assert.ok(z1 > z0 * 1.12, `zoom ${z0} -> ${z1} (work area ${wa.height})`);
+  const grown = await until(() => dock.getBounds().height >= z1, 3000).catch(() => false);
+  assert.ok(grown, `dock window grows with the rail: window ${dock.getBounds().height}, rail ${z1}`);
+  // 学生窗口变矮：工具条自动缩到放得下，缩放按钮还在屏幕里
+  student.setBounds({ ...sb0, height: 560 }); api.dock.place();
+  const fit = await until(async () => { const r = await call(dock, `(()=>{const t=document.querySelector('.tdock').getBoundingClientRect(),z=document.querySelector('.tdock-zoom').getBoundingClientRect();return {h:t.height,zb:z.bottom,ih:innerHeight}})()`); return r.h <= 560 && r; }, 4000);
+  assert.ok(fit.zb <= fit.ih, 'zoom button stays inside the dock window ' + JSON.stringify(fit));
+  student.setBounds(sb0); api.dock.place();
+  await pickZoom(100);
+  await until(() => call(dock, `!document.querySelector('.tdock-zoommenu')||document.querySelector('.tdock-zoommenu').getBoundingClientRect().left<0`), 3000).catch(() => call(dock, `document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));true`));
+  mark('dock size button enlarges the rail; a short student window shrinks it back to fit', { z0, z1, fit: fit.h });
 
   // 真实输入事件（经 Chromium 输入管线，不动系统鼠标）：学生接笔 → 浮层「收回」
   const realClick = async (w, x, y) => {
@@ -148,8 +164,9 @@ const timer = setTimeout(() => { console.error('dock-ui timed out'); app.exit(1)
   await until(() => call(dock, `!document.querySelector('.tip')`), 3000);
   mark('a real click near the right edge of "take back" returns the pen to the teacher everywhere');
 
-  // 老师端顶栏也能收回（浮层被隐藏时的兜底）
-  await realClick(student, sb.x + sb.width / 2, sb.y + sb.height / 2);
+  // 老师端顶栏也能收回（浮层被隐藏时的兜底）。上面改过学生窗口大小，工具条可能挪了位置，重新取坐标
+  const sb2 = await call(student, `document.querySelector('.sbar .tp-b[aria-label^="钢笔"]').getBoundingClientRect().toJSON()`);
+  await realClick(student, sb2.x + sb2.width / 2, sb2.y + sb2.height / 2);
   await until(async () => (await T('drawAuthor')) === 'student');
   await until(() => call(teacher, `!!document.querySelector('.tb-pen')`));
   await call(teacher, `document.querySelector('.tb-pen').click(); true`);

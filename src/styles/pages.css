@@ -100,6 +100,9 @@
 [data-skin="paper"] .slot { background: linear-gradient(160deg, hsl(var(--h) 70% 75% / .55), hsl(var(--h) 70% 80% / .35)); }
 .slot:hover { box-shadow: inset 3px 0 0 hsl(var(--h) 80% 62%), inset 0 0 0 1px hsl(var(--h) 70% 60% / .6), 0 8px 20px -10px hsl(var(--h) 70% 40%); }
 .slot.drag { cursor: grabbing; z-index: 5; transform: scale(1.02); box-shadow: inset 3px 0 0 hsl(var(--h) 80% 62%), 0 0 0 2px hsl(var(--h) 80% 62%), 0 16px 34px -12px rgba(0,0,0,.7); transition: none; }
+/* 跨午夜的课：当天那段底边不收圆角、虚线，第二天凌晨那段顶边同样处理，一眼看出是接着的 */
+.slot.cross { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 1px dashed hsl(var(--h) 80% 62% / .8); }
+.slot.tail { border-top-left-radius: 0; border-top-right-radius: 0; border-top: 1px dashed hsl(var(--h) 80% 62% / .8); cursor: default; opacity: .85; }
 .slot b { display: flex; align-items: center; gap: 4px; font-size: 12.5px; }
 .slot b svg { opacity: .6; }
 .slot span { font-size: 10.5px; color: var(--fg-1); }
@@ -132,7 +135,7 @@
 .month { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }
 .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(64px, 1fr); gap: 6px; padding: 16px; border-radius: var(--r-lg); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); overflow: auto; }
 .mh { align-self: end; padding: 0 0 4px 4px; font-size: 11.5px; color: var(--fg-3); }
-.md {
+.month-grid .md {
   position: relative;
   display: flex; flex-direction: column; justify-content: space-between;
   padding: 7px 8px;
@@ -140,12 +143,12 @@
   background: color-mix(in srgb, var(--cue) calc(var(--k) * 26%), var(--bg-2));
   box-shadow: inset 0 0 0 1px var(--line);
 }
-.md b { font-size: 12.5px; font-weight: 500; color: var(--fg-1); }
-.md.today { box-shadow: inset 0 0 0 2px var(--cue); }
-.md.today b { color: var(--cue); font-weight: 700; }
+.month-grid .md b { font-size: 12.5px; font-weight: 500; color: var(--fg-1); }
+.month-grid .md.today { box-shadow: inset 0 0 0 2px var(--cue); }
+.month-grid .md.today b { color: var(--cue); font-weight: 700; }
 .md-dots { display: flex; gap: 3px; flex-wrap: wrap; }
 .md-dots i { width: 6px; height: 6px; border-radius: 50%; }
-.md em { position: absolute; top: 7px; right: 8px; font-style: normal; font-size: 10.5px; color: var(--fg-2); }
+.month-grid .md em { position: absolute; top: 7px; right: 8px; font-style: normal; font-size: 10.5px; color: var(--fg-2); }
 .month-side { padding: 16px; border-radius: var(--r-lg); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 12px; }
 .month-side h4 { margin: 0 0 4px; font-size: 12px; color: var(--fg-2); font-weight: 600; }
 .mbar { display: grid; grid-template-columns: 22px 44px 1fr 40px; align-items: center; gap: 8px; }

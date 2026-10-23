@@ -15,11 +15,17 @@ const students = [
   stu('stu-b', '陈思远', '高二', 'math', 30, '正弦型函数的图像', ['思路灵活'], 8),
   stu('stu-c', '赵一鸣', '高二', 'chem', 120, '酸碱中和滴定', ['实验题薄弱'], 5),
   stu('stu-d', '周可欣', '高三', 'physics', 280, '带电粒子在磁场中的运动', ['冲刺阶段'], 20),
+  stu('stu-e', '王子涵', '高一', 'physics', 340, '牛顿第二定律', [], 6),
+  stu('stu-f', '刘一诺', '高一', 'physics', 90, '牛顿第二定律', [], 6),
+  { ...stu('grp-1', '子涵一诺一对二', '高一', 'physics', 160, '牛顿第二定律', [], 6), kind: 'pair', members: ['stu-e', 'stu-f'] },
+  { ...stu('grp-2', '周末物理小组', '高一', 'physics', 250, '受力分析', [], 3), kind: 'small', members: ['stu-a', 'stu-e', 'stu-f'] },
 ];
 const monday = addDays(-((now.getDay() + 6) % 7));
 const slot = (id, studentId, dayOff, start, len, topic) => { const d = new Date(monday); d.setDate(d.getDate() + dayOff); return { id, studentId, day: dayOff, date: ymd(d), start, len, topic }; };
-const slots = [slot('s1', 'stu-a', 0, 15, 1.5, '追及相遇问题'), slot('s2', 'stu-b', 1, 19, 2, '正弦型函数'), slot('s3', 'stu-c', 2, 16, 1.5, '中和滴定曲线'), slot('s4', 'stu-d', 3, 19, 2, '磁场中的圆周运动'), slot('s5', 'stu-a', 4, 15, 1.5, '受力分析'), slot('s6', 'stu-b', 5, 10, 2, '三角恒等变换'), slot('s7', 'stu-d', 6, 14, 2, '电磁感应综合')];
+const slots = [slot('s1', 'stu-a', 0, 15, 1.5, '追及相遇问题'), slot('s2', 'stu-b', 1, 19, 2, '正弦型函数'), slot('s3', 'stu-c', 2, 16, 1.5, '中和滴定曲线'), slot('s4', 'stu-d', 3, 19, 2, '磁场中的圆周运动'), slot('s5', 'stu-a', 4, 15, 1.5, '受力分析'), slot('s6', 'stu-b', 5, 10, 2, '三角恒等变换'), slot('s7', 'stu-d', 6, 14, 2, '电磁感应综合'), slot('s8', 'grp-1', 5, 15, 1.5, '牛顿第二定律'), slot('s9', 'grp-2', 6, 9, 2, '受力分析专题')];
 fs.writeFileSync(path.join(process.env.CS_DATA_DIR, 'workspace.json'), JSON.stringify({ local: { roots: [libDir.replace(/\\/g, '/')], students, studentId: 'stu-a', slots, learning: {} } }));
+// 助教内核用测试里的假 app-server：只为让小羽处于「醒着」的状态，截图不发真实请求
+process.env.CS_AGENT_CODEX = path.join(__dirname, 'fake-app-server.cjs');
 const { app } = require('electron');
 require('../electron/main.cjs');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +49,7 @@ const lineP = (x0, y0, x1, y1) => { const p = []; for (let i = 0; i <= 12; i++) 
   const done = [], failed = [];
   // 截图里不出现本机测试目录
   const tidy = (w) => call(w, `for(const b of document.querySelectorAll('.lib-root > button:first-of-type'))b.textContent='D:/教学资料/示例资料库';true`).catch(() => {});
-  const shot = async (w, name, wait = 900) => { await sleep(wait); await tidy(w); w.webContents.invalidate(); await sleep(300); fs.writeFileSync(path.join(shots, name), (await w.webContents.capturePage()).toPNG()); done.push(name); console.log('SHOT ' + name); };
+  const shot = async (w, name, wait = 900, rect) => { await sleep(wait); await tidy(w); w.webContents.invalidate(); await sleep(300); fs.writeFileSync(path.join(shots, name), (await w.webContents.capturePage(rect)).toPNG()); done.push(name); console.log('SHOT ' + name); };
   const step = async (label, fn) => { try { await fn(); } catch (e) { failed.push(label + ': ' + e.message); console.log('SKIP ' + label + ' ' + e.message.split('\n')[0]); } };
   const ink = (key, color, size, pts) => T(`Q.useStore.getState().addStroke(${JSON.stringify(key)},{id:'sc'+Math.random().toString(36).slice(2),author:'teacher',layer:'public',tool:'pen',color:${JSON.stringify(color)},size:${size},pts:${JSON.stringify(pts.map((v) => +v.toFixed(4)))}});return true`);
 
@@ -205,6 +211,58 @@ const lineP = (x0, y0, x1, y1) => { const p = []; for (let i = 0; i <= 12; i++) 
     await shot(teacher, '28-rehearsal-pen.png', 900);
     await dockShot('29-rehearsal-dock.png', 300);
     await T(`Q.guide.exitGuide();return true`);
+  });
+  // 12. 1.4.0：AI 助教小羽。对话直接写进界面状态（不调模型），卡片文字和工具真实输出的格式一致
+  const noToast = () => T(`for(const b of document.querySelectorAll('.toast button.ghost'))b.click();return true`);
+  await step('assistant', async () => {
+    await T(`s.set({page:'console',studentId:'stu-a',aiOpen:false});return true`);
+    await noToast();
+    await until(() => T(`return Q.assistant.useAssistant.getState().ready`), 15000);
+    const dd = (off) => { const d = new Date(monday); d.setDate(d.getDate() + off); return ymd(d); };
+    const t0 = Date.now(), it = (id, kind, more) => ({ id, kind, turn: 't1', at: t0, ...more });
+    const items = [
+      it('u1', 'user', { text: '把小雨周五的课挪到周六下午 2 点，再按她这周的错题组一份作业' }),
+      it('c1', 'tool', { name: 'update_lesson', status: 'done', card: { title: '调整了课程', lines: [`林小雨 ${dd(4)} 周五 15:00-16:30 受力分析 → 林小雨 ${dd(5)} 周六 14:00-15:30 受力分析`] } }),
+      it('c2', 'tool', { name: 'make_homework', status: 'done', card: { title: '组好了作业「追及相遇 错题巩固」', lines: ['6 道题'], files: ['D:/教学资料/作业/林小雨 追及相遇 错题巩固.docx'] } }),
+      it('a1', 'text', { text: '改好啦～小雨周五的课挪到了**周六 14:00**，那个时间没有别的课。\n\n作业里放了她这周错的 3 道追及相遇题，又配了 3 道同类题，Word 已经排好版了。要不要我顺便给小雨妈妈写条消息说一下调课？发之前会先给你看。' }),
+    ];
+    const chat = { id: 'show-1', title: '调课和作业', created: t0, updated: t0, running: false, cny: 0.03, source: '', persona: 'sister', count: 4, items, turns: [{ id: 't1', at: t0, status: 'completed', cny: 0.03, changes: [{ kind: 'slot', id: 's5', before: { start: 15 }, after: { start: 14 } }, { kind: 'homework', id: 'hw-1', before: null, after: { id: 'hw-1' } }] }] };
+    await T(`const A=Q.assistant.useAssistant;A.setState({chat:${JSON.stringify(chat)},chats:[{...${JSON.stringify(chat)},items:undefined,turns:undefined}]});Q.assistant.openAssistant('chat');return true`);
+    await until(() => T(`return document.querySelectorAll('.as-drawer .as-op').length===2`), 5000);
+    // 只截右半边，网页上缩小后对话文字还看得清
+    const cw = await T(`return [innerWidth,innerHeight]`);
+    await shot(teacher, '30-assistant.png', 900, { x: cw[0] - 860, y: 0, width: 860, height: cw[1] });
+    const iso = new Date().toISOString();
+    await T(`const D=Q.assistantData;for(const t of ${JSON.stringify([
+      { id: 'tr-1', name: '课前看错题', when: { type: 'before_lesson', minutes: 10 }, action: { type: 'remind', text: '开课前看一眼这个学生上次的错题' }, times: 'every', fired: 6, enabled: true, created: iso, by: 'teacher' },
+      // 周几选明天，免得截图时这条正好到点开始执行
+      { id: 'tr-2', name: '家长周报', when: { type: 'daily', time: '20:00', weekdays: [(now.getDay() + 1) % 7 || 7] }, action: { type: 'assistant', prompt: '给每位学生写这周的学习周报草稿，等我确认再发给家长' }, times: 'every', fired: 2, enabled: true, created: iso, by: 'ai' },
+      { id: 'tr-3', name: '课后写总结', when: { type: 'after_lesson', minutes: 5 }, action: { type: 'assistant', prompt: '根据这节课的作答写课后总结，并组一份巩固作业' }, times: 'every', fired: 9, enabled: true, created: iso, by: 'ai' },
+      { id: 'tr-4', name: '新题归类', when: { type: 'import_questions' }, action: { type: 'assistant', prompt: '把新导入的题按知识点归类，标出难度' }, times: 'every', fired: 1, enabled: false, created: iso, by: 'teacher' },
+    ])})D.putTrigger(t);Q.assistant.openAssistant('triggers');return true`);
+    await until(() => T(`return document.querySelectorAll('.as-tr').length===4`), 5000);
+    await shot(teacher, '31-assistant-triggers.png', 700);
+    await T(`Q.assistant.closeAssistant();return true`);
+  });
+  // 13. 1.4.0：一对二 / 小组课。上课时一次截题给每个成员记作答；学生页里班组单独一段
+  await step('groups', async () => {
+    const A = doc('t:A', '追及相遇问题 讲义', 10);
+    await T(`s.set({page:'console',studentId:'grp-1',subject:'physics',rightOpen:true});s.showNow(${JSON.stringify(A)},{page:2});return true`);
+    await until(() => T(`return !!document.querySelector('.scard-ans')&&document.querySelectorAll('.scard-who button').length===2`), 8000);
+    await T(`document.querySelector('.scard-ans-b button.r-right').click();return true`);
+    await until(() => T(`return Q.useStudy.getState().data.attempts.filter(a=>a.studentId==='stu-e'||a.studentId==='stu-f').length===2`), 15000);
+    await until(() => T(`return document.querySelectorAll('.scard-each button').length===2`), 5000);
+    await T(`[...document.querySelectorAll('.scard-each button')].find(b=>b.innerText.includes('刘一诺')).click();return true`);
+    await sleep(800); await noToast();
+    // 小羽默认站在右下角，会挡住这张学生卡；只在这张截图里藏起来
+    const box = await T(`const f=document.querySelector('.as-float');if(f)f.style.visibility='hidden';return [innerWidth,innerHeight]`);
+    await shot(teacher, '32-group-card.png', 600, { x: box[0] - 640, y: box[1] - 430, width: 640, height: 430 });
+    await T(`const f=document.querySelector('.as-float');if(f)f.style.visibility='';return true`);
+    await T(`s.set({page:'students'});return true`);
+    await until(() => T(`return !!document.querySelector('.stu-i.grp')`), 5000);
+    await noToast();
+    await shot(teacher, '33-groups.png', 1000);
+    await T(`s.set({page:'console',studentId:'stu-a'});return true`);
   });
 
   fs.writeFileSync(path.join(shots, 'shots.json'), JSON.stringify({ done, failed }, null, 2));

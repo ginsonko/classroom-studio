@@ -1,7 +1,7 @@
 const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,readJSON,within,cleanTemps}=require('./core.cjs');
-const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');
+const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
 const DATA=(()=>{const want=path.resolve(process.env.CS_DATA_DIR||path.join(path.parse(ROOT).root,'ClassroomStudioData'));if(process.env.CS_DATA_DIR)return want;try{fs.mkdirSync(want,{recursive:true});const probe=path.join(want,'.write-probe');fs.writeFileSync(probe,'');fs.unlinkSync(probe);return want;}catch{return path.join(app.getPath('appData'),'ClassroomStudioData');}})();
@@ -26,7 +26,7 @@ app.on('web-contents-created',(_e,wc)=>{
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{scheme:'studio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'lesson',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'plugin',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
 const files=new Files(path.join(DATA,'cache'));
-const windows=new Map(),roles=new Map();let plugins,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,reminders,study,notifier,manim,reconciler,archive,updater;
+const windows=new Map(),roles=new Map();let plugins,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater;
 const send=(win,ch,data)=>{if(win&&!win.isDestroyed()&&!win.webContents.isCrashed())win.webContents.send(ch,data);};
 const notify=(type,value={})=>{if(value.error)log.warn('提示',type,value.message);for(const [role,w]of windows)if(role==='teacher')send(w,'cs:event',{type,...value});};
 const busy=()=>['starting','recording','stopping'].includes(recording?.status.phase);
@@ -99,7 +99,8 @@ async function makeWindow(role){
  }
  const ses=session.fromPartition(role==='student'?'persist:studio-public':role==='recorder'?'studio-recorder':'persist:studio-private');
  if(!ses.csReady){guardSession(ses);ses.csReady=true;}
- const options=role==='teacher'?{width:1600,height:960,minWidth:1050,minHeight:640,title:'最强网课教辅系统 · 教师端'}:role==='student'?{width:1280,height:760,minWidth:640,minHeight:400,title:'课堂展示 · 请共享这个窗口'}: {width:320,height:180,title:'课堂录制组件'};
+ const wa=screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+ const options=role==='teacher'?{...winfit.createSize('teacher',wa),title:'最强网课教辅系统 · 教师端'}:role==='student'?{...winfit.createSize('student',wa),title:'课堂展示 · 请共享这个窗口'}: {width:320,height:180,title:'课堂录制组件'};
  // acceptFirstMouse：macOS 上窗口不在前台时，第一下落笔 / 点击也直接生效，而不是只用来激活窗口
  const w=new BrowserWindow({...options,show:false,acceptFirstMouse:true,backgroundColor:'#101217',webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}});
  const contentId=w.webContents.id;windows.set(role,w);roles.set(contentId,role);
@@ -113,11 +114,28 @@ async function makeWindow(role){
   if(role==='teacher'){e.preventDefault();void closeApp();return;}
   if(role==='student'&&busy()){e.preventDefault();void closeStudentDuringLesson(w);}
  });
- w.on('closed',()=>{roles.delete(contentId);windows.delete(role);});
+ w.on('closed',()=>{roles.delete(contentId);windows.delete(role);if(role==='teacher')assistant?.windowGone();});
  if(role==='student')w.on('minimize',()=>{if(busy()){w.restore();notify('notice',{message:'录课期间请保持学生窗口展开，确保画面持续刷新。'});}});
  await w.loadURL(role==='recorder'?'studio://app/recorder.html':`studio://app/index.html?w=${role}`);
  if(role!=='recorder'&&!TEST)w.show();
  return w;
+}
+/** 教师 / 学生窗口收进所在屏幕；force=恢复默认尺寸并居中。全屏的不动，最大化的只在 force 时不动（本来就占满屏幕） */
+function fitWindow(role,force=false){
+ const w=windows.get(role);if(!w||w.isDestroyed()||w.isFullScreen()||w.isMaximized())return false;
+ const b=w.getBounds(),wa=screen.getDisplayMatching(b).workArea,m=winfit.minSize(role,wa);
+ if(m)w.setMinimumSize(m[0],m[1]);
+ const r=winfit.fitRect(b,wa,role,force);if(!r)return false;
+ w.setBounds(r);log.info('窗口收进屏幕',role,force?'恢复默认':'',r);return true;
+}
+let refitTimer=null;
+function refitAll(){clearTimeout(refitTimer);refitTimer=setTimeout(()=>{fitWindow('teacher');fitWindow('student');dockManager.place();},400);}
+/** 恢复默认布局：窗口尺寸、浮层位置 / 大小 / 收起、学生工具条位置；各窗口页面里的部分由页面收到 layout 事件后自己清 */
+async function resetLayout(){
+ fitWindow('teacher',true);fitWindow('student',true);
+ const dock=await dockManager.reset();
+ for(const role of ['teacher','student'])send(windows.get(role),'cs:event',{type:'layout',reset:true});
+ return {dock};
 }
 async function closeApp(){
  if(closing)return;closing=true;
@@ -304,6 +322,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(!trusted&&method!=='saveImage')throw Error('此操作仅在教师窗口可用');
  if(typeof method==='string'&&method.startsWith('ai.'))return ai.handle(method,value,{windows,dataDir:DATA,sender:e.sender,ledger,reconciler});
  if(typeof method==='string'&&method.startsWith('agents.'))return agentCall(method,value);
+ if(typeof method==='string'&&method.startsWith('assistant.'))return assistantCall(method,value);
  if(typeof method==='string'&&method.startsWith('study.'))return studyCall(method,value);
  if(typeof method==='string'&&method.startsWith('notify.'))return notifier.handle(method,value);
  if(typeof method==='string'&&method.startsWith('manim.'))return manim.handle(method,value);
@@ -325,6 +344,8 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'dockState':return dockManager.state;
  case 'dockVisible':return dockManager.setVisible(true);
  case 'dockToggle':return dockManager.setVisible();
+ case 'dockReset':return dockManager.reset();
+ case 'layoutReset':return resetLayout();
  case 'hideDock':return dockManager.setVisible(false);
  case 'displays':return screen.getAllDisplays().map(d=>({id:d.id,label:d.label||`显示器 ${d.id}`,primary:d.id===screen.getPrimaryDisplay().id,bounds:d.bounds}));
  case 'placeStudent':{const d=screen.getAllDisplays().find(d=>d.id===value.id);if(!d)throw Error('显示器已断开');const w=await makeWindow('student');w.setFullScreen(false);w.setBounds(d.bounds);w.setFullScreen(!!value.fullscreen);w.show();if(!TEST)await dockManager.ensure();return;}
@@ -490,6 +511,29 @@ async function agentCall(method,value){
  default:throw Error('未知的任务操作：'+method);
  }
 }
+async function assistantCall(method,value){
+ const v=value||{};
+ switch(method){
+ case 'assistant.status':return assistant.status();
+ case 'assistant.list':return assistant.list();
+ case 'assistant.get':return assistant.get(v.id??value);
+ case 'assistant.create':return assistant.meta(assistant.create(v));
+ case 'assistant.rename':return assistant.rename(v.id,v.title);
+ case 'assistant.remove':return assistant.remove(v.id??value);
+ case 'assistant.send':return assistant.send(v);
+ case 'assistant.stop':return assistant.stop(v.id??value);
+ case 'assistant.reply':return assistant.reply(String(v.reqId||''),v.value);
+ case 'assistant.pending':return assistant.pending();
+ case 'assistant.undone':return assistant.markUndone(v.id,v.turnId,v.note);
+ case 'assistant.notice':return assistant.notice(v.id,v.text);
+ // 老师在对话里同意让助教打开 / 读取的文件：和拖进来的文件一样授权给资料库
+ case 'assistant.grant':{const p=path.resolve(String(v.path||''));const st=await fs.promises.stat(p);return files.authorize(p,st.isDirectory());}
+ case 'assistant.pickFiles':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'给 AI 助教看的文件',properties:['openFile','multiSelections']});return r.canceled?[]:r.filePaths.slice(0,8).map(p=>files.authorize(p));}
+ case 'assistant.workspace':{if(!TEST)await shell.openPath(assistant.work);return normal(assistant.work);}
+ case 'assistant.open':{const f=path.resolve(String(v.path||''));if(!within(assistant.work,f)&&!within(study.dir,f))throw Error('只能打开助教做出来的文件');const err=await shell.openPath(f);if(err)throw Error('打不开：'+err);return;}
+ default:throw Error('未知的助教操作：'+method);
+ }
+}
 async function studyCall(method,value){
  const inside=f=>{const p=path.resolve(String(f||'')),rel=path.relative(study.dir,p);if(!rel||rel.startsWith('..')||path.isAbsolute(rel))throw Error('只能打开学情库里的文件');return p;};
  switch(method){
@@ -508,7 +552,7 @@ async function studyCall(method,value){
  case 'study.pickText':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择聊天记录或要求（txt / md）',properties:['openFile'],filters:[{name:'文本',extensions:['txt','md','csv']}]});if(r.canceled)return null;const p=files.authorize(r.filePaths[0]);return {path:p,text:await files.readText(p)};}
  case 'study.pickImport':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'导入题目（Word / PDF / 图片）',properties:['openFile','multiSelections'],filters:[{name:'试卷、作业、截图',extensions:['docx','doc','pdf','rtf','png','jpg','jpeg','bmp','webp','txt','md']}]});return r.canceled?[]:r.filePaths.map(p=>files.authorize(p));}
  case 'study.ocr':return files.ocrImages(value);
- case 'study.pickSchedule':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'导入课表（Excel / Word / PDF / 图片 / 文字）',properties:['openFile'],filters:[{name:'课表',extensions:['xlsx','xls','et','csv','docx','doc','rtf','pdf','txt','md','png','jpg','jpeg','bmp','webp']}]});return r.canceled?null:files.authorize(r.filePaths[0]);}
+ case 'study.pickSchedule':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'导入课表（Excel / Word / PDF / 图片 / 文字）',properties:['openFile','multiSelections'],filters:[{name:'课表',extensions:['xlsx','xls','et','csv','docx','doc','rtf','pdf','txt','md','png','jpg','jpeg','bmp','webp']}]});return r.canceled?[]:r.filePaths.slice(0,12).map(p=>files.authorize(p));}
  case 'study.skills':return study.skills();
  case 'study.saveSkills':return study.saveSkills(value);
  case 'study.exportSkill':{const f=await study.exportSkill(value||{});if(!TEST)shell.showItemInFolder(f);return f;}
@@ -539,6 +583,7 @@ async function start(){
  setTimeout(()=>plugins.stable(),TEST?3000:60000);
  agentKit.setExtra(()=>plugins.skills());
  agents=new Agents({dir:path.join(DATA,'agents'),toolsDir:path.join(DATA,'tools'),fetch:(u,o)=>net.fetch(u,o),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('agent',{agent:m}),exporter:exportDoc,onCharge:()=>reconciler?.soon(120000),imageGen:(v)=>ai.handle('ai.image',v,{windows,dataDir:DATA,ledger,reconciler})});
+ assistant=new Assistant({dir:path.join(DATA,'assistant'),toolsDir:path.join(DATA,'tools'),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('assistant',{assistant:m}),onCharge:()=>reconciler?.soon(120000)});try{files.authorize(assistant.work,true);}catch{}
  reconciler=new Reconciler({ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>{if(m.tasks?.length)agents.refreshCost(m.tasks);notify('ledger',m);}});if(!TEST)reconciler.start();try{files.authorize(agents.dir,true);}catch{}
  study=new Study({dir:path.join(DATA,'study'),exportDoc,log});files.authorize(study.dir,true);study.templateCss=kind=>plugins.templateCss(kind);
  notifier=new Notify({dir:DATA,root:study.dir,test:TEST,log});
@@ -564,10 +609,11 @@ async function start(){
  const lastUpdate=updater.takeResult();
  // macOS 没有菜单时输入框里的 ⌘C / ⌘V 都不能用，留一个最小的系统菜单
  Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu',label:'最强网课教辅系统'},{role:'editMenu',label:'编辑'},{role:'windowMenu',label:'窗口'}]):null);await makeWindow('teacher');await makeWindow('student');if(!TEST)await dockManager.ensure();
+ for(const ev of ['display-added','display-removed','display-metrics-changed'])screen.on(ev,refitAll);
  if(lastUpdate)setTimeout(()=>notify('update',{update:{phase:lastUpdate.ok?'done':'failed',result:lastUpdate}}),2500);
  if(!TEST){void recording.resume();repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
  if(!TEST){const auto=()=>{if(settings.updateCheck!==false)void updater.check();};setTimeout(auto,20000);setInterval(auto,12*3600000).unref?.();}
- if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,get agents(){return agents;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},remindLesson,exportDoc,offerLink:l=>offerLink(l)};
+ if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},remindLesson,exportDoc,offerLink:l=>offerLink(l)};
 }
 // 一键导入（yinzi-import/1）：网站打开 classroom-studio:// 链接或双击 .yzimport 文件。没开着就带着参数启动，开着就交给已有的实例
 let startLink=TEST?'':linkFromArgv(process.argv);
@@ -586,6 +632,6 @@ if(!TEST&&!app.requestSingleInstanceLock())app.quit();else{app.whenReady().then(
 app.on('open-url',(e,url)=>{e.preventDefault();void offerLink(url);});
 app.on('open-file',(e,file)=>{if(/\.yzimport$/i.test(file)){e.preventDefault();void offerLink(file);}});
 app.on('activate',()=>{const t=windows.get('teacher');if(t&&!t.isDestroyed())t.show();});
-app.on('will-quit',()=>{try{agents?.stopAll();reminders?.stop();reconciler?.stop();}catch{}});
+app.on('will-quit',()=>{try{agents?.stopAll();assistant?.stopAll();reminders?.stop();reconciler?.stop();}catch{}});
 app.on('window-all-closed',()=>{if(TEST||quitting)app.quit();});
 app.on('before-quit',e=>{if(!quitting&&!TEST){e.preventDefault();void closeApp();}});

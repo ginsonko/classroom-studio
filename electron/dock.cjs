@@ -33,17 +33,45 @@ function createDock({ makeOptions, load, getStudent, settings, save, onVisibilit
     }, 40);
   }
 
-  function bounds() {
+  // 浮层只能放在学生窗口落在屏幕里的那一块：学生窗口比屏幕大、或一部分拖出了屏幕时，超出的部分既看不见也点不到
+  function area() {
     const s = getStudent(); if (!s || s.isDestroyed()) return null;
-    const c = s.getContentBounds(), d = st();
-    const x = Math.round(c.x + Math.max(0, Math.min(d.x, c.width - rail.w)));
-    const y = Math.round(c.y + Math.max(0, Math.min(d.y, c.height - Math.min(rail.h, c.height))));
-    const W = rail.w + PAD * 2 + PANEL, H = Math.max(MIN_H, rail.h + PAD * 2);
+    const c = s.getContentBounds();
+    const disp = screen.getDisplayMatching(c), wa = s.isFullScreen() ? disp.bounds : disp.workArea;
+    const left = Math.max(c.x, wa.x), top = Math.max(c.y, wa.y);
+    const right = Math.min(c.x + c.width, wa.x + wa.width), bottom = Math.min(c.y + c.height, wa.y + wa.height);
+    if (right - left < 120 || bottom - top < 160) return { c, left: c.x, top: c.y, right: c.x + c.width, bottom: c.y + c.height };
+    return { c, left, top, right, bottom };
+  }
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
+  /** 工具条最多能有多高（CSS 像素）：页面据此自动缩小，保证缩放按钮永远点得到 */
+  function room() { const a = area(); return a ? Math.max(160, a.bottom - a.top - 12) : 0; }
+  function bounds() {
+    const a = area(); if (!a) return null;
+    const { c } = a, d = st();
+    const x = Math.round(clamp(c.x + d.x, a.left, a.right - rail.w));
+    const y = Math.round(clamp(c.y + d.y, a.top + 4, a.bottom - Math.min(rail.h, a.bottom - a.top) - 4));
+    const W = rail.w + PAD * 2 + PANEL, H = Math.max(rail.h + PAD * 2, Math.min(MIN_H, a.bottom - y + PAD * 2));
     return { x: d.side === 'right' ? x + rail.w + PAD - W : x - PAD, y: y - PAD, width: W, height: H };
+  }
+  let sentRoom = -1;
+  function tellRoom() {
+    if (!alive()) return;
+    const r = room();
+    if (r && Math.abs(r - sentRoom) > 2) { sentRoom = r; win.webContents.send('cs:event', { type: 'dock', room: r }); }
   }
   function place() {
     if (!alive() || drag) return;
     const b = bounds(); if (b) win.setBounds(b);
+    tellRoom();
+  }
+  /** 恢复默认：左上角、展开、100%（缩放存在浮层页面里，由页面收到 reset 后自己清掉） */
+  function reset() {
+    const d = st();
+    Object.assign(d, { visible: true, x: 18, y: 72, side: 'left', mini: false });
+    save();
+    if (alive()) win.webContents.send('cs:event', { type: 'dock', reset: true, side: 'left' });
+    return ensure().then(() => { place(); return { ...d }; });
   }
   function sync() {
     if (!alive()) return;
@@ -75,6 +103,7 @@ function createDock({ makeOptions, load, getStudent, settings, save, onVisibilit
       for (const ev of ['minimize', 'hide']) s.on(ev, sync);
     }
     await load(win);
+    sentRoom = -1;
     sync();
     clearInterval(beat);
     beat = setInterval(heartbeat, HEARTBEAT);
@@ -157,7 +186,7 @@ function createDock({ makeOptions, load, getStudent, settings, save, onVisibilit
     win.setContentProtection(guarded());
     win.webContents.send('cs:event', { type: 'dock', guard: guarded() });
   }
-  return { ensure, sync, place, message, setVisible, protect, get window() { return win; }, get state() { return { ...st(), guard: guarded(), shown: !!(alive() && win.isVisible()) }; } };
+  return { ensure, sync, place, reset, message, setVisible, protect, get window() { return win; }, get state() { return { ...st(), guard: guarded(), shown: !!(alive() && win.isVisible()), room: room() }; } };
 }
 
 module.exports = { createDock, DOCK_PAD: PAD };

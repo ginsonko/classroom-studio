@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { ai, type AiConfig } from './ai';
 import { host } from './host';
-import { askUpright, fillByAi, importFiles, jpegOf, pageOfImage, photoQuestions, TURN_HINT, turnPage } from './importQuestions';
+import { askUpright, fillByAi, importFiles, jpegOf, ocrTurn, pageOfImage, photoQuestions, TURN_HINT, turnPage } from './importQuestions';
 import {
   actionText, defaultTake, estimateTokens, findStudentIn, inputKindOf, matchStudent, parseImageReply, parseTextReply, subjectByName, textByRules,
   type Analysis, type SortInput, type StudentLite,
@@ -28,7 +28,8 @@ const fresh = (): Omit<SortState, 'open' | 'tab' | 'studentId'> => ({ items: [],
 export const useSort = create<SortState>(() => ({ open: false, tab: 'new', studentId: '', ...fresh() }));
 
 const MAX_ITEMS = 30;
-const students = (): StudentLite[] => useStore.getState().students.filter((s) => !s.archived);
+// 资料整理要把作答记到具体某个人身上，班组不在名单里
+const students = (): StudentLite[] => useStore.getState().students.filter((s) => !s.archived && !s.kind);
 const studentName = (id: string) => useStore.getState().students.find((s) => s.id === id)?.name ?? '当前学生';
 const subjectOf = (id: string): SubjectId => studentSubject(useStore.getState().students.find((s) => s.id === id));
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
@@ -36,7 +37,7 @@ const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 /** 打开 AI 整理（可以顺便带上拖进来的文件 / 粘贴的文字） */
 export function openSort(o: { paths?: string[]; texts?: string[]; tab?: 'new' | 'records' } = {}) {
   const s = useSort.getState(), st = useStore.getState();
-  const cur = st.students.some((x) => x.id === st.studentId && !x.archived) ? st.studentId : students()[0]?.id ?? '';
+  const cur = st.students.some((x) => x.id === st.studentId && !x.archived && !x.kind) ? st.studentId : st.students.find((x) => x.id === st.studentId)?.members?.find((id) => students().some((s) => s.id === id)) ?? students()[0]?.id ?? '';
   const restart = s.phase === 'done';
   useSort.setState({ open: true, tab: o.tab ?? 'new', ...(restart ? fresh() : {}), ...(!s.studentId || restart || (s.phase === 'collect' && !s.items.length) ? { studentId: cur } : {}) });
   if (!restart && s.phase !== 'collect' && (o.paths?.length || o.texts?.length)) { useSort.setState({ error: '上一批还没归档：先归档，或点「返回修改」再加新资料' }); return; }
@@ -133,7 +134,12 @@ async function analyzeOne(it: SortInput, cfg: AiConfig | null, fallback: string)
   }
   // 图片
   const title0 = it.name.replace(/\.[^.]+$/, '');
-  if (!on) return done({ itemId: it.id, kind: 'photo', via: 'rules', name: '', studentId: byName ?? fallback, title: title0 });
+  if (!on) {
+    // 没配 AI 也把拍横了、拍倒了的照片转正再存
+    const raw = await pageOfImage(it.path!).catch(() => null), turn = raw ? await ocrTurn(raw).catch(() => null) : null;
+    raw?.close?.();
+    return done({ itemId: it.id, kind: 'photo', via: 'rules', name: '', studentId: byName ?? fallback, title: title0, ...(turn ? { turn } : {}) });
+  }
   const page = await pageOfImage(it.path!);
   try {
     const ask = async (img: string) => {

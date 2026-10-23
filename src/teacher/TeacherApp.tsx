@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bot, CalendarDays, Circle, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
   PanelRightOpen, Palette, Square, Users, Settings2, PenTool, Sparkles, BellRing, BookOpenCheck, Shapes, Workflow, LifeBuoy,
-  SkipForward, Film, Clapperboard, Puzzle,
+  SkipForward, Film, Clapperboard, Puzzle, UsersRound,
 } from 'lucide-react';
 import { type FileEntry } from '../lib/library';
 import { STUDENTS } from '../lib/mock';
@@ -42,6 +42,8 @@ import { PluginButton, PluginSheets } from '../plugins/PluginUi';
 import { SortButton, SortDialog } from './SortDialog';
 import { openSort, useSort } from '../lib/sort';
 import { Guide } from '../guide/GuideCards';
+import { AssistantButton, AssistantHost } from '../assistant/AssistantUI';
+import { groups, individuals, isGroup, kindName, membersOf } from '../lib/groups';
 
 export function TeacherApp() {
   const page = useStore((s) => s.page);
@@ -136,6 +138,7 @@ export function TeacherApp() {
       <FormulaHost />
       <PluginSheets />
       <Guide />
+      <AssistantHost />
       <Tooltips />
     </div>
   );
@@ -189,7 +192,7 @@ function TopBar() {
       )}
       <div className="tb-student">
         <button className="tb-stu" onClick={() => setPick(!pick)} style={{ ['--h' as string]: s.hue }}>
-          <span className="ava sm">{s.name.slice(-1)}</span>
+          <span className="ava sm">{'kind' in s && isGroup(s) ? <UsersRound size={12} /> : s.name.slice(-1)}</span>
           <span>{s.name}</span>
           <i>{s.id==='free'?'未绑定学生':`第 ${(Number(s.lessons)||0)+1} 课`}</i>
         </button>
@@ -199,9 +202,9 @@ function TopBar() {
           <div className="pop stu-pop">
             <button className={s.id==='free'?'on':''} onClick={() => { set({ studentId: 'free' }); setPick(false); }} style={{ ['--h' as string]: 192 }}><span className="ava sm">课</span><b>自由课堂</b><i>不绑学生</i></button>
             {!students.length&&<button onClick={()=>{set({page:'students'});setPick(false);}}>添加学生档案</button>}
-            {students.map((x) => (
-              <button key={x.id} className={x.id === studentId ? 'on' : ''} onClick={() => { set({ studentId: x.id }); setPick(false); }} style={{ ['--h' as string]: x.hue }}>
-                <span className="ava sm">{x.name.slice(-1)}</span><b>{x.name}</b><i>{x.grade}</i>
+            {[...individuals(students), ...groups(students)].filter((x) => !x.archived || x.id === studentId).map((x) => (
+              <button key={x.id} className={(x.id === studentId ? 'on' : '') + (isGroup(x) ? ' grp' : '')} onClick={() => { set({ studentId: x.id }); setPick(false); }} style={{ ['--h' as string]: x.hue }}>
+                <span className="ava sm">{isGroup(x) ? <UsersRound size={12} /> : x.name.slice(-1)}</span><b>{x.name}</b><i>{isGroup(x) ? `${kindName(x.kind)} · ${membersOf(x, students).length} 人` : x.grade}</i>
               </button>
             ))}
           </div>
@@ -211,6 +214,7 @@ function TopBar() {
       <SubjectPicker className="tb-subj" />
       <div className="tb-now"><span className="tally-dot" /><span className="tb-now-t">学生画面</span><b title={pgmTitle}>{pgmTitle}</b></div>
       <span className="flex" />
+      <AssistantButton />
       <SortButton />
       <PenHolder />
       <button className="tb-cmd" onClick={focusSearch}><Command size={13}/><span>搜索课件</span><kbd>Ctrl K</kbd></button>

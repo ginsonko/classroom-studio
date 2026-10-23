@@ -18,7 +18,7 @@ export function ReplayPage() {
   const load = () => Promise.all([host.call<RecordRow[]>('recordings'), host.call<RecordsInfo>('recordingsInfo')]).then(([r, i]) => { setRows(r); setInfo(i); }).catch((e) => setErr(e.message));
   useEffect(() => { void load(); }, [rev, jobs.length]);
   const run = async (key: string, fn: () => Promise<unknown>) => { setErr(''); setBusy(key); try { await fn(); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); } };
-  const shown = useMemo(() => (rows ?? []).filter((r) => who === 'all' || (who === 'free' ? !students.some((s) => s.id === r.studentId) : r.studentId === who)), [rows, who, students]);
+  const shown = useMemo(() => (rows ?? []).filter((r) => who === 'all' || (who === 'free' ? !students.some((s) => s.id === r.studentId) : r.studentId === who || (!!r.studentId && !!students.find((g) => g.id === r.studentId)?.members?.includes(who)))), [rows, who, students]);
   const name = (id?: string | null) => students.find((s) => s.id === id)?.name;
   const del = (ids: string[]) => run('del', async () => {
     const list = (rows ?? []).filter((r) => ids.includes(r.id));

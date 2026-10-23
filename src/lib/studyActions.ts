@@ -13,14 +13,14 @@ export type DocOut = { out: string[]; errors: string[] };
 export const dayKey = (iso: string | number = Date.now()) => { const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 
 /** 某天的课后总结：当天作答 + 笔记 + 知识网络里的前置薄弱点 → AI（没配置就用规则模板） */
-export async function buildLessonNote(o: { studentId: string; name: string; date: string; topic: string; minutes?: number; notes?: string; homework?: string; id?: string }): Promise<{ note: LessonNote; warning?: string }> {
+export async function buildLessonNote(o: { studentId: string; name: string; date: string; topic: string; minutes?: number; notes?: string; homework?: string; id?: string; groupId?: string }): Promise<{ note: LessonNote; warning?: string }> {
   const data = useStudy.getState().data, qs = new Map(data.questions.map((q) => [q.id, q]));
   const todays = data.attempts.filter((a) => a.studentId === o.studentId && dayKey(a.at) === o.date && qs.has(a.questionId)).map((a) => ({ a, q: qs.get(a.questionId)! }));
   const bad = [...new Set(todays.filter((x) => x.a.result !== 'right').flatMap((x) => x.q.points))];
   const subject = subjectOfStudent(o.studentId);
   const roots = traceBack(bad, nodeInfo(o.studentId, data, learningOf(o.studentId, subject), subject)).filter((r) => !bad.includes(r.key)).slice(0, 3).map(rootText);
   const input = { student: o.name, topic: o.topic, minutes: o.minutes, attempts: todays, notes: o.notes ?? '', homework: o.homework ?? '', roots, subject };
-  const base = { id: o.id ?? sid(), studentId: o.studentId, subject, date: o.date, at: nowIso(), topic: o.topic, minutes: o.minutes, homework: o.homework || undefined };
+  const base = { id: o.id ?? sid(), studentId: o.studentId, subject, date: o.date, at: nowIso(), topic: o.topic, minutes: o.minutes, homework: o.homework || undefined, ...(o.groupId ? { groupId: o.groupId } : {}) };
   try {
     const cfg = await aiConfig();
     const r = online(cfg) ? await lessonByAi(input) : lessonByRules(input);
@@ -32,9 +32,11 @@ export async function buildLessonNote(o: { studentId: string; name: string; date
 
 /** 保存课后总结；第一次保存时学生课次 +1 */
 export function saveLesson(n: LessonNote) {
-  const isNew = !useStudy.getState().data.lessons.some((l) => l.id === n.id);
+  const before = useStudy.getState().data.lessons, isNew = !before.some((l) => l.id === n.id);
+  // 班组课：这天第一份成员总结出来时，班组自己也算上了一节
+  const groupNew = isNew && !!n.groupId && !before.some((l) => l.groupId === n.groupId && l.date === n.date);
   useStudy.getState().update((d) => ({ ...d, lessons: isNew ? [...d.lessons, n] : d.lessons.map((l) => (l.id === n.id ? n : l)) }));
-  if (isNew) { const st = useStore.getState(); st.set({ students: st.students.map((s) => (s.id === n.studentId ? { ...s, lessons: (Number(s.lessons) || 0) + 1, lastTopic: n.topic || s.lastTopic, lastAt: new Date().toISOString() } : s)) }); }
+  if (isNew) { const st = useStore.getState(); st.set({ students: st.students.map((s) => (s.id === n.studentId || (groupNew && s.id === n.groupId) ? { ...s, lessons: (Number(s.lessons) || 0) + 1, lastTopic: n.topic || s.lastTopic, lastAt: new Date().toISOString() } : s)) }); }
 }
 
 /** 课后总结导出（长图 png / Word / PDF），文件记到这条总结上 */

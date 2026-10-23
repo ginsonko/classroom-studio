@@ -14,6 +14,7 @@ import { ai } from './ai';
 import { ensureCatalog, findLocal, organizeByAi, organizeByRules, putEntries } from './catalog';
 import { cleanSettings, dueLessons, jobsToday, parsePrep, prepByRules, prepMarkdown, prepPrompt, upcoming, type AutoSettings, type PrepInput } from './autopilotLogic';
 import type { Student } from './types';
+import { isDefaultTopic } from './groups';
 
 export interface LogItem { id: string; at: string; kind: 'lesson' | 'homework' | 'prep' | 'catalog' | 'note' | 'error'; text: string; studentId?: string; files?: string[]; ai?: boolean }
 interface AutoState { settings: AutoSettings; log: LogItem[]; done: string[]; loaded: boolean; running: string; lastRun: number }
@@ -58,7 +59,7 @@ export function addNote(n: Omit<StudentNote, 'id' | 'at'>) {
 export function removeNote(id: string) { useStudy.getState().update((d) => ({ ...d, notes: (d.notes ?? []).filter((n) => n.id !== id) })); }
 
 // ── 课后 ─────────────────────────────────────────────
-async function afterLesson(l: { studentId: string; date: string; topic: string; minutes?: number; key: string }, s: AutoSettings, cfgOnline: boolean) {
+async function afterLesson(l: { studentId: string; date: string; topic: string; minutes?: number; key: string; groupId?: string }, s: AutoSettings, cfgOnline: boolean) {
   const st = studentOf(l.studentId);
   if (!st) { markDone(l.key); return; }
   const subject = studentSubject(st), data = useStudy.getState().data, files: string[] = [];
@@ -89,7 +90,7 @@ async function afterLesson(l: { studentId: string; date: string; topic: string; 
     }
   }
   if (s.lesson) {
-    const { note, warning } = await buildLessonNote({ studentId: st.id, name: st.name, date: l.date, topic: l.topic, minutes: l.minutes, homework });
+    const { note, warning } = await buildLessonNote({ studentId: st.id, name: st.name, date: l.date, topic: l.topic, minutes: l.minutes, homework, groupId: l.groupId });
     saveLesson(note);
     const out = await lessonDocument(note, st.name, ['png', 'pdf']);
     files.push(...out.out);
@@ -202,7 +203,7 @@ export async function tick(force = false): Promise<void> {
         const who = studentOf(u.studentId) as Student;
         useAuto.setState({ running: `${who.name} 备课…` });
         try {
-          const p = await makePrep({ studentId: u.studentId, topic: u.topic === '一对一课程' ? who.lastTopic : u.topic, date: u.date, start: u.start, minutes: Math.round(u.len * 60), slotId: u.slotId, auto: true, settings: s });
+          const p = await makePrep({ studentId: u.studentId, topic: isDefaultTopic(u.topic) ? who.lastTopic : u.topic, date: u.date, start: u.start, minutes: Math.round(u.len * 60), slotId: u.slotId, auto: true, settings: s });
           log({ kind: 'prep', text: `${who.name}：${u.date} 的课已备好（${p.via === 'ai' ? 'AI 建议' : '模板'}，本地课件 ${p.materials.length} 份，讲练题 ${p.questionIds.length} 道${p.courseware?.length ? '，AI 原创课件 1 份' : ''}）。`, studentId: u.studentId, files: [...p.files, ...(p.courseware ?? [])], ai: p.via === 'ai' });
         } catch (e) { log({ kind: 'error', text: `${who.name} 备课失败：${(e as Error).message}`, studentId: u.studentId }); }
         markDone(u.key);

@@ -3,7 +3,7 @@
 import { ai, type AiConfig } from './ai';
 import { host } from './host';
 import { pdfPageLines, pdfRaster } from '../doc/pdf';
-import { IMPORT_EXT, answerTail, flattenPaper, isPhoto, ocrLines, ocrScale, photoRegions, photoTurn, sectionType, splitQuestions, textLines, type OcrLine, type Piece, type Seg, type SrcLine } from './importLogic';
+import { IMPORT_EXT, TURNS, answerTail, flattenPaper, isPhoto, ocrLines, ocrScale, photoRegions, photoTurn, pickTurn, sectionType, splitQuestions, textLines, uprightScore, type OcrLine, type Piece, type Seg, type SrcLine } from './importLogic';
 import { answersMatch, findDuplicate, guessDifficulty, guessPoints, guessType, looseJSON, qtypesOf, type Question } from './studyLogic';
 import { addQuestion, patchQuestion, removeQuestions, useStudy } from './studyStore';
 import { aiConfig, autoReadOn, readInBackground, useReading } from './studyActions';
@@ -63,13 +63,35 @@ export function turnPage(p: Page, deg: 0 | 90 | 180 | 270): Page {
   g.translate(c.width / 2, c.height / 2); g.rotate(deg * Math.PI / 180); g.drawImage(p.src, -p.w / 2, -p.h / 2, p.w, p.h);
   return { src: c, w: c.width, h: c.height, nw: side ? p.nh : p.nw, nh: side ? p.nw : p.nh, close: () => { c.width = 0; c.height = 0; } };
 }
+/** 缩到最长边 side 以内的 PNG（本机 OCR 只收 PNG） */
+const pngScaled = (p: Page, side: number) => {
+  const k = Math.min(1, side / Math.max(p.w, p.h)), c = document.createElement('canvas');
+  c.width = Math.round(p.w * k); c.height = Math.round(p.h * k);
+  const g = c.getContext('2d')!; g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(p.src, 0, 0, c.width, c.height);
+  try { return c.toDataURL('image/png'); } finally { c.width = 0; c.height = 0; }
+};
 /**
- * 拍歪的照片：模型说字头朝哪边，转正以后再问一遍（框要按转正的图给）。
- * 转完它还说歪，就按它新说的再补转一次；还不正就当它看错了，用原图的结果。
+ * 不靠模型看照片正不正：本机 OCR 把照片四个方向各认一遍，认出常用字、常见英文单词最多（又明显多于别的方向）的那个方向是正的。
+ * 模型看横着的英文卷子经常说「正的」，这一步兜住；字太少、不是 Windows、OCR 出错时返回 null。
+ */
+export async function ocrTurn(p: Page): Promise<0 | 90 | 180 | 270 | null> {
+  const imgs = TURNS.map((d) => { const q = turnPage(p, d); try { return pngScaled(q, 1400); } finally { if (q !== p) q.close?.(); } });
+  const r = await host.call<{ lines: { t?: string }[] }[] | null>('study.ocr', imgs).catch(() => null);
+  if (!Array.isArray(r) || r.length !== 4) return null;
+  return pickTurn(r.map((x) => uprightScore((x?.lines ?? []).map((l) => l.t ?? ''))));
+}
+/**
+ * 拍歪的照片：先用本机 OCR 看方向，看得准就直接转正了再问模型；
+ * 看不准时问模型字头朝哪边，转正以后再问一遍（框要按转正的图给）。转完它还说歪，就按它新说的再补转一次；还不正就当它看错了，用原图的结果。
  */
 export async function askUpright<T>(p: Page, ask: (img: string) => Promise<unknown>, parse: (v: unknown, w: number, h: number) => T): Promise<{ v: T; page: Page; turn: 0 | 90 | 180 | 270 }> {
   // 模型若回像素坐标，是相对发过去的那张（缩到 1600 宽）
   const send = (q: Page) => { const k = Math.min(1, 1600 / q.w); return { img: jpegOf(q, 1600), w: Math.round(q.w * k), h: Math.round(q.h * k) }; };
+  const sure = await ocrTurn(p).catch(() => null);
+  if (sure !== null) {
+    const q = turnPage(p, sure), b = send(q);
+    return { v: parse(await ask(b.img), b.w, b.h), page: q, turn: sure };
+  }
   const a = send(p), first = await ask(a.img);
   let turn = photoTurn(first);
   for (let tries = 0; turn && tries < 2; tries++) {

@@ -66,7 +66,7 @@ export function SortDialog() {
 
 function NewSort() {
   const s = useSort();
-  const students = useStore((x) => x.students).filter((x) => !x.archived);
+  const students = useStore((x) => x.students).filter((x) => !x.archived && !x.kind);
   const [typing, setTyping] = useState(false), [text, setText] = useState('');
   if (s.phase === 'review' || s.phase === 'saving' || s.phase === 'analyzing' && s.analyses.length) return <Review />;
   if (s.phase === 'done' && s.record) return <Done record={s.record} />;
@@ -106,7 +106,7 @@ function NewSort() {
 
 function Review() {
   const s = useSort();
-  const students = useStore((x) => x.students).filter((x) => !x.archived);
+  const students = useStore((x) => x.students).filter((x) => !x.archived && !x.kind);
   const n = s.analyses.reduce((k, a) => k + Object.values(a.take).filter(Boolean).length, 0);
   return <div className="sort-body">
     <p className="sort-lead">{s.phase === 'analyzing' ? s.step : s.phase === 'saving' ? s.step : `整理单：${s.analyses.length} 样资料。去掉不想要的勾，学生和学科不对可以改，然后点「全部归档」。`}</p>

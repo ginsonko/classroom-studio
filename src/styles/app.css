@@ -3,6 +3,8 @@
 @import './teacher.css';
 @import './pages.css';
 @import './student.css';
+@import './assistant.css';
+@import './groups.css';
 
 /* ── 通用小部件 ─────────────────────────────────────────── */
 .flex { flex: 1; }

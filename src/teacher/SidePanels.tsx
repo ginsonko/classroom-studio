@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, CirclePlay, EyeOff, History, ListChecks, Loader2, Plus, X } from 'lucide-react';
+import { Check, CirclePlay, EyeOff, History, ListChecks, Loader2, Plus, UsersRound, X } from 'lucide-react';
 import { checkFlow, checkSummary, FLOW_KEY, pathEntry, preloadWeb, useCheck } from '../lib/warmup';
 import { SkillBar } from './Skills';
 import { boardMaterial, fileEntry, simMaterial } from '../lib/library';
@@ -10,35 +10,63 @@ import { readDroppedFiles, useLib } from '../lib/useLib';
 import { cancelMaterialLoad, openMaterial, reportMaterialError } from '../doc/actions';
 import { host } from '../lib/host';
 import { recordingMinutes, useRecordings } from '../doc/useRecordings';
-import { removeAttempt, useStudy } from '../lib/studyStore';
+import { recordAttempt, removeAttempt, useStudy } from '../lib/studyStore';
+import { isGroup, kindName, memberText, peopleOf } from '../lib/groups';
 import { captureFromScreen } from '../lib/studyActions';
 import { RESULT_NAME, type Result } from '../lib/studyLogic';
 import '../styles/study.css';
 
 /** 课堂作答：老师看学生做完一题，点一下记对错；题目自动截图进学情收件箱 */
 function ClassAnswers({ studentId }: { studentId: string }) {
-  const attempts = useStudy((s) => s.data.attempts);
+  const attempts = useStudy((s) => s.data.attempts), students = useStore((s) => s.students);
+  const people = useMemo(() => peopleOf(studentId, students), [studentId, students]);
+  const group = isGroup(students.find((x) => x.id === studentId));
+  const [sel, setSel] = useState<string[]>([]);
+  useEffect(() => setSel(people.map((p) => p.id)), [studentId, people.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false), [msg, setMsg] = useState<{ text: string; undo?: string } | null>(null);
-  const today = new Date().toDateString();
-  const mine = attempts.filter((a) => a.studentId === studentId && new Date(a.at).toDateString() === today);
+  // 班组课最近一题：每位成员记的是哪条作答，点名字可以单独改
+  const [last, setLast] = useState<{ qid: string; marks: Record<string, string> } | null>(null);
+  const today = new Date().toDateString(), ids = new Set(people.map((p) => p.id));
+  const mine = attempts.filter((a) => ids.has(a.studentId) && new Date(a.at).toDateString() === today);
   const mark = async (result?: Result) => {
     setBusy(true);
     try {
-      const { q, reused } = await captureFromScreen({ result, studentId });
-      const last = useStudy.getState().data.attempts.at(-1);
-      setMsg({ text: result ? `已记「${RESULT_NAME[result]}」${reused ? '（同一题，记为再次作答）' : '，题目已收进学情收件箱'}` : '已收进学情收件箱', undo: result && last?.questionId === q.id ? last.id : undefined });
+      if (!group) {
+        const { q, reused } = await captureFromScreen({ result, studentId });
+        const prev = useStudy.getState().data.attempts.at(-1);
+        setMsg({ text: result ? `已记「${RESULT_NAME[result]}」${reused ? '（同一题，记为再次作答）' : '，题目已收进学情收件箱'}` : '已收进学情收件箱', undo: result && prev?.questionId === q.id ? prev.id : undefined });
+        return;
+      }
+      const { q, reused } = await captureFromScreen({});
+      const marks: Record<string, string> = {};
+      if (result) for (const id of sel) marks[id] = recordAttempt(id, q.id, result).id;
+      setLast({ qid: q.id, marks });
+      setMsg({ text: result ? `已给 ${sel.length} 人记「${RESULT_NAME[result]}」${reused ? '（同一题）' : ''}，点下面的名字可以单独改` : '已收进学情收件箱，点名字给每个人记对错' });
     } catch (e) { setMsg({ text: (e as Error).message }); } finally { setBusy(false); }
   };
+  const ORDER: (Result | '')[] = ['right', 'half', 'wrong', ''];
+  const resultOf = (id: string) => (last?.marks[id] ? attempts.find((a) => a.id === last.marks[id])?.result ?? '' : '');
+  const cycle = (id: string) => {
+    if (!last) return;
+    const next = ORDER[(ORDER.indexOf(resultOf(id)) + 1) % ORDER.length], marks = { ...last.marks };
+    if (marks[id]) removeAttempt(marks[id]);
+    delete marks[id];
+    if (next) marks[id] = recordAttempt(id, last.qid, next).id;
+    setLast({ ...last, marks });
+  };
   return <div className="scard-ans">
-    <div className="scard-ans-h"><span>课堂作答</span>{mine.length > 0 && <i>今天 {mine.length} 题 · 对 {mine.filter((a) => a.result === 'right').length}</i>}</div>
+    <div className="scard-ans-h"><span>课堂作答</span>{mine.length > 0 && <i>今天 {group ? new Set(mine.map((a) => a.questionId)).size : mine.length} 题 · 对 {mine.filter((a) => a.result === 'right').length}{group ? ' 人次' : ''}</i>}</div>
+    {group && <div className="scard-who"><span>记给</span>{people.map((p) => <button key={p.id} className={sel.includes(p.id) ? 'on' : ''} style={{ ['--h' as string]: p.hue }} onClick={() => setSel(sel.includes(p.id) ? sel.filter((x) => x !== p.id) : [...sel, p.id])}>{p.name}</button>)}
+      {people.length > 2 && <button className="all" onClick={() => setSel(sel.length === people.length ? [] : people.map((p) => p.id))}>{sel.length === people.length ? '全不选' : '全选'}</button>}
+      {!people.length && <i>班组还没有成员，到「学生」页编辑</i>}</div>}
     <div className="scard-ans-b">
-      {(['right', 'half', 'wrong'] as Result[]).map((r) => <button key={r} className={'r-' + r} disabled={busy || !host.electron} onClick={() => void mark(r)} data-tip={`截取学生画面上的题，记一次「${RESULT_NAME[r]}」`}>{RESULT_NAME[r]}</button>)}
+      {(['right', 'half', 'wrong'] as Result[]).map((r) => <button key={r} className={'r-' + r} disabled={busy || !host.electron || (group && !sel.length)} onClick={() => void mark(r)} data-tip={group ? `截取学生画面上的题，给选中的同学记「${RESULT_NAME[r]}」` : `截取学生画面上的题，记一次「${RESULT_NAME[r]}」`}>{RESULT_NAME[r]}</button>)}
       <button disabled={busy || !host.electron} onClick={() => void mark()} data-tip="只收题，不记对错">收题</button>
     </div>
     {msg && <div className="scard-ans-m">{msg.text}{msg.undo && <button onClick={() => { removeAttempt(msg.undo!); setMsg({ text: '已撤销这次记录' }); }}>撤销</button>}</div>}
+    {group && last && <div className="scard-each">{people.map((p) => { const r = resultOf(p.id); return <button key={p.id} className={r ? 'r-' + r : ''} onClick={() => cycle(p.id)} data-tip="点一下换：对 → 半对 → 错 → 没记">{p.name}<b>{r ? RESULT_NAME[r] : '—'}</b></button>; })}</div>}
   </div>;
 }
-
 const Q_ID = '高一物理/第1章 匀变速直线运动/追及相遇问题（示例）无答案.pdf';
 
 /** 本课流程（备课单）：按顺序 预监 → 切给学生 */
@@ -142,8 +170,8 @@ export function StudentCard({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="scard" style={{ ['--h' as string]: s.hue }}>
       <div className="scard-top">
-        <span className="ava">{s.name.slice(-1)}</span>
-        <div className="scard-n"><b>{s.name}</b><span>{s.grade} · {s.textbook}</span></div>
+        <span className="ava">{isGroup(s) ? <UsersRound size={15} /> : s.name.slice(-1)}</span>
+        <div className="scard-n"><b>{s.name}</b><span>{isGroup(s) ? `${kindName(s.kind)} · ${memberText(s, students)}` : `${s.grade} · ${s.textbook}`}</span></div>
         <button className="scard-more" onClick={onOpen}>档案</button>
       </div>
       <div className="scard-last">

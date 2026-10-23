@@ -30,6 +30,7 @@ import { clampDemo } from '../demos/kit';
 import { fmt } from '../physics/sim/text';
 import { DockPlugins } from '../plugins/DockPlugins';
 import { GuideSpot } from '../guide/Spot';
+import { fitZoom } from '../ui/fit';
 import '../styles/dock.css';
 
 declare global { interface Window { csDock?: { rail(w: number, h: number): void; shape(rects: { x: number; y: number; width: number; height: number }[]): void; drag(phase: 'start' | 'move' | 'end', x: number, y: number): void; focus(on: boolean): void; log?(text: string): void } } }
@@ -114,24 +115,43 @@ function useWindowShape(rail: React.RefObject<HTMLElement | null>, mini: boolean
 }
 
 const ZOOMS = [1, 1.2, 1.4];
+const ZOOM_KEY = 'cs.dock.zoom';
 
 export function DockApp() {
   const st = useStore();
   const rail = useRef<HTMLDivElement>(null);
   const [mini, setMini] = useState(false);
   const [side, setSide] = useState<'left' | 'right'>('left');
-  const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('cs.dock.zoom')); return ZOOMS.includes(z) ? z : 1; });
-  const nextZoom = () => { const z = ZOOMS[(ZOOMS.indexOf(zoom) + 1) % ZOOMS.length]; setZoom(z); localStorage.setItem('cs.dock.zoom', String(z)); };
+  const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem(ZOOM_KEY)); return ZOOMS.includes(z) ? z : 1; });
+  const [room, setRoom] = useState(0);
+  const [applied, setApplied] = useState(zoom);
+  const pickZoom = (z: number) => { setZoom(z); localStorage.setItem(ZOOM_KEY, String(z)); };
   useEffect(() => { document.title = '教师浮层'; }, []);
   const [guard, setGuard] = useState(false);
   useEffect(() => {
-    if (host.electron) host.call<{ side?: 'left' | 'right'; guard?: boolean }>('dockState').then((s) => { if (s?.side) setSide(s.side); setGuard(!!s?.guard); }).catch(() => {});
+    if (host.electron) host.call<{ side?: 'left' | 'right'; guard?: boolean; room?: number; mini?: boolean }>('dockState').then((s) => { if (s?.side) setSide(s.side); setGuard(!!s?.guard); if (s?.room) setRoom(s.room); }).catch(() => {});
     return host.onEvent((e) => {
       if (e?.type !== 'dock') return;
       if (e.side === 'left' || e.side === 'right') setSide(e.side);
       if (typeof e.guard === 'boolean') setGuard(e.guard);
+      if (typeof e.room === 'number') setRoom(e.room);
+      if (e.reset) { localStorage.removeItem(ZOOM_KEY); setZoom(1); setMini(false); }
     });
   }, []);
+  // 缩放按钮在工具条下半截：工具条比屏幕高时按钮跑到屏幕外，就再也缩不回来了。所以永远缩到放得下
+  useLayoutEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    const check = () => {
+      const h = el.getBoundingClientRect().height;
+      const next = fitZoom(zoom, applied, h, room);
+      if (Math.abs(next - applied) >= 0.01) setApplied(next);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [zoom, applied, room, mini]);
   useWindowShape(rail, mini);
   useInputLog();
 
@@ -151,7 +171,7 @@ export function DockApp() {
     );
 
   return (
-    <div ref={rail} className={'tdock active side-' + side} style={zoom !== 1 ? { zoom } : undefined}>
+    <div ref={rail} className={'tdock active side-' + side} style={applied !== 1 ? { zoom: applied } : undefined}>
       <div
         className="tdock-grip"
         onPointerDown={grab}
@@ -172,7 +192,7 @@ export function DockApp() {
       )}
       <ToolPalette vertical tool={st.drawAuthor === 'student' ? ('none' as Tool) : st.tool} color={st.color} size={st.size}
         onTool={(t) => st.set({ tool: t, drawAuthor: 'teacher' })} onColor={(c) => st.set({ color: c, drawAuthor: 'teacher' })} onSize={(s) => st.set({ size: s, drawAuthor: 'teacher' })} />
-      <InkRows zoom={zoom} onZoom={nextZoom} />
+      <InkRows zoom={zoom} applied={applied} onZoom={pickZoom} />
       {st.pgmMat.kind === 'sim' && <SimSection mat={st.pgmMat} />}
       <FormulaHost />
       {/* 浮层可能整体缩放（zoom），高亮框放到 body 上才对得准 */}
@@ -181,7 +201,9 @@ export function DockApp() {
   );
 }
 
-function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
+function InkRows({ zoom, applied, onZoom }: { zoom: number; applied: number; onZoom: (z: number) => void }) {
+  const zoomBtn = useRef<HTMLButtonElement>(null);
+  const [zoomMenu, setZoomMenu] = useState(false);
   const pgm = useStore((s) => s.pgm);
   const mat = useStore((s) => s.pgmMat);
   const studentTools = useStore((s) => s.studentTools);
@@ -254,11 +276,50 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
       <div className="tdock-row">
         <SubjectPicker className="tdock-subj" vertical compact />
         <DockPlugins />
-        <button className="tp-b tdock-zoom" onClick={onZoom} data-tip="浮层大小：点一下放大，再点循环">
-          <span className="num">{Math.round(zoom * 100)}</span>
+        <button ref={zoomBtn} className={'tp-b tdock-zoom' + (zoomMenu ? ' on' : '') + (applied < zoom ? ' fit' : '')} onClick={() => setZoomMenu(!zoomMenu)}
+          data-tip={applied < zoom ? `浮层大小：选的是 ${Math.round(zoom * 100)}%，屏幕放不下，已自动缩到 ${Math.round(applied * 100)}%` : '浮层大小 · 恢复默认位置'}>
+          <span className="num">{Math.round(applied * 100)}</span>
         </button>
       </div>
+      {zoomMenu && <ZoomMenu anchor={zoomBtn.current} zoom={zoom} applied={applied} onPick={(z) => { onZoom(z); setZoomMenu(false); }} onClose={() => setZoomMenu(false)} />}
     </>
+  );
+}
+
+/** 浮层大小 + 恢复默认位置。放在 body 上：浮层整体缩放时菜单本身不跟着变大 */
+function ZoomMenu({ anchor, zoom, applied, onPick, onClose }: { anchor: HTMLElement | null; zoom: number; applied: number; onPick: (z: number) => void; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const W = 220;
+  useLayoutEffect(() => {
+    const railEl = anchor?.closest('.tdock') as HTMLElement | null;
+    if (!anchor || !railEl) return;
+    const r = railEl.getBoundingClientRect(), a = anchor.getBoundingClientRect(), h = box.current?.offsetHeight ?? 200;
+    const left = r.right + 10 + W <= innerWidth ? r.right + 10 : Math.max(8, r.left - 10 - W);
+    setPos({ left, top: Math.max(8, Math.min(a.top - h / 2, innerHeight - h - 8)) });
+  }, [anchor]);
+  useEffect(() => {
+    const away = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !anchor?.contains(t)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    addEventListener('pointerdown', away, true); addEventListener('keydown', key);
+    return () => { removeEventListener('pointerdown', away, true); removeEventListener('keydown', key); };
+  }, [anchor, onClose]);
+  const reset = () => {
+    setBusy(true);
+    // 缩放和收起由主进程发回的 reset 事件清掉（removeItem），这里不要再写回 1
+    void host.call('dockReset').catch(() => {}).finally(() => { setBusy(false); onClose(); });
+  };
+  return createPortal(
+    <div ref={box} data-ink-pop className="tdock-pages tdock-save tdock-zoommenu" style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 8 }}>
+      <header><b>浮层大小</b>{applied < zoom && <span className="num">已自动缩到 {Math.round(applied * 100)}%</span>}</header>
+      <div className="tdock-zooms">
+        {ZOOMS.map((z) => <button key={z} className={z === zoom ? 'on' : ''} onClick={() => onPick(z)}><b className="num">{Math.round(z * 100)}%</b><span>{z === 1 ? '标准' : z < 1.3 ? '大一点' : '最大'}</span></button>)}
+      </div>
+      {applied < zoom && <p className="tdock-zoomnote">屏幕高度不够，浮层自动缩小，保证每个按钮都点得到。学生窗口拉高一些就会恢复。</p>}
+      <button disabled={busy} onClick={reset}><b>恢复默认位置和大小</b><span>回到学生画面左上角、100%、展开</span></button>
+    </div>,
+    document.body,
   );
 }
 

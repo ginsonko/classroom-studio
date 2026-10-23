@@ -10,7 +10,8 @@ const { normal } = require('./files.cjs');
 const LISTS = ['questions', 'attempts', 'lessons', 'homework', 'notes', 'preps', 'sorts'];
 const KINDS = { homework: '作业', paper: '试卷', wrongbook: '错题本', lesson: '课后总结', courseware: 'AI课件', prep: '备课' };
 // 资料整理索引、AI 自动处理的设置和记录：各存一个 JSON，和学情库放在一起
-const STORES = { catalog: 'catalog.json', autopilot: 'autopilot.json' };
+// assistant：AI 助教的人设、记忆和设置；triggers：助教的提醒和定时任务
+const STORES = { catalog: 'catalog.json', autopilot: 'autopilot.json', assistant: 'assistant.json', triggers: 'triggers.json' };
 const FORMATS = ['pdf', 'docx', 'pptx', 'png'];
 
 function normalize(d) {

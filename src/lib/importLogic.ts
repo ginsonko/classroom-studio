@@ -369,3 +369,28 @@ export function photoTurn(v: unknown): 0 | 90 | 180 | 270 {
   const up = String((v as { up?: unknown } | null)?.up ?? '').trim().toLowerCase();
   return ({ left: 90, down: 180, right: 270 } as Record<string, 90 | 180 | 270>)[up] ?? 0;
 }
+
+// ── 不靠模型判断照片正不正：本机 OCR 把四个方向各认一遍 ──
+// 横着、倒着的字 OCR 认出来是乱码，乱码里几乎没有常用字和常见英文单词，所以只数这两样，不数总字数。
+export const TURNS = [0, 90, 180, 270] as const;
+const ZH_COMMON = new Set('的一是不了在人有我他这个们中来上大为和国地到以说时要就出会可也你对生能而子那得于着下自之年过发后作里用道行所然家种事成方多经么去法学如都同现当没动面起看定天分还进好小部其些主样理心本前开但因只从想实日意无力它与长把机十第公此已工使情明性知全三又关点正业外将两高间由问很最重并物手应向头文体相见被利什二等产或新己制身果加题图示求列解答选填空计算如所下说正确的是错误物体速度质量电流电压函数方程已知若则求证'.split(''));
+// 单个字母（a、i）乱码里也常见，不算
+const EN_COMMON = new Set(('the of and to in is that for it as with was on be by are this at from or an which not have but they his were has had what all can their there been one will if more when who so no about up out do would other into some than then them these only its time could any may like over such our also how most after first where through between should each those two well because very same years both does under while being before many people make made us we you he she her him your my me read passage answer question questions choose best following according true false word words sentence paragraph writer author means underlined blank complete correct form given text').split(' '));
+
+/** 一个方向认出来的文字像不像正着的：常用汉字算 1 分，常见英文单词算 2 分 */
+export function uprightScore(lines: string[]): number {
+  let s = 0;
+  for (const line of lines) {
+    for (const ch of line) if (ZH_COMMON.has(ch)) s++;
+    for (const w of line.toLowerCase().match(/[a-z]+/g) ?? []) if (EN_COMMON.has(w)) s += 2;
+  }
+  return s;
+}
+
+/** 四个方向（照片顺时针转 0/90/180/270 度后）的得分 → 要转的角度；字太少、或者没有哪个方向明显胜出时返回 null，交给模型判断 */
+export function pickTurn(scores: number[]): 0 | 90 | 180 | 270 | null {
+  if (scores.length !== 4) return null;
+  const order = scores.map((s, i) => [s, i] as const).sort((a, b) => b[0] - a[0]);
+  const [best, i] = order[0], second = order[1][0];
+  return best >= 10 && best >= second * 2.5 + 2 ? TURNS[i] : null;
+}

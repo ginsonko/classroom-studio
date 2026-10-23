@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>助教形象「小羽」</title>
+<style>
+  html, body { margin: 0; background: #0c0e12; font-family: 'Inter Variable', 'Microsoft YaHei', sans-serif; }
+  .sheet { width: 1400px; padding: 36px 44px 40px; box-sizing: border-box; }
+  .hero { display: flex; align-items: center; gap: 40px; padding: 24px 36px; border-radius: 28px; background: radial-gradient(120% 140% at 20% 20%, #1d3a47 0%, #13161c 60%); color: #eef1f6; }
+  .hero h1 { margin: 0 0 6px; font-size: 44px; letter-spacing: 2px; }
+  .hero h1 small { font-size: 18px; color: #3dd9eb; margin-left: 12px; letter-spacing: 0; }
+  .hero p { margin: 6px 0; color: #b7bfcc; font-size: 17px; line-height: 1.7; }
+  .hero em { font-style: normal; color: #ffb547; }
+  .row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; margin-top: 22px; }
+  .cell { border-radius: 20px; padding: 14px 6px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .dark .cell { background: #1a1e26; color: #eef1f6; }
+  .light .cell { background: #fffefb; color: #1d1b18; box-shadow: 0 1px 0 #dfd9cc; }
+  .light { background: #e9e6df; border-radius: 24px; padding: 14px; margin-top: 22px; }
+  .light .row { margin-top: 0; }
+  .cell b { font-size: 15px; } .cell i { font-style: normal; font-size: 12px; opacity: .65; }
+  .chat { display: flex; gap: 14px; align-items: flex-end; margin-top: 22px; }
+  .bub { background: #1a1e26; color: #eef1f6; border: 1px solid #2d3340; border-radius: 18px 18px 18px 4px; padding: 14px 18px; font-size: 15px; line-height: 1.7; max-width: 520px; }
+  .bub b { color: #3dd9eb; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./mascot.tsx"></script>
+</body>
+</html>

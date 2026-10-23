@@ -136,7 +136,11 @@ export interface Student {
   lessons: number;
   lastTopic: string;
   lastAt: string;          // ISO
+  /** 有值 = 班组（一对二 / 小组课 / 班课）：课表、上课绑定、录像都按它，作答和课后总结落到 members 每个人 */
+  kind?: GroupKind;
+  members?: string[];
 }
+export type GroupKind = 'pair' | 'small' | 'class';
 
 export interface LessonSlot {
   date?: string;

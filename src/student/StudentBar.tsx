@@ -6,6 +6,8 @@ import { ChevronLeft, ChevronRight, Lock, PenLine, Trash2, Undo2 } from 'lucide-
 import { inkKey, useStore } from '../lib/store';
 import type { Tool } from '../lib/types';
 import { ToolPalette } from '../ui/ToolPalette';
+import { barRoom } from '../ui/fit';
+import { host } from '../lib/host';
 
 const POS_KEY = 'cs.sbar.pos', OPEN_KEY = 'cs.sbar.open';
 const FAB = 44;
@@ -33,6 +35,11 @@ export function StudentBar({ locked, writing, tool, size, onTool, onSize }: Prop
     return () => removeEventListener('resize', r);
   }, []);
   useEffect(() => { localStorage.setItem(OPEN_KEY, open ? '1' : '0'); }, [open]);
+  useEffect(() => host.onEvent((e) => {
+    if (e?.type !== 'layout' || !e.reset) return;
+    localStorage.removeItem(POS_KEY); localStorage.removeItem(OPEN_KEY);
+    setPos(readPos()); setOpen(false);
+  }), []);
 
   const claim = () => { if (!locked && useStore.getState().drawAuthor !== 'student') useStore.getState().setShared({ drawAuthor: 'student' }); };
   const pickTool = (t: Tool) => { onTool(t); claim(); };
@@ -81,7 +88,7 @@ export function StudentBar({ locked, writing, tool, size, onTool, onSize }: Prop
         <i className="sbar-caret">{(open !== toLeft) ? <ChevronLeft size={11} /> : <ChevronRight size={11} />}</i>
       </button>
       {open && (
-        <div className="sbar-panel">
+        <div className="sbar-panel" style={{ maxWidth: barRoom(vw.w, cx, half, toLeft) }}>
           <span className="sbar-who"><i />{status}</span>
           <ToolPalette student tool={writing ? tool : ('none' as Tool)} color="student" size={size} onTool={pickTool} onSize={pickSize} disabled={locked} />
           <span className="tp-sep" />

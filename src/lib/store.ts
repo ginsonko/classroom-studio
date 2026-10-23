@@ -6,6 +6,7 @@ import { host } from './host';
 import type { Author, Material, Stroke, Tool, View, Student, LessonSlot, ChapterState, AnswerMark, DeskWin } from './types';
 import { BASE, DEFAULT_LIMIT, cascade, deskIds, matOfKey, syncDesk, tileDesk, tileIds, topZ, trimDesk } from './desk';
 import { studentSubject, type SubjectId } from './subjects';
+import { indexGroups } from './studyLogic';
 import type { SimSync } from '../physics/model';
 import { SCREEN, grownFor, isLong, longMaterial, scrollView } from './longBoard';
 import { enterPage, settleView, stepBuild } from './slideSteps';
@@ -184,6 +185,8 @@ export function flushStore(){
  try{localStorage.setItem('cs.v2.teacher',JSON.stringify(value));}catch{if(!s.saveError)useStore.setState({saveError:'浏览器存储已满，请使用桌面版保存课堂'});}return Promise.resolve();
 }
 useStore.subscribe(()=>{if(ROLE!=='teacher')return;clearTimeout(saveTimer);saveTimer=window.setTimeout(flushStore,600);});
+indexGroups(useStore.getState().students);
+useStore.subscribe((s,prev)=>{if(s.students!==prev.students)indexGroups(s.students);});
 // 自由课堂里切换的学科（教师端或浮层都能切）记下来，下次不绑学生时沿用
 if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if(s.subject!==prev.subject&&s.subject!==s.freeSubject&&!s.students.some((x)=>x.id===s.studentId))useStore.setState({freeSubject:s.subject});});
 // 长黑板滚到离底不到一屏时加长；只由教师窗口改，学生窗口滚动也会经过这里
