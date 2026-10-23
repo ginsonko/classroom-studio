@@ -122,6 +122,91 @@ const lineP = (x0, y0, x1, y1) => { const p = []; for (let i = 0; i <= 12; i++) 
   // 8. 外观皮肤
   await step('skins', async () => { await T(`const b=[...document.querySelectorAll('button')].find(b=>(b.innerText||'').trim()==='帮助'||b.getAttribute('aria-label')==='帮助');if(b)b.click();Q.useStore.getState().set({skinsOpen:true});return true`); await shot(teacher, '19-skins.png', 1000); await T(`Q.useStore.getState().set({skinsOpen:false});return true`); });
 
+  // 9. 1.3.0：板书（绘图库图形、文字、照片）、浮层工具条、保存菜单、定制工具栏
+  const dockShot = async (name, wait = 600) => { const d = api.windows.get('dock'); await sleep(wait); d.webContents.invalidate(); await sleep(250); fs.writeFileSync(path.join(shots, name), (await d.webContents.capturePage()).toPNG()); done.push(name); console.log('SHOT ' + name); };
+  let dock = null;
+  await step('board-130', async () => {
+    await T(`s.set({page:'console',studentId:'stu-a',subject:'physics'});const b={id:'board-show',kind:'board',title:'课堂黑板',pages:[{w:1600,h:900}],total:1};s.showNow(b);return true`);
+    const k = 'board-show#0';
+    await T(`const k=${JSON.stringify(k)};s.clearInk(k);s.setShared({boardSkin:'chalk'});
+      const put=(id,kind,x,y,w,p)=>{const o=Q.objects.createObject(kind,x,y);o.props={...o.props,...p};const z=w/o.w;o.w*=z;o.h*=z;s.addStroke(k,Q.withObject({id,tool:'obj',color:'ink',size:3,pts:[o.x,o.y,.5],author:'teacher',layer:'public'},o));};
+      put('s1','m-frustum-p',.2,.2,.26,{});put('s2','m-axes3',.2,.43,.24,{point:true,nums:true,px:2,py:3,pz:2});
+      s.addStroke(k,{id:'t1',tool:'text',color:'#ffffff',size:5,pts:[.42,.07,.5],text:'例 1  正四棱台的体积',author:'teacher',layer:'public'});
+      s.addStroke(k,{id:'t2',tool:'text',color:'#ffd166',size:5,pts:[.42,.15,.5],text:'V = h(S + √(SS′) + S′) / 3',author:'teacher',layer:'public'});
+      s.addStroke(k,{id:'l1',tool:'dashed',color:'#9ad1ff',size:3,pts:[.42,.24,.5,.9,.24,.5],author:'teacher',layer:'public'});
+      return true`);
+    await ink(k, '#ff7a7a', 3.5, circle(0.6, 0.155, 0.13, 0.03));
+    await ink(k, '#ffffff', 3, lineP(0.42, 0.33, 0.62, 0.33));
+    await T(`s.addStroke(${JSON.stringify(k)},{id:'t3',tool:'text',color:'#ffffff',size:5,pts:[.42,.38,.5],text:'代入 h = 3，S = 16，S′ = 4',author:'teacher',layer:'public'});s.addStroke(${JSON.stringify(k)},{id:'t4',tool:'text',color:'#ffffff',size:5,pts:[.42,.46,.5],text:'V = 3 × (16 + 8 + 4) / 3 = 28',author:'teacher',layer:'public'});s.setShared({tool:'pen',selectedInk:null});return true`);
+    await api.dock.ensure(); dock = api.windows.get('dock');
+    await until(() => call(dock, `!!document.querySelector('.tdock')`));
+    await until(() => S(`return (Q.useStore.getState().ink['board-show#0']||[]).length>=8`), 6000);
+    await shot(student, '20-board-130.png', 1500);
+    await dockShot('21-dock.png');
+    const b = { student: student.getBounds(), dock: dock.getBounds() };
+    fs.writeFileSync(path.join(shots, 'layout.json'), JSON.stringify(b));
+  });
+  await step('dock-save', async () => {
+    await call(dock, `[...document.querySelectorAll('.tdock .tp-b')].find(b=>(b.dataset.tip||'').startsWith('保存板书')).click();true`);
+    await until(() => call(dock, `(()=>{const m=document.querySelector('.tdock-save');return m&&m.getBoundingClientRect().left>=0})()`), 4000);
+    await dockShot('22-dock-save.png', 400);
+    await call(dock, `document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));true`);
+  });
+  await step('toolbar-editor', async () => {
+    await sleep(300);
+    await call(dock, `document.querySelector('.tdock .tp').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:20,clientY:120}));true`);
+    await until(() => call(dock, `!!document.querySelector('.tb-edit')`), 3000);
+    await dockShot('23-toolbar-editor.png', 400);
+    await call(dock, `document.querySelector('.tb-edit header button')?.click();true`);
+  });
+  // 10. AI 整理：批改过的卷子照片 + 家长消息（本地假模型，只为截图）
+  await step('sort', async () => {
+    const http = require('node:http');
+    const reply = (all) => all.includes('老师把一张图片交给你整理') ? JSON.stringify({ kind: 'graded', student: '林小雨', subject: '物理', title: '10 月月考 第 1 页', questions: [{ n: 1, boxes: [[40, 160, 960, 400]], mark: 'wrong' }, { n: 2, boxes: [[40, 420, 960, 660]], mark: 'right' }, { n: 3, boxes: [[40, 680, 960, 920]], mark: 'unsure' }], parent: { summary: '', reschedule: '', requirement: '' } })
+      : all.includes('老师粘贴给你一段文字') ? JSON.stringify({ kind: 'chat', student: '小雨', subject: '', title: '小雨妈妈的消息', parent: { summary: '想把下周三的课改到周四晚上 7 点，希望多练计算题', reschedule: '下周三的课改到周四晚上 7 点', requirement: '多练练计算题' }, questions: [] })
+        : '好的。';
+    const server = http.createServer((req, res) => { let body = ''; req.on('data', (c) => { body += c; }); req.on('end', () => { const j = JSON.parse(body || '{}'); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ model: j.model, choices: [{ message: { role: 'assistant', content: reply(JSON.stringify(j.messages)) } }], usage: { prompt_tokens: 600, completion_tokens: 120 } })); }); });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    await T(`await window.csHost.call('ai.setConfig',{baseUrl:'http://127.0.0.1:${server.address().port}/v1',model:'deepseek-v3',visionModel:'qwen-vl-max',key:'sk-show-0000'});return true`);
+    const photo = await T(`const c=document.createElement('canvas');c.width=1500;c.height=2000;const g=c.getContext('2d');const gr=g.createLinearGradient(0,0,1500,2000);gr.addColorStop(0,'#efebe2');gr.addColorStop(1,'#cfc9bd');g.fillStyle=gr;g.fillRect(0,0,1500,2000);
+      g.fillStyle='#1b1b1b';g.font='bold 54px "Microsoft YaHei"';g.fillText('高一物理 10 月月考    姓名：林小雨',90,170);g.font='44px "Microsoft YaHei"';
+      ['1. 物体从静止开始下落，1 s 内下落多高？','2. 汽车以 10 m/s 匀速行驶 5 s，位移多大？','3. 质量 2 kg 的物体受 4 N 合力，加速度多大？'].forEach((t,i)=>{const y=420+i*520;g.fillStyle='#1b1b1b';g.fillText(t,90,y);g.fillText('答：'+['10 m','50 m','2 m/s²'][i],140,y+150);
+        g.strokeStyle='#d0302a';g.lineWidth=9;g.beginPath();const x=1300,yy=y+100;if(i===0){g.moveTo(x-50,yy-50);g.lineTo(x+50,yy+50);g.moveTo(x+50,yy-50);g.lineTo(x-50,yy+50);}else if(i===1){g.moveTo(x-60,yy);g.lineTo(x-15,yy+45);g.lineTo(x+65,yy-55);}else{g.moveTo(x-50,yy);g.quadraticCurveTo(x,yy-40,x+50,yy+10);}g.stroke();});
+      return c.toDataURL('image/jpeg',0.9)`);
+    const file = path.join(out, '林小雨 月考.jpg'); fs.writeFileSync(file, Buffer.from(photo.split(',')[1], 'base64'));
+    // 走「选择文件」：文件要经过选择对话框授权，AI 才读得到
+    require('electron').dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    await T(`Q.sort.openSort({tab:'new'});return true`);
+    await until(() => T(`return !!document.querySelector('.sort[role=dialog]')`), 3000);
+    await T(`[...document.querySelectorAll('.sort-add button,.sort button')].find(b=>b.innerText.includes('选择文件')).click();return true`);
+    await until(() => T(`return Q.sort.useSort.getState().items.length===1`), 5000);
+    await T(`Q.sort.addText('小雨妈妈：老师好，下周三的课能不能改到周四晚上 7 点？孩子计算老出错，希望多练练计算题。');return true`);
+    await until(() => T(`return document.querySelector('.sort-f p')?.innerText.includes('AI 会先看一遍')`), 5000);
+    await shot(teacher, '24-sort-collect.png', 500);
+    await T(`[...document.querySelectorAll('.sort-f .btn-cue')].find(b=>b.innerText.includes('开始整理')).click();return true`);
+    await until(() => T(`return Q.sort.useSort.getState().phase==='review'`), 20000);
+    await shot(teacher, '25-sort-review.png', 800);
+    await T(`Q.sort.useSort.setState({open:false});return true`);
+    server.close();
+  });
+  // 11. 上课彩排：邀请卡、引导卡（圈出要点的按钮）、浮层上的圈
+  await step('rehearsal', async () => {
+    await T(`localStorage.removeItem('cs.guide');localStorage.removeItem('cs.guide.snap');Q.guide.useGuide.setState({status:{}});s.set({page:'console',aiOpen:false});Q.guide.showWelcome();return true`);
+    await until(() => T(`return !!document.querySelector('.guide-welcome')`), 3000);
+    await shot(teacher, '26-rehearsal-welcome.png', 700);
+    await T(`[...document.querySelectorAll('.guide-route')][0].click();return true`);
+    await until(() => T(`const g=Q.guide.useGuide.getState();return Q.guide.currentStep()?.id==='student'&&g.phase==='step'`), 10000);
+    await until(() => T(`return !!document.querySelector('.guide-spot')`), 3000);
+    await shot(teacher, '27-rehearsal-coach.png', 900);
+    await T(`s.set({studentId:'guide-xiaoming'});return true`);
+    await until(() => T(`return Q.guide.currentStep()?.id==='open'&&Q.guide.useGuide.getState().phase==='step'`), 8000);
+    await T(`Q.guide.goStep('pen');return true`);
+    await until(() => call(dock, `!!document.querySelector('.guide-spot')`), 5000);
+    await shot(teacher, '28-rehearsal-pen.png', 900);
+    await dockShot('29-rehearsal-dock.png', 300);
+    await T(`Q.guide.exitGuide();return true`);
+  });
+
   fs.writeFileSync(path.join(shots, 'shots.json'), JSON.stringify({ done, failed }, null, 2));
   console.log('DONE ' + done.length + ' shots, ' + failed.length + ' skipped'); for (const f of failed) console.log('  - ' + f);
   console.log('RESULT ' + shots);

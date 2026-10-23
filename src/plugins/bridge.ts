@@ -105,7 +105,8 @@ async function svgData(svg: string) {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
 }
 
-export async function imageToBoard(src: string, note?: string) {
+/** shape：绘图库里的插件图形，裁掉四周空白；黑色线稿在深色黑板上自动变粉笔色 */
+export async function imageToBoard(src: string, note?: string, shape = false) {
   let data = src;
   if (/^plugin:/i.test(src)) {
     const res = await fetch(src);
@@ -116,7 +117,7 @@ export async function imageToBoard(src: string, note?: string) {
     const body = src.slice(src.indexOf(',') + 1);
     data = await svgData(/;base64,/i.test(src.slice(0, src.indexOf(',') + 1)) ? decodeURIComponent(escape(atob(body))) : decodeURIComponent(body));
   } else if (!/^data:image\/(png|jpe?g|gif|webp|bmp);/i.test(src)) throw new Error('图片只能是 data: 地址或插件自己的文件');
-  try { return await pasteToBoard(data, { note: note ?? '已放到黑板，可以拖动、缩放，上面也能写字' }); }
+  try { return await pasteToBoard(data, { note: note ?? '已放到黑板，可以拖动、缩放，上面也能写字', trim: shape, tint: shape }); }
   finally { if (data.startsWith('blob:')) URL.revokeObjectURL(data); }
 }
 

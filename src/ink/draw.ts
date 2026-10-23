@@ -5,7 +5,7 @@ import { hitObject, strokeBounds } from './geometry';
 import { compileExpression } from './expression';
 import { drawTexShape, texShape } from './texCache';
 import { atPx, fillTextPx } from './pxText';
-import { boardImage } from './imgCache';
+import { boardImage, tinted } from './imgCache';
 
 /**
  * 坐标系：页宽 = 1；size 以页宽的 1/1000 为单位。
@@ -243,7 +243,16 @@ export function draw(d: DrawCtx, s: Stroke) {
 
 function drawImage(d: DrawCtx, s: Stroke) {
   const { ctx } = d, { x0, y0, x1, y1 } = bbox(s.pts), img = s.img ? boardImage(s.img) : null;
-  if (img) { ctx.globalAlpha = 1; ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0); return; }
+  if (img) {
+    ctx.globalAlpha = 1;
+    const src = s.tint && d.dark ? tinted(img, d.color('ink')) : img;
+    if (!s.rot && !s.flip) { ctx.drawImage(src, x0, y0, x1 - x0, y1 - y0); return; }
+    ctx.save();
+    ctx.translate((x0 + x1) / 2, (y0 + y1) / 2); ctx.rotate(s.rot ?? 0); if (s.flip) ctx.scale(-1, 1);
+    ctx.drawImage(src, -(x1 - x0) / 2, -(y1 - y0) / 2, x1 - x0, y1 - y0);
+    ctx.restore();
+    return;
+  }
   // 加载中 / 文件丢了：画一个虚线框占位，老师知道这里本来有图
   ctx.globalAlpha = 0.5; ctx.strokeStyle = d.color('ink'); ctx.lineWidth = 1.5 / d.scale; ctx.setLineDash([6 / d.scale, 5 / d.scale]);
   ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);

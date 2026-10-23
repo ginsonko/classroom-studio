@@ -1,0 +1,84 @@
+/* ── AI 整理 ─────────────────────────────────────────── */
+.tb-sort { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-sm); color: var(--fg-1); font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tb-sort:hover { background: var(--bg-3); color: var(--fg-0); }
+.tb-sort b { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn); color: #1a1204; font-size: 10.5px; line-height: 16px; text-align: center; }
+
+.sort { width: min(760px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; border-radius: 16px; background: var(--bg-2); color: var(--fg-0); box-shadow: var(--shadow-pop); overflow: hidden; }
+.sort-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); color: var(--cue); }
+.sort-h > b { font-size: 15px; color: var(--fg-0); }
+.sort-h .seg { margin-left: 10px; }
+.sort-dot { display: inline-block; margin-left: 6px; min-width: 15px; padding: 0 4px; border-radius: 8px; background: var(--warn); color: #1a1204; font-style: normal; font-size: 10px; line-height: 15px; }
+.sort-x { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--fg-2); }
+.sort-x:hover { background: var(--bg-3); color: var(--fg-0); }
+.sort-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; overflow-y: auto; min-height: 0; }
+.sort-who { display: grid; grid-template-columns: auto 200px; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--fg-1); }
+.sort-who small { grid-column: 1 / -1; color: var(--fg-3); font-size: 11.5px; }
+.sort select { height: 28px; padding: 0 6px; border-radius: 6px; background: var(--bg-3); color: var(--fg-0); border: 1px solid var(--line-strong); font-size: 12.5px; }
+.sort-drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 170px; padding: 18px; border: 1.5px dashed var(--line-strong); border-radius: 12px; background: var(--bg-1); text-align: center; }
+.sort-drop.has { align-items: stretch; justify-content: flex-start; min-height: 0; }
+.sort-drop > b { font-size: 15px; }
+.sort-drop > span { color: var(--fg-2); font-size: 12.5px; line-height: 1.6; max-width: 440px; }
+.sort-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.sort-items li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--bg-2); color: var(--fg-2); font-size: 12.5px; }
+.sort-items li span { flex: 1; min-width: 0; color: var(--fg-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.sort-items li small { color: var(--fg-3); }
+.sort-items li button { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--fg-3); }
+.sort-items li button:hover { background: var(--bg-3); color: var(--fg-0); }
+.sort-add { display: flex; gap: 8px; justify-content: center; }
+.sort-add button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 8px; background: var(--bg-3); color: var(--fg-1); font-size: 12.5px; }
+.sort-add button:hover { color: var(--fg-0); }
+.sort-type { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; width: 100%; }
+.sort-type textarea { width: 100%; resize: vertical; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); color: var(--fg-0); border: 1px solid var(--line-strong); font: inherit; font-size: 13px; }
+.sort-err { margin: 0; color: var(--warn); font-size: 12.5px; }
+.sort-step, .sort-lead { margin: 0; color: var(--fg-1); font-size: 13px; }
+.sort-f { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+.sort-f p { flex: 1; margin: 0; color: var(--fg-2); font-size: 12px; line-height: 1.6; }
+.sort-f p b { color: var(--fg-0); }
+.sort-f > button:not(.btn-cue) { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--fg-1); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12.5px; }
+.sort-f > button:disabled, .sort .btn-cue:disabled { opacity: .45; pointer-events: none; }
+
+.sort-cards { display: flex; flex-direction: column; gap: 10px; }
+.sort-card, .sort-rec { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--bg-1); border: 1px solid var(--line); }
+.sort-card-h { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sort-card-h b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.sort-card-h small { color: var(--fg-3); font-size: 11.5px; }
+.sort-card-h button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 7px; color: var(--fg-1); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12px; }
+.sort-card-h button:hover { color: var(--fg-0); background: var(--bg-3); }
+.sort-kind { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--bg-3); color: var(--fg-1); }
+.sort-kind.k-graded, .sort-kind.k-exam, .sort-kind.k-questions, .sort-kind.k-doc { background: var(--cue-soft); color: var(--cue); }
+.sort-kind.k-chat { background: rgba(120, 200, 120, .16); color: #7fd68a; }
+.sort-kind.k-photo { background: rgba(255, 190, 90, .15); color: var(--warn); }
+.sort-note { margin: 0; color: var(--warn); font-size: 12px; }
+.sort-acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sort-acts label { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.55; color: var(--fg-0); }
+.sort-acts label.off { color: var(--fg-3); }
+.sort-acts input { margin-top: 3px; accent-color: var(--cue); }
+.sort-acts svg { flex: none; margin-top: 3px; color: var(--warn); }
+.sort-marks { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
+.sort-marks span { padding: 2px 8px; border-radius: 6px; background: var(--bg-3); color: var(--fg-2); }
+.sort-marks .m-wrong { color: #ff8a80; } .sort-marks .m-half { color: #ffc46b; } .sort-marks .m-right { color: #7fd68a; } .sort-marks .m-unsure { color: var(--warn); }
+.sort-text summary { cursor: pointer; color: var(--fg-3); font-size: 12px; }
+.sort-text pre { margin: 6px 0 0; max-height: 160px; overflow: auto; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); color: var(--fg-1); font: 12px/1.6 inherit; white-space: pre-wrap; }
+
+.sort-done { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: var(--cue-soft); color: var(--cue); }
+.sort-done b { display: block; margin-bottom: 4px; color: var(--fg-0); font-size: 14px; }
+.sort-done p, .sort-rec p { margin: 2px 0; color: var(--fg-1); font-size: 12.5px; line-height: 1.6; }
+.sort-unsure { display: flex; flex-direction: column; gap: 8px; }
+.sort-unsure > b { font-size: 12.5px; color: var(--warn); }
+.sort-uq { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; background: var(--bg-2); }
+.sort-uq img { max-width: 360px; max-height: 120px; border-radius: 6px; background: #fff; object-fit: contain; }
+.sort-uq > span { flex: 1; font-size: 12.5px; }
+.sort-uq div { display: flex; gap: 4px; margin-left: auto; }
+.sort-uq button { height: 26px; padding: 0 10px; border-radius: 7px; background: var(--bg-3); color: var(--fg-0); font-size: 12px; }
+.sort-uq button:hover { background: var(--bg-4); }
+.sort-uq button.ghost { background: none; color: var(--fg-3); }
+.sort-rec.undone { opacity: .55; }
+.sort-tag { font-size: 11.5px; color: var(--fg-3); }
+.sort-empty { margin: 30px 0; text-align: center; color: var(--fg-3); font-size: 13px; }
+.sort-todos { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 190, 90, .08); border: 1px solid rgba(255, 190, 90, .3); }
+.sort-todos > b { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 13px; }
+.sort-todo { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.sort-todo span { flex: 1; color: var(--fg-0); line-height: 1.5; }
+.sort-todo em { margin-right: 8px; font-style: normal; color: var(--fg-2); }
+.sort-todo small { margin-left: 8px; color: var(--fg-3); }
+.sort-todo button { height: 26px; padding: 0 10px; border-radius: 7px; background: var(--bg-3); color: var(--fg-0); font-size: 12px; }

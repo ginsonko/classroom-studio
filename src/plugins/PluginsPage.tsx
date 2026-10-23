@@ -4,7 +4,7 @@ import { AlertTriangle, Copy, Download, FolderOpen, FolderInput, History, Loader
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
-import { loadPlugins, openPanel, usePlugins, type Manifest, type PluginItem, type PluginList, type Staged } from './pluginStore';
+import { loadPlugins, openPanel, openShapes, usePlugins, whereText, type Manifest, type PluginItem, type PluginList, type Staged } from './pluginStore';
 import { PluginIcon } from './PluginUi';
 import '../styles/agents.css';
 import '../styles/study.css';
@@ -37,6 +37,7 @@ export function contributionText(m: Manifest) {
   if (c.templates.length) out.push(`${c.templates.length} 套导出模板`);
   return out;
 }
+
 
 export function PluginsPage() {
   const list = usePlugins((s) => s.list), loadError = usePlugins((s) => s.error);
@@ -117,7 +118,8 @@ export function PluginsPage() {
       onInstall={() => void run('install', async () => {
         const p = await host.call<PluginItem>('plugins.install', { token: staged.token });
         setStaged(null); await loadPlugins(true);
-        toast(`已安装「${p.name}」`, p.contributes.panels.some((x) => x.where.includes('console')) ? { action: { label: '打开', run: () => { useStore.getState().set({ page: 'console' }); openPanel(p.id, p.contributes.panels[0].id); } } } : {});
+        const where = whereText(p), panel = p.contributes.panels.find((x) => x.where.includes('console')), g = p.contributes.shapes.findIndex((x) => x.items.length);
+        toast(`已安装「${p.name}」` + (where.length ? `，在${where[0]}里用` : ''), panel ? { action: { label: '打开', run: () => { useStore.getState().set({ page: 'console' }); openPanel(p.id, panel.id); } } } : g >= 0 ? { action: { label: '去绘图库', run: () => openShapes(p, g) } } : {});
       })} />}
   </div>;
 }
@@ -130,6 +132,7 @@ function PluginCard({ p, names, busy, run, apply, onHistory }: { p: PluginItem; 
       <div className="pl-title"><b>{p.name}</b><span className="num">v{p.version}</span>{p.author && <i>{p.author}</i>}</div>
       {p.description && <p>{p.description}</p>}
       <div className="pl-chips">{contributionText(p).map((t) => <span key={t} className="sd-tag">{t}</span>)}</div>
+      {p.active && !!whereText(p).length && <p className="pl-where"><b>在哪用：</b>{whereText(p).join('；')}</p>}
       <div className="pl-perms">{p.permissions.length ? p.permissions.map((k) => <span key={k} data-tip={names[k]}>{names[k] ?? k}</span>) : <span className="none">不需要任何权限</span>}
         {!!p.network.length && <span className="net" data-tip="插件可以访问这些网站">联网：{p.network.join('、')}</span>}</div>
       {p.disabledReason && <p className="pl-bad"><AlertTriangle size={13} />{p.disabledReason}</p>}
@@ -140,6 +143,8 @@ function PluginCard({ p, names, busy, run, apply, onHistory }: { p: PluginItem; 
         onClick={() => void run('en' + p.id, async () => apply(await host.call<PluginList>('plugins.enable', { id: p.id, on: !p.enabled })))}><i />{p.enabled ? '已启用' : '已停用'}</button>
       <div className="pl-acts">
         {panel0 && p.active && <button className="sd-btn" onClick={() => { useStore.getState().set({ page: 'console' }); openPanel(p.id, panel0.id); }}>打开</button>}
+        {!panel0 && p.active && p.contributes.shapes.some((g) => g.items.length) && <button className="sd-btn" data-tip="在上课浮层工具条里打开绘图库，停在这个插件的图形分组" onClick={() => { openShapes(p, p.contributes.shapes.findIndex((g) => g.items.length)); toast('已在浮层工具条打开绘图库，点一个图形就放到黑板上'); }}>去绘图库</button>}
+        {!panel0 && p.active && !p.contributes.shapes.length && !!p.contributes.pages.length && <button className="sd-btn" onClick={() => useStore.getState().set({ page: 'study' })}>去学情</button>}
         <button className="sd-btn" data-tip="在 AI 工坊里说想怎么改，AI 改好后先预览，满意了再更新" onClick={() => toWorkshop(p.id)}><Sparkles size={14} /></button>
         <button className="sd-btn" disabled={!!busy} data-tip="导出成 .csplugin 文件，可以发给别的老师" onClick={() => void run('ex', async () => { const to = await host.call<string | null>('plugins.export', { id: p.id }); if (to) toast('已导出：' + to); })}><Download size={14} /></button>
         <button className="sd-btn" disabled={!!busy} data-tip="复制一份（想改又怕改坏时用）" onClick={() => void run('dup', async () => { const n = await host.call<PluginItem>('plugins.duplicate', { id: p.id }); toast(`已复制为「${n.name}」`); await loadPlugins(true); })}><Copy size={14} /></button>

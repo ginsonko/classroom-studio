@@ -89,6 +89,7 @@
 /* ── 笔迹层 ─────────────────────────────────────────────── */
 .ink { position: absolute; inset: 0; z-index: 2; }
 .ink-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ink-text.editing { background: rgba(61, 217, 235, .12); border-style: solid; margin: -3.5px 0 0 -5.5px; line-height: 1.35; }
 .ink-text {
   position: absolute;
   z-index: 5;

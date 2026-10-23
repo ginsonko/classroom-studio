@@ -5,7 +5,8 @@ import { DIFF_NAME, POINTS, findDuplicate, pointLabel, pointsOf, questionSubject
 import type { SubjectId } from '../lib/subjects';
 import { TexText, clipTex } from './TexText';
 import { patchQuestion, removeQuestion, useStudy } from '../lib/studyStore';
-import { readInBackground, useReading } from '../lib/studyActions';
+import { aiConfig, readInBackground, useReading } from '../lib/studyActions';
+import { readPending } from '../lib/importQuestions';
 
 /** 导出结果：每个文件一个打开按钮 + 打开文件夹 */
 export function Outputs({ r }: { r: { out: string[]; errors: string[] } }) {
@@ -62,13 +63,17 @@ export function QuestionEditor({ q, onClose }: { q: Question; onClose: () => voi
   }
   const dup = useMemo(() => findDuplicate(f.stem, bank.filter((x) => x.status === 'bank'), q.id), [f.stem, bank, q.id]);
   // 老师在这里看过并入库，就算核对过了：去掉自检未通过的标记，组作业才会选它
-  const save = (status?: 'bank') => { patchQuestion(q.id, { ...f, ...(status ? { status, ...(live.check === 'mismatch' ? { check: 'ok' as const, checkNote: undefined } : {}) } : {}) }); onClose(); };
+  // 照片原样存的题老师亲自入库，也算整理过了
+  const save = (status?: 'bank') => { patchQuestion(q.id, { ...f, ...(status ? { status, needsAi: undefined, ...(live.check === 'mismatch' ? { check: 'ok' as const, checkNote: undefined } : {}) } : {}) }); onClose(); };
+  // 整张照片：AI 先拆成一道道题（这条会被拆出来的题替换），编辑框跟着关掉
+  const readAi = () => { patchQuestion(q.id, { ...f }); if (live.needsAi) { void aiConfig().then((c) => readPending([q.id], c)); onClose(); } else void readInBackground(q.id); };
   return <div className="sheet-bg" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
     <form className="record-editor sd-editor" onSubmit={(e) => { e.preventDefault(); save(); }}>
       <div className="card-h"><b>{live.status === 'inbox' ? '整理收件箱里的题' : '编辑题目'}</b><span className="flex" />
-        <button type="button" className="sd-btn" disabled={reading} onClick={() => { patchQuestion(q.id, { ...f }); void readInBackground(q.id); }}>{reading ? <Loader2 size={13} className="ags-spin" /> : <ScanText size={13} />}{reading ? '识题中…' : 'AI 识题'}</button>
+        <button type="button" className="sd-btn" disabled={reading} onClick={readAi}>{reading ? <Loader2 size={13} className="ags-spin" /> : <ScanText size={13} />}{reading ? '识题中…' : live.needsAi ? 'AI 拆题' : 'AI 识题'}</button>
         <button type="button" onClick={onClose} aria-label="关闭"><X size={16} /></button></div>
       {readErr && <p className="sd-err">{readErr}</p>}
+      {live.needsAi && <p className="sd-warn">这是一整张拍照的卷子。配好 AI 后点「AI 拆题」，会自动拆成一道道题；也可以自己填好题干直接入库。</p>}
       <QImage path={live.image} big />
       <label>题干<textarea rows={5} value={f.stem} onChange={(e) => setF({ ...f, stem: e.target.value })} placeholder={live.image ? '看图题可以不填；点「AI 识题」自动转写' : '题目文字，公式可用 $...$'} /></label>
       {/\$/.test(f.stem) && <TexText className="sd-texprev" text={f.stem} />}

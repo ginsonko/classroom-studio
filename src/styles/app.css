@@ -158,6 +158,32 @@ kbd {
 .tp-fi small { margin-left: auto; padding-left: 12px; font-size: 11px; color: var(--fg-3); white-space: nowrap; }
 .tp-fi:hover { background: var(--bg-3); }
 .tp-fi.on { background: var(--cue-soft); color: var(--cue); }
+.tp-fi.tp-customize { margin-top: 3px; border-top: 1px solid var(--line); border-radius: 0 0 var(--r-sm) var(--r-sm); color: var(--fg-2); }
+.tp-fi.tp-customize span { font-size: 12px; color: var(--fg-1); }
+
+/* 定制工具栏 */
+.tb-edit { width: 340px; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; color: var(--fg-1); font-size: 12px; }
+.tb-edit header { display: flex; align-items: baseline; gap: 8px; }
+.tb-edit header b { font-size: 13.5px; color: var(--fg-0); }
+.tb-edit header span { color: var(--fg-3); font-size: 11px; }
+.tb-edit header button { margin-left: auto; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; color: var(--fg-2); }
+.tb-edit header button:hover { background: var(--bg-3); color: var(--fg-0); }
+.tb-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tb-presets button { display: flex; flex-direction: column; gap: 3px; padding: 7px 8px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); text-align: left; }
+.tb-presets button b { font-size: 12.5px; color: var(--fg-0); }
+.tb-presets button small { font-size: 10.5px; line-height: 1.35; color: var(--fg-3); }
+.tb-presets button:hover { background: var(--bg-3); }
+.tb-presets button.on { border-color: var(--cue); background: var(--cue-soft); }
+.tb-presets button.on b { color: var(--cue); }
+.tb-hint { margin: 0; color: var(--fg-3); font-size: 11px; line-height: 1.5; }
+.tb-groups { display: flex; flex-direction: column; gap: 6px; }
+.tb-group { display: grid; grid-template-columns: 64px 1fr; align-items: start; gap: 6px; }
+.tb-group > span { padding-top: 5px; color: var(--fg-2); font-size: 11.5px; }
+.tb-group > div { display: flex; flex-wrap: wrap; gap: 4px; }
+.tb-tool { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; border: 1px dashed var(--line-strong); color: var(--fg-3); font-size: 11.5px; text-decoration: line-through; }
+.tb-tool.on { border-style: solid; color: var(--fg-0); background: var(--bg-3); text-decoration: none; }
+.tb-tool:hover:not(:disabled) { border-color: var(--cue); }
+.tb-tool:disabled { opacity: .75; cursor: default; }
 .tp-sep { width: 1px; height: 22px; margin: 0 4px; background: var(--line-strong); }
 .tp.v .tp-sep { grid-column: 1 / -1; width: 100%; height: 1px; margin: 3px 0; }
 .tp-swatch {

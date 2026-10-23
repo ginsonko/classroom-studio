@@ -19,3 +19,18 @@ export function boardImage(src: string): HTMLImageElement | null | undefined {
   if (cache.size > 200) { const first = cache.keys().next().value; if (first !== undefined && first !== src) cache.delete(first); }
   return undefined;
 }
+
+const tints = new Map<string, HTMLCanvasElement>();
+/** 单色线稿换色：保留透明度，所有不透明的像素涂成 color（深色黑板上的黑线稿变粉笔色） */
+export function tinted(img: HTMLImageElement, color: string): HTMLCanvasElement | HTMLImageElement {
+  const key = img.src + '|' + color, hit = tints.get(key);
+  if (hit) return hit;
+  if (typeof document === 'undefined') return img;
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  if (!ctx) return img;
+  ctx.drawImage(img, 0, 0); ctx.globalCompositeOperation = 'source-in'; ctx.fillStyle = color; ctx.fillRect(0, 0, c.width, c.height);
+  tints.set(key, c);
+  if (tints.size > 40) { const first = tints.keys().next().value; if (first !== undefined) tints.delete(first); }
+  return c;
+}

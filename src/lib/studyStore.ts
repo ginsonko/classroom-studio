@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { host } from './host';
 import { emptyStudy, type Attempt, type Question, type Result, type StudyData } from './studyLogic';
+import { toast } from './toast';
 
 interface StudyState {
   data: StudyData; loaded: boolean; error: string | null; saving: boolean;
@@ -48,6 +49,27 @@ export function patchQuestion(id: string, p: Partial<Question>) {
 /** 删除题目时它的作答记录一起删，否则错题本里会出现空题 */
 export function removeQuestion(id: string) {
   useStudy.getState().update((d) => ({ ...d, questions: d.questions.filter((q) => q.id !== id), attempts: d.attempts.filter((a) => a.questionId !== id) }));
+}
+export interface Removed { questions: Question[]; attempts: Attempt[] }
+/** 一次删几道题（连同作答记录）；返回删掉的内容，撤销时原样放回（题图文件不删，撤销后还在） */
+export function removeQuestions(ids: string[]): Removed {
+  const set = new Set(ids), d = useStudy.getState().data;
+  const out: Removed = { questions: d.questions.filter((q) => set.has(q.id)), attempts: d.attempts.filter((a) => set.has(a.questionId)) };
+  if (out.questions.length) useStudy.getState().update((x) => ({ ...x, questions: x.questions.filter((q) => !set.has(q.id)), attempts: x.attempts.filter((a) => !set.has(a.questionId)) }));
+  return out;
+}
+export function restoreQuestions(r: Removed) {
+  useStudy.getState().update((d) => {
+    const qs = new Set(d.questions.map((q) => q.id)), as = new Set(d.attempts.map((a) => a.id));
+    return { ...d, questions: [...d.questions, ...r.questions.filter((q) => !qs.has(q.id))], attempts: [...d.attempts, ...r.attempts.filter((a) => !as.has(a.id))] };
+  });
+}
+/** 删除并弹出「撤销」提示（10 秒内可以撤销） */
+export function deleteWithUndo(ids: string[], what = '') {
+  const r = removeQuestions(ids);
+  if (!r.questions.length) return r;
+  toast(`已删除${what || ` ${r.questions.length} 道题`}${r.attempts.length ? `（含 ${r.attempts.length} 条作答记录）` : ''}`, { ms: 10000, action: { label: '撤销', run: () => restoreQuestions(r) } });
+  return r;
 }
 export function recordAttempt(studentId: string, questionId: string, result: Result, note?: string): Attempt {
   const a: Attempt = { id: sid(), studentId, questionId, result, at: nowIso(), ...(note ? { note } : {}) };

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Copy, RotateCcw, Sigma, Trash2, X } from 'lucide-react';
+import { Copy, FlipHorizontal2, RefreshCw, RotateCcw, RotateCw, Sigma, Trash2, X } from 'lucide-react';
 import { PEN_COLORS, useStore } from '../../lib/store';
 import type { Author, Stroke } from '../../lib/types';
-import { duplicateStroke, withObject } from '../../ink/geometry';
+import { duplicateStroke, flipImage, turnImage, withObject } from '../../ink/geometry';
 import { libOfKind, OBJECT_CATALOG, OBJECT_LIBS, updateObject, type PropSpec } from '../catalog';
 import type { PhysObj } from '../model';
 import { hasInk, useFormula } from '../../ink/FormulaSheet';
@@ -27,6 +27,7 @@ export function SelectionEditor({ ikey, strokes, actor = 'teacher', onClose, onS
   const edit = useStore((s) => s.editInk);
   const [label, setLabel] = useState(object?.label ?? single?.text ?? '');
   useEffect(() => setLabel(object?.label ?? single?.text ?? ''), [single?.id, object?.label, single?.text]);
+  const images = strokes.filter((s) => s.tool === 'image'), allImages = images.length === strokes.length;
   const update = (patch: Partial<PhysObj>) => { if (single && object) edit(ikey, { upsert: [withObject(single, updateObject(object, patch))] }, actor); };
   const setLabelValue = () => { if (object) { if (label !== (object.label ?? '')) update({ label }); } else if (single && ['text', 'force', 'axes'].includes(single.tool) && label !== single.text) edit(ikey, { upsert: [{ ...single, text: label }] }, actor); };
   if (!strokes.length) return null;
@@ -41,8 +42,18 @@ export function SelectionEditor({ ikey, strokes, actor = 'teacher', onClose, onS
         {OBJECT_CATALOG[object.kind].fields.length > 0 && <div className="obj-section">{OBJECT_LIBS.find((x) => x.id === libOfKind(object.kind))!.params}</div>}
         {OBJECT_CATALOG[object.kind].fields.map((f) => f.type === 'text' ? <TextProp key={f.key + object.id} value={String(object.props[f.key] ?? '')} field={f} onCommit={(v) => update({ props: { ...object.props, [f.key]: v } })} /> : f.type === 'boolean' ? <label key={f.key} className="obj-check"><input type="checkbox" checked={object.props[f.key] === true} onChange={(e) => update({ props: { ...object.props, [f.key]: e.target.checked } })} />{f.label}</label> : <Numeric key={f.key} value={Number(object.props[f.key] ?? OBJECT_CATALOG[object.kind].props[f.key] ?? 0)} field={f} onCommit={(v) => update({ props: { ...object.props, [f.key]: v } })} />)}
       </>}
-      <div className="obj-section">线条颜色</div><div className="obj-colors">{PEN_COLORS.map((c) => <button key={c.id} aria-label={'改为' + c.name + '色'} title={c.name} style={{ background: c.dark }} className={strokes.every((s) => s.color === c.id) ? 'on' : ''} onClick={() => edit(ikey, { upsert: strokes.map((s) => ({ ...s, color: c.id })) }, actor)} />)}</div>
-      {!object && <Numeric value={single?.size ?? 3} field={{ key: 'size', label: '粗细', min: .4, max: 80, step: .1 }} onCommit={(v) => edit(ikey, { upsert: strokes.map((s) => ({ ...s, size: v })) }, actor)} />}
+      {images.length > 0 && <><div className="obj-section">图片方向</div>
+        <div className="obj-turns">
+          <button onClick={() => edit(ikey, { upsert: images.map((s) => turnImage(s, -1)) }, actor)} data-tip="向左转 90°"><RotateCcw size={14} />左转</button>
+          <button onClick={() => edit(ikey, { upsert: images.map((s) => turnImage(s, 1)) }, actor)} data-tip="向右转 90°"><RotateCw size={14} />右转</button>
+          <button onClick={() => edit(ikey, { upsert: images.map((s) => turnImage(turnImage(s, 1), 1)) }, actor)} data-tip="倒着拍的照片点这个"><RefreshCw size={14} />倒转</button>
+          <button onClick={() => edit(ikey, { upsert: images.map(flipImage) }, actor)} data-tip="左右镜像"><FlipHorizontal2 size={14} />翻转</button>
+        </div>
+        {images.some((s) => s.rot || s.flip) && <button className="obj-turn-reset" onClick={() => edit(ikey, { upsert: images.map((s) => ({ ...s, rot: undefined, flip: undefined })) }, actor)}>恢复原样</button>}
+        <p className="obj-hint">也可以拖选择框上方的圆点自由旋转，按住 Shift 每次转 15°。</p>
+      </>}
+      {!allImages && <><div className="obj-section">线条颜色</div><div className="obj-colors">{PEN_COLORS.map((c) => <button key={c.id} aria-label={'改为' + c.name + '色'} title={c.name} style={{ background: c.dark }} className={strokes.every((s) => s.color === c.id) ? 'on' : ''} onClick={() => edit(ikey, { upsert: strokes.map((s) => ({ ...s, color: c.id })) }, actor)} />)}</div>
+      {!object && <Numeric value={single?.size ?? 3} field={{ key: 'size', label: '粗细', min: .4, max: 80, step: .1 }} onCommit={(v) => edit(ikey, { upsert: strokes.map((s) => ({ ...s, size: v })) }, actor)} />}</>}
     </div>
     <div className="obj-actions"><button onClick={() => { const copies = strokes.map((s) => ({ ...duplicateStroke(s), author: actor })); edit(ikey, { upsert: copies }, actor); onSelection?.(copies.map((s) => s.id)); }}><Copy size={14} />复制</button>{object && <button onClick={() => update({ rot: 0 })}><RotateCcw size={14} />转正</button>}{actor === 'teacher' && (single?.tex || hasInk(strokes)) && <button className="obj-fx" onClick={() => { useFormula.getState().open({ ikey, ids: strokes.map((s) => s.id), actor }); onClose(); }}><Sigma size={14} />{single?.tex ? '修改公式' : '识别公式'}</button>}<button className="danger" onClick={() => { edit(ikey, { remove: strokes.map((s) => s.id) }, actor); onSelection?.([]); onClose(); }}><Trash2 size={14} />删除</button></div>
     {object && libOfKind(object.kind) === 'physics' && <footer>参数保存为器材数据。静态板书不运行物理仿真。</footer>}

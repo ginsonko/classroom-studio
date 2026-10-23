@@ -6,8 +6,10 @@ import { host } from '../lib/host';
 import { PAPER } from '../physics/sim/prim';
 import { draw, type DrawCtx } from './draw';
 import { selectionBounds } from './geometry';
+import { sliceLong } from './sliceLong';
 import { boardImage } from './imgCache';
 import { texMeasurer } from './texCache';
+import { guideHit } from '../guide/hits';
 
 /** 导出宽度（像素）；一张图最高 MAX_H，超过就分成几张（Chromium 画布单边上限 32767） */
 export const EXPORT_W = 1920;
@@ -135,10 +137,92 @@ export async function boardPngs(mat: Material, page: number, mode: ExportMode): 
   });
 }
 
+// ── PDF：排成 A4 竖版，打印、发给家长都方便 ─────────────────────────
+/** A4 纸 200 dpi */
+export { sliceLong };
+export const SHEET = { w: 1654, h: 2339, margin: 90, head: 64 };
+
+/** 省墨：白底、不画底纹，深色黑板上的浅色笔迹换成对应的深色 */
+function inkSaver(): Skin { return { paper: '#ffffff', rule: 'rgba(0,0,0,0)', strong: 'rgba(0,0,0,0)', dark: false, gap: '#ffffff', label: 'rgba(0,0,0,.45)' }; }
+const lightColor = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(c.trim());
+  if (!m) return false;
+  const v = parseInt(m[1], 16), r = v >> 16, g = (v >> 8) & 255, b = v & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 200;
+};
+
+/**
+ * 排版：每张 A4 能放几块板面。多页黑板（16:9）一张纸竖着放两页；长黑板按纸高切。
+ * 返回每张纸上的板面：[第几页, 板面里的 top, 高度]（都是页宽单位）。
+ */
+export function a4Layout(mat: Material, strokesOf: (i: number) => Stroke[]): { page: number; top: number; height: number }[][] {
+  const cw = SHEET.w - SHEET.margin * 2, ch = SHEET.h - SHEET.margin * 2 - SHEET.head, gap = 40;
+  if (isLong(mat)) {
+    const strokes = strokesOf(0);
+    return sliceLong(strokes, longExtent(mat, strokes), ch / cw).map(([top, height]) => [{ page: 0, top, height }]);
+  }
+  const sheets: { page: number; top: number; height: number }[][] = [];
+  let cur: { page: number; top: number; height: number }[] = [], used = 0;
+  mat.pages.forEach((p, i) => {
+    const ratio = p.w > 0 ? p.h / p.w : SCREEN, h = ratio * cw, add = h + (cur.length ? gap : 0);
+    if (cur.length && used + add > ch) { sheets.push(cur); cur = []; used = 0; }
+    cur.push({ page: i, top: 0, height: ratio }); used += h + (cur.length > 1 ? gap : 0);
+  });
+  if (cur.length) sheets.push(cur);
+  return sheets;
+}
+
+/** 板书 → A4 纸（JPEG data URL，每张一页） */
+export async function boardPdfSheets(mat: Material, o: { saveInk?: boolean; title?: string } = {}): Promise<string[]> {
+  const st = useStore.getState(), W = EXPORT_W;
+  const sk = o.saveInk ? inkSaver() : skinOf(st.boardSkin), board: BoardSkin = o.saveInk ? 'white' : st.boardSkin, pattern: Pattern = o.saveInk ? 'none' : st.pattern;
+  const inkOf = (i: number) => (st.ink[inkKey(mat.id, i)] ?? []).filter(visible).map((s) => o.saveInk && lightColor(s.color) ? { ...s, color: 'ink' } : s);
+  const layout = a4Layout(mat, inkOf);
+  await preload(layout.flat().flatMap((x) => inkOf(x.page)));
+  const cw = SHEET.w - SHEET.margin * 2, k = cw / W, date = new Date().toLocaleDateString('zh-CN');
+  return layout.map((items, n) => {
+    const c = document.createElement('canvas'); c.width = SHEET.w; c.height = SHEET.h;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, SHEET.w, SHEET.h);
+    ctx.font = '500 30px "Noto Sans SC", "Microsoft YaHei UI", sans-serif'; ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left'; ctx.fillText(o.title ?? mat.title, SHEET.margin, SHEET.margin + 30);
+    ctx.textAlign = 'right'; ctx.fillText(date, SHEET.w - SHEET.margin, SHEET.margin + 30);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(SHEET.margin, SHEET.margin + SHEET.head - 18, cw, 2);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.textAlign = 'center'; ctx.font = '500 26px "Noto Sans SC", "Microsoft YaHei UI", sans-serif';
+    ctx.fillText(`${n + 1} / ${layout.length}`, SHEET.w / 2, SHEET.h - SHEET.margin / 2);
+    let y = SHEET.margin + SHEET.head;
+    for (const it of items) {
+      const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = Math.max(1, Math.round(it.height * W));
+      paintSlice(tmp.getContext('2d')!, inkOf(it.page), it.top, it.height, 0, sk, board, pattern);
+      ctx.drawImage(tmp, SHEET.margin, y, cw, tmp.height * k);
+      // 白底省墨时加一道细框，看得出黑板的边
+      ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2;
+      if (!isLong(mat)) ctx.strokeRect(SHEET.margin, y, cw, tmp.height * k);
+      y += tmp.height * k + 40;
+      tmp.width = 0; tmp.height = 0;
+    }
+    try { return c.toDataURL('image/jpeg', 0.9); }
+    catch { throw new Error('板书里有外部图片，浏览器不允许导出。请把图片重新贴一次再保存'); }
+    finally { c.width = 0; c.height = 0; }
+  });
+}
+
+/** 板书存成 A4 PDF（只支持黑板；课件请用课件本身打印） */
+export async function saveBoardPdf(o: { saveInk?: boolean } = {}): Promise<string[] | null> {
+  const mat = useStore.getState().pgmMat;
+  if (mat.kind !== 'board') throw new Error('现在学生画面不是黑板，存 PDF 只支持黑板板书');
+  const pdf = await boardPdfSheets(mat, o);
+  const r = await host.call<string[] | null>('exportBoard', { title: mat.title, pdf });
+  if (r?.length) guideHit('board.save');
+  return r;
+}
+
 /** 保存当前画面的板书。不是黑板（课件、网页、演示）时仍按学生画面截图保存 */
 export async function saveBoard(mode: ExportMode = 'stitch'): Promise<string[] | null> {
   const st = useStore.getState(), mat = st.pgmMat;
   if (mat.kind !== 'board') { const f = await host.call<string | null>('exportBoard'); return f ? [f] : null; }
   const pngs = await boardPngs(mat, st.pgm.page, mode);
-  return host.call<string[] | null>('exportBoard', { title: mat.title, pngs });
+  const r = await host.call<string[] | null>('exportBoard', { title: mat.title, pngs });
+  if (r?.length) guideHit('board.save');
+  return r;
 }

@@ -100,6 +100,41 @@ function revolve(view: View, r1: number, r2: number, H: number, axis: boolean, a
   return prims;
 }
 
+/**
+ * 空间直角坐标系（课本画法）：z 轴向上、y 轴向右、x 轴斜向前下方（斜二测时 x 轴上的长度画一半）。
+ * 内部坐标 [右, 上, 里]，所以课本的 (x, y, z) 对应 [y, z, -x]。可以画点 P 和它到三个坐标面、坐标轴的虚线。
+ */
+function axes3(o: PhysObj, view: View): Prim[] {
+  const n = clamp(Math.round(num(o, 'n', 3)), 1, 10), L = n + .9, neg = flag(o, 'neg'), prims: Prim[] = [];
+  const at = (x: number, y: number, z: number) => view.P([y, z, -x]);
+  const axes: [V3, string][] = [[[1, 0, 0], 'x'], [[0, 1, 0], 'y'], [[0, 0, 1], 'z']];
+  const O = at(0, 0, 0);
+  for (const [[a, b, c], s] of axes) {
+    const end = at(a * L, b * L, c * L), from = neg ? at(-a * (n + .5), -b * (n + .5), -c * (n + .5)) : O;
+    prims.push({ t: 'path', pts: [from, end], arrow: true }, { t: 'text', p: end, s, away: O });
+    for (let i = neg ? -n : 1; i <= n; i++) if (i) {
+      const p = at(a * i, b * i, c * i);
+      prims.push({ t: 'tick', p, axis: s === 'z' ? 'y' : 'x' });
+      // x 轴斜着、刻度间距只有一半：数字放刻度右下；画了负半轴时会和 z 轴负半轴的数字挤在一起，x 轴就不标数字
+      if (flag(o, 'nums') && !(s === 'x' && neg)) prims.push({ t: 'text', p, s: fmt(i), italic: false, size: .7, ...(s === 'z' ? { dx: -.8 } : s === 'y' ? { dy: .95 } : { dx: .75, dy: .55 }) });
+    }
+  }
+  prims.push({ t: 'text', p: O, s: 'O', dx: -.75, dy: -.35 });
+  if (flag(o, 'point')) {
+    const px = num(o, 'px', 1), py = num(o, 'py', 2), pz = num(o, 'pz', 2), xs = [0, px], ys = [0, py], zs = [0, pz];
+    // 以 O、P 为对角的长方体：不在坐标轴上的棱画虚线
+    for (const [i, j, k] of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1]]) for (const d of [0, 1, 2]) {
+      const q = [i, j, k]; if (q[d] === 1) continue;
+      const r = [...q]; r[d] = 1;
+      if ([0, 1, 2].every((e) => e === d || q[e] === 0)) continue;
+      prims.push({ t: 'path', pts: [at(xs[q[0]], ys[q[1]], zs[q[2]]), at(xs[r[0]], ys[r[1]], zs[r[2]])], dash: true, thin: true });
+    }
+    const P0 = at(px, py, pz);
+    prims.push({ t: 'dot', p: P0, accent: true }, { t: 'text', p: P0, s: `P(${fmt(px)}, ${fmt(py)}, ${fmt(pz)})`, dx: 2.6, dy: -.6, accent: true, size: .8 });
+  }
+  return prims;
+}
+
 function solid(o: PhysObj): Prim[] {
   const view = viewOf(o), lab = flag(o, 'letters', true);
   const n = clamp(Math.round(num(o, 'n', 4)), 3, 8), base = (r: number, y: number) => Array.from({ length: n }, (_, k) => { const a = -Math.PI / 2 - Math.PI / n + k * 2 * Math.PI / n; return [r * Math.cos(a), y, r * Math.sin(a)] as V3; });
@@ -117,6 +152,11 @@ function solid(o: PhysObj): Prim[] {
       const H = Math.max(.05, num(o, 'H', 1.6)), V: V3[] = [...base(1, 0), [0, H, 0]], L = letters(n);
       return polyhedron(view, V, [L.map((_, i) => i), ...L.map((_, k) => [k, (k + 1) % n, n])], lab ? [...L, 'P'] : null);
     }
+    case 'm-frustum-p': {
+      const H = Math.max(.05, num(o, 'H', 1.2)), k = clamp(num(o, 'k', .5), .05, .95), V = [...base(1, 0), ...base(k, H)], L = letters(n);
+      return polyhedron(view, V, [L.map((_, i) => i), L.map((_, i) => n + i), ...L.map((_, j) => [j, (j + 1) % n, n + (j + 1) % n, n + j])], lab ? [...L, ...L.map((x) => x + '₁')] : null);
+    }
+    case 'm-axes3': return axes3(o, view);
     case 'm-cylinder': return revolve(view, 1, 1, Math.max(.05, num(o, 'H', 2)), flag(o, 'axis'), '');
     case 'm-cone': return revolve(view, 1, 0, Math.max(.05, num(o, 'H', 2)), flag(o, 'axis'), 'P');
     case 'm-frustum': return revolve(view, Math.max(.05, num(o, 'r1', 1)), clamp(num(o, 'r2', .55), .02, 50), Math.max(.05, num(o, 'H', 1.3)), flag(o, 'axis'), '');

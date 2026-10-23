@@ -22,6 +22,7 @@ function authorizeMessage(role,m,state){
  if(!m||typeof m!=='object'||JSON.stringify(m).length>20*1024*1024)return null;
  const trusted=role==='teacher'||role==='dock',current=`${state.pgm?.materialId}#${state.pgm?.page}`;
  if(m.t==='hello')return {t:'hello',from:String(m.from).slice(0,120)};
+ if(m.t==='cmd')return trusted&&typeof m.name==='string'&&/^[a-z][\w.]{0,40}$/i.test(m.name)&&JSON.stringify(m.arg??null).length<20000?{t:'cmd',name:m.name,arg:m.arg??null}:null;
  if(m.t==='snapshot')return role==='teacher'?{t:'snapshot',to:String(m.to),shared:projection(m.shared)}:null;
  if(m.t==='shared'){
   // 学生工具栏开放时，学生和老师一样可以翻页、切换 / 摆放窗口、放大、聚光灯和幕布；不能开新课件

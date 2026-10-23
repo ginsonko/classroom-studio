@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Puzzle, X } from 'lucide-react';
-import { activePlugins, loadPlugins, usePlugins, type PanelDef, type PluginItem } from './pluginStore';
+import { activePlugins, loadPlugins, openShapes, usePlugins, type PanelDef, type PluginItem } from './pluginStore';
 import { PluginFrame } from './PluginFrame';
 import { PluginIcon } from './PluginUi';
 import '../styles/plugins.css';
@@ -17,8 +17,9 @@ export function DockPlugins() {
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => { void loadPlugins(); }, []);
   const panels = activePlugins(list).flatMap((p) => p.contributes.panels.filter((x) => x.where.includes('dock')).map((panel) => ({ p, panel })));
+  const shapes = activePlugins(list).flatMap((p) => p.contributes.shapes.map((g, i) => ({ p, g, i })).filter((x) => x.g.items.length));
   useEffect(() => { if (cur && !panels.some((x) => x.p.id === cur.p.id && x.panel.id === cur.panel.id)) setCur(null); }, [panels, cur]);
-  if (!panels.length) return null;
+  if (!panels.length && !shapes.length) return null;
   return <>
     <button ref={btn} className={'tp-b' + (open ? ' on' : '')} onClick={() => setOpen(!open)} data-tip="插件：计时器、随机点名等"><Puzzle size={17} /></button>
     {open && <Pop anchor={btn.current} w={cur ? Math.min(MAX_W, cur.panel.width) : 260} onClose={() => setOpen(false)}>
@@ -29,7 +30,8 @@ export function DockPlugins() {
       </header>
       {cur
         ? <div style={{ height: Math.min(cur.panel.height, innerHeight - 80) }}><PluginFrame key={cur.p.id + cur.panel.id} id={cur.p.id} entry={cur.panel.entry} where="dock" title={cur.panel.title} onClose={() => setOpen(false)} /></div>
-        : <div className="pl-list-dock">{panels.map(({ p, panel }) => <button key={p.id + panel.id} onClick={() => setCur({ p, panel })}><PluginIcon p={p} />{panel.title}</button>)}</div>}
+        : <div className="pl-list-dock">{panels.map(({ p, panel }) => <button key={p.id + panel.id} onClick={() => setCur({ p, panel })}><PluginIcon p={p} />{panel.title}</button>)}
+          {shapes.map(({ p, g, i }) => <button key={p.id + ':' + i} onClick={() => { setOpen(false); openShapes(p, i); }} data-tip="打开绘图库里的这个分组"><PluginIcon p={p} />{g.group}<small>绘图库</small></button>)}</div>}
     </Pop>}
   </>;
 }

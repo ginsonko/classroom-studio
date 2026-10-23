@@ -115,6 +115,9 @@ export interface Stroke {
   layer?: 'public' | 'private'; // private：只在教师端显示
   obj?: PhysObj;           // tool = 'obj'：物理对象；pts 存外接矩形两角 [x0,y0,.5,x1,y1,.5] 供命中 / 套索
   img?: string;            // tool = 'image'：图片地址（lesson:// 或 data:）
+  rot?: number;            // tool = 'image'：绕图片中心旋转的弧度；pts 仍是没旋转时的外接矩形
+  flip?: boolean;          // tool = 'image'：左右镜像（先镜像再旋转）
+  tint?: boolean;          // tool = 'image'：单色线稿（插件图形），深色黑板上按粉笔色重新着色
   shape?: 'plain';         // tool = 'triangle'：普通三角形（非物理学科），缺省是带地面阴影线的斜面
   plot?: { expr: string; x0: number; x1: number; y0: number; y1: number; xl: string; yl: string; shade?: [number, number] };
 }

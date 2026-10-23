@@ -273,9 +273,10 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
   useEffect(() => setTaskCap(cap), [cap]);
   useEffect(() => {
     if (cur.id === 'free') return;
-    if (editName) setPrompt(`修改插件「${editName}」：\n`);
-    else setPrompt(cur.build(topic.trim() || (plugin ? '（插件名称）' : '（主题）')));
-  }, [cur, topic, editName, plugin]);
+    const ask = plugin && intent?.ask ? `\n\n老师的要求：${intent.ask}` : '';
+    if (editName) setPrompt(`修改插件「${editName}」：\n` + ask.trim());
+    else setPrompt(cur.build(topic.trim() || (plugin ? '（插件名称）' : '（主题）')) + ask);
+  }, [cur, topic, editName, plugin, intent]);
   useEffect(() => setFormats(cur.formats), [cur]);
   const ready = cli?.[engine]?.found;
   const start = async () => {

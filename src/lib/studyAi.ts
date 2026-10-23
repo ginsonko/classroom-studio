@@ -22,12 +22,16 @@ export function readByRules(text: string, subject: SubjectId = 'physics'): ReadR
   return { stem: text.trim(), answer: '', analysis: '', points: guessPoints(text, subject), difficulty: guessDifficulty(text), qtype: guessType(text, subject), via: 'rules' };
 }
 
+/** 照片上框出来的题，截图边上常带着上一题的结尾或下一题的开头 */
+export const onlyNo = (no: number) => `这张截图是第 ${no} 题，边上可能带着别的题的一部分，只看第 ${no} 题。`;
+
 /** 识题：截图（可选）+ 已知文字 → 题干、答案、知识点、难度、题型。只给这个学科的知识点清单 */
-export async function readQuestion(cfg: AiConfig | null, o: { text?: string; image?: string; solve?: boolean; subject?: SubjectId }): Promise<ReadResult> {
+export async function readQuestion(cfg: AiConfig | null, o: { text?: string; image?: string; solve?: boolean; subject?: SubjectId; no?: number }): Promise<ReadResult> {
   const text = o.text?.trim() ?? '', subject = o.subject ?? 'physics', pack = packOf(subject), qtypes = qtypesOf(subject);
   if (!online(cfg) || (!text && !o.image)) return readByRules(text, subject);
   const prompt = [
     o.image ? pack.prompt.read : `下面是一道${pack.name}题。`,
+    o.image && o.no ? onlyNo(o.no) : '',
     text ? '已知文字：\n' + text : '',
     `然后${o.solve === false ? '' : '给出答案和简要解析，并'}从下面的知识点清单里选 1~3 个最相关的 key，估计难度（1 基础 2 巩固 3 中档 4 提高 5 压轴）和题型（${qtypes.join('/')}）。`,
     '知识点清单（key 名称）：\n' + pointList(subject),

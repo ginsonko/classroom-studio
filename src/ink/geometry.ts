@@ -17,8 +17,15 @@ export function withObject(stroke: Stroke, obj: PhysObj): Stroke {
   const b = bounds(objectCorners(obj));
   return { ...stroke, obj, pts: [b.x0, b.y0, .5, b.x1, b.y1, .5] };
 }
+/** 旋转后的贴图四个角（x, y, 压力 三元组） */
+export function imageCorners(s: Stroke): number[] {
+  const b = bounds(s.pts), cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, hw = (b.x1 - b.x0) / 2, hh = (b.y1 - b.y0) / 2;
+  const c = Math.cos(s.rot ?? 0), sn = Math.sin(s.rot ?? 0);
+  return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].flatMap(([x, y]) => [cx + c * x - sn * y, cy + sn * x + c * y, .5]);
+}
 export function strokeBounds(s: Stroke): Box {
   if (s.obj) return bounds(objectCorners(s.obj));
+  if (s.tool === 'image' && s.rot) return bounds(imageCorners(s));
   const b = bounds(s.pts);
   if (s.tool === 'text' && !(s.tex && s.pts.length >= 6)) {
     const fs = Math.max(.016, s.size * .008), lines = (s.text ?? '').split('\n');
@@ -59,11 +66,16 @@ export function scaleStroke(s: Stroke, center: Point, scale: number): Stroke {
   if (s.obj) return withObject(s, { ...s.obj, x: center.x + (s.obj.x - center.x) * k, y: center.y + (s.obj.y - center.y) * k, w: Math.max(.008, s.obj.w * k), h: Math.max(.008, s.obj.h * k) });
   return { ...s, size: Math.max(.3, Math.min(80, s.size * k)), pts: s.pts.map((v, i) => i % 3 === 0 ? center.x + (v - center.x) * k : i % 3 === 1 ? center.y + (v - center.y) * k : v) };
 }
-export function canRotate(s: Stroke): boolean { return !s.plot && !['text', 'axes', 'image'].includes(s.tool); }
+export function canRotate(s: Stroke): boolean { return !s.plot && !['text', 'axes'].includes(s.tool); }
+const normAngle = (a: number) => { const t = a % (2 * Math.PI); const r = t > Math.PI ? t - 2 * Math.PI : t < -Math.PI ? t + 2 * Math.PI : t; return Math.abs(r) < 1e-9 ? 0 : r; };
 export function rotateStroke(s: Stroke, center: Point, angle: number): Stroke {
   const c = Math.cos(angle), sn = Math.sin(angle);
   const xy = (x: number, y: number) => [center.x + (x - center.x) * c - (y - center.y) * sn, center.y + (x - center.x) * sn + (y - center.y) * c];
   if (s.obj) { const [x, y] = xy(s.obj.x, s.obj.y); return withObject(s, { ...s.obj, x, y, rot: s.obj.rot + angle }); }
+  if (s.tool === 'image') {
+    const b = bounds(s.pts), [x, y] = xy((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2), dx = x - (b.x0 + b.x1) / 2, dy = y - (b.y0 + b.y1) / 2;
+    return { ...s, pts: [b.x0 + dx, b.y0 + dy, .5, b.x1 + dx, b.y1 + dy, .5], rot: normAngle((s.rot ?? 0) + angle) };
+  }
   if (!canRotate(s)) return s;
   let pts = s.pts, tool = s.tool;
   const b = bounds(pts);
@@ -73,6 +85,16 @@ export function rotateStroke(s: Stroke, center: Point, angle: number): Stroke {
   const out: number[] = [];
   for (let i = 0; i < pts.length; i += 3) out.push(...xy(pts[i], pts[i + 1]), pts[i + 2]);
   return { ...s, tool, pts: out };
+}
+/** 贴图左右翻转（按看到的样子翻：镜像后旋转角取反） */
+export function flipImage(s: Stroke): Stroke {
+  return s.tool === 'image' ? { ...s, flip: !s.flip, rot: normAngle(-(s.rot ?? 0)) } : s;
+}
+/** 贴图绕自己的中心转 90°（dir = 1 顺时针，-1 逆时针） */
+export function turnImage(s: Stroke, dir: 1 | -1): Stroke {
+  if (s.tool !== 'image') return s;
+  const b = bounds(s.pts);
+  return rotateStroke(s, { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, dir * Math.PI / 2);
 }
 export function duplicateStroke(s: Stroke, offset = .018): Stroke {
   const copy = moveStroke(s, offset, offset), id = freshId();

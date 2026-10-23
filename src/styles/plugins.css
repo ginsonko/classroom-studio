@@ -49,6 +49,8 @@
 .pl-title i { font-style: normal; font-size: 11.5px; color: var(--fg-2); }
 .pl-main > p { margin: 0; font-size: 12.5px; color: var(--fg-1); line-height: 1.6; }
 .pl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pl-where { margin: 2px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-1); }
+.pl-where b { color: var(--cue); font-weight: 600; }
 .pl-perms { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
 .pl-perms span { padding: 2px 8px; border-radius: 99px; background: var(--private-soft, rgba(181, 140, 255, .14)); color: var(--private, #b58cff); }
 .pl-perms span.none { background: rgba(60, 207, 145, .12); color: var(--ok); }
@@ -112,3 +114,4 @@
 .tdock-plugins .pl-list-dock { display: flex; flex-direction: column; padding: 6px; gap: 2px; }
 .tdock-plugins .pl-list-dock button { display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: var(--r-sm); font-size: 13px; text-align: left; color: var(--fg-0); }
 .tdock-plugins .pl-list-dock button:hover { background: var(--bg-3); }
+.tdock-plugins .pl-list-dock button small { margin-left: auto; font-size: 11px; color: var(--fg-3); }

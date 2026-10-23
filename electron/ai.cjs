@@ -355,6 +355,14 @@ async function handle(method, value, ctx) {
     case 'ai.chat': return metered(ledger, String(value?.feature || '课堂 AI').slice(0, 40), () => chat(cfg, value, windows), reconciler);
     case 'ai.image': return metered(ledger, String(value?.feature || 'AI 生图').slice(0, 40), () => image(cfg, value), reconciler);
     case 'ai.ledger': return ledger ? ledger.summary() : null;
+    // 动手前估个价：看图的部分按看图模型、文字部分按文字模型，套账本里的价格表
+    case 'ai.estimate': {
+      if (!ledger) return null;
+      const n = (v) => Math.max(0, Math.min(1e9, Number(v) || 0));
+      const vm = cfg.visionModel || cfg.model, tm = cfg.model || cfg.visionModel;
+      const cny = ledger.cost(vm, { input: n(value?.vision?.input), output: n(value?.vision?.output) }) + ledger.cost(tm, { input: n(value?.text?.input), output: n(value?.text?.output) });
+      return { cny: Math.round(cny * 100) / 100, model: vm };
+    }
     case 'ai.setBudget': { const s = ledger.setBudget(value); if (value?.reconcile === true) reconciler?.soon(500); return s; }
     case 'ai.reconcile': { if (!reconciler) throw new Error('对账不可用'); await reconciler.sync({ force: true }); return ledger.summary(); }
     case 'ai.screen': return studentShot(windows);

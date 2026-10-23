@@ -31,6 +31,10 @@
 .ai-compose textarea { width: 100%; padding: 8px 10px; border: 0; outline: 0; resize: vertical; min-height: 64px; max-height: 260px; border-radius: var(--r-sm); background: var(--bg-0); color: var(--fg-0); box-shadow: inset 0 0 0 1px var(--line); line-height: 1.55; font-size: 13px; user-select: text; }
 .ai-compose textarea:focus { box-shadow: inset 0 0 0 1px var(--cue), 0 0 0 3px var(--cue-soft); }
 .ai-compose-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ai-compose-hint { margin-top: -4px; font-size: 11px; color: var(--fg-3); }
+.ai-plugin-hint { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--cue) 12%, var(--bg-0)); font-size: 12px; color: var(--fg-1); line-height: 1.45; }
+.ai-plugin-hint svg { flex: none; color: var(--cue); }
+.ai-plugin-hint button { flex: none; margin-left: auto; padding: 3px 9px; border-radius: 999px; background: var(--cue); color: var(--bg-0); font-weight: 600; white-space: nowrap; }
 .ai-chip { display: inline-flex; flex-shrink: 0; white-space: nowrap; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; color: var(--fg-2); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line); }
 .ai-chip:hover { color: var(--fg-0); }
 .ai-chip.on { color: var(--cue); background: var(--cue-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cue) 45%, transparent); }

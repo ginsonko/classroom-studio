@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Check, Copy, Download, ExternalLink, Info, Loader2, RefreshCw, Rocket, Search, X } from 'lucide-react';
+import { BookOpen, Check, Clapperboard, Copy, Download, ExternalLink, Info, Loader2, RefreshCw, Rocket, Search, X } from 'lucide-react';
+import { showWelcome } from '../guide/guide';
 import { MANUAL, QQ_GROUP, REPO, SITE, YINZI, type Chapter } from '../help/manual';
 import { checkUpdate, downloadUpdate, installUpdate, mb, openHelp, openPage, setUpdateCheck, skipVersion, useHelp } from '../lib/update';
 import { host } from '../lib/host';
@@ -24,6 +25,7 @@ export function HelpCenter() {
           <nav className="help-tabs">
             <button className={open === 'manual' ? 'on' : ''} onClick={() => openHelp('manual')}><BookOpen size={14} />说明书</button>
             <button className={open === 'about' ? 'on' : ''} onClick={() => openHelp('about')}><Info size={14} />关于与更新<UpdateDot /></button>
+            <button className="help-rehearse" onClick={() => { useHelp.setState({ open: false }); showWelcome(); }} data-tip="用练习学生和彩排黑板，亲手把一节课走一遍"><Clapperboard size={14} />上课彩排</button>
           </nav>
           <span className="flex" />
           <button className="help-x" aria-label="关闭帮助" onClick={() => useHelp.setState({ open: false })}><X size={18} /></button>
@@ -139,6 +141,7 @@ function About() {
         <button onClick={() => void openPage(REPO)}><ExternalLink size={13} />GitHub 源码</button>
         <button onClick={() => void openPage(YINZI)}><ExternalLink size={13} />银子 API（AI 接口）</button>
         <button onClick={() => openHelp('manual')}><BookOpen size={13} />说明书</button>
+        <button onClick={() => void openPage(SITE + '/#poster')} data-tip="一张长图讲清大部分功能，适合转发给其他老师"><ExternalLink size={13} />一图看懂（可转发）</button>
       </section>
       <p className="ab-foot">内置第三方组件：Electron（MIT）、Codex CLI（Apache-2.0）、FFmpeg（GPL）、PDF.js、three.js、KaTeX 等，按各自的开源协议使用。</p>
     </div>

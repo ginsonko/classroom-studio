@@ -14,7 +14,7 @@ import { boardMaterial } from '../lib/library';
 import { isLong, screenLabel } from '../lib/longBoard';
 import { seekLastInk, seekLong } from '../stage/longNav';
 import { StepToggle } from '../stage/StepToggle';
-import { saveBoard, type ExportMode } from '../ink/boardExport';
+import { saveBoard, saveBoardPdf, type ExportMode } from '../ink/boardExport';
 import { answerKey, isAnswer, toggleAnswerPage, toggleReveal } from '../doc/answers';
 import { host } from '../lib/host';
 import { ToolPalette } from '../ui/ToolPalette';
@@ -29,6 +29,7 @@ import { demoById, pickPatch } from '../demos';
 import { clampDemo } from '../demos/kit';
 import { fmt } from '../physics/sim/text';
 import { DockPlugins } from '../plugins/DockPlugins';
+import { GuideSpot } from '../guide/Spot';
 import '../styles/dock.css';
 
 declare global { interface Window { csDock?: { rail(w: number, h: number): void; shape(rects: { x: number; y: number; width: number; height: number }[]): void; drag(phase: 'start' | 'move' | 'end', x: number, y: number): void; focus(on: boolean): void; log?(text: string): void } } }
@@ -174,6 +175,8 @@ export function DockApp() {
       <InkRows zoom={zoom} onZoom={nextZoom} />
       {st.pgmMat.kind === 'sim' && <SimSection mat={st.pgmMat} />}
       <FormulaHost />
+      {/* 浮层可能整体缩放（zoom），高亮框放到 body 上才对得准 */}
+      {createPortal(<GuideSpot win="dock" />, document.body)}
     </div>
   );
 }
@@ -192,9 +195,9 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
   const saveBtn = useRef<HTMLButtonElement>(null);
   const [saveMenu, setSaveMenu] = useState(false), [saving, setSaving] = useState(false), [saved, setSaved] = useState(false);
   useEffect(() => setSaveMenu(false), [mat.id]);
-  const save = (mode: ExportMode) => {
+  const save = (mode: SaveChoice) => {
     setSaving(true);
-    void saveBoard(mode).then((files) => { if (files?.length) { setSaved(true); setTimeout(() => setSaved(false), 2500); } })
+    void (mode === 'pdf' || mode === 'pdf-ink' ? saveBoardPdf({ saveInk: mode === 'pdf-ink' }) : saveBoard(mode)).then((files) => { if (files?.length) { setSaved(true); setTimeout(() => setSaved(false), 2500); } })
       .catch((e) => { host.call('notice', '保存板书失败：' + String((e as Error).message)).catch(() => {}); })
       .finally(() => setSaving(false));
   };
@@ -242,12 +245,12 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
       <div className="tdock-row">
         <button className="tp-b" onClick={() => st().newLongBoard()} data-tip="新开一块长黑板：一整条往下写，滚轮 / 翻页往下滚，写到底自动加长"><ScrollText size={17} /></button>
         <button ref={saveBtn} className={'tp-b' + (saving || saveMenu ? ' on' : '')} disabled={saving}
-          onClick={() => { if (mat.kind === 'board' && !long && mat.pages.length > 1) setSaveMenu(!saveMenu); else save('stitch'); }}
-          data-tip={long ? '保存板书：整块长黑板存成一张长图' : mat.kind === 'board' ? (mat.pages.length > 1 ? '保存板书：拼成一张长图，或每页一张' : '保存板书为图片') : '保存学生画面为图片'}>
+          onClick={() => { if (mat.kind === 'board') setSaveMenu(!saveMenu); else save('stitch'); }}
+          data-tip={mat.kind === 'board' ? '保存板书：存成图片，或存成 A4 的 PDF 方便打印' : '保存学生画面为图片'}>
           {saved ? <Check size={17} /> : <ImageDown size={17} />}
         </button>
       </div>
-      {saveMenu && <SaveMenu anchor={saveBtn.current} pages={mat.pages.length} page={pgm.page} onPick={(m) => { setSaveMenu(false); save(m); }} onClose={() => setSaveMenu(false)} />}
+      {saveMenu && <SaveMenu anchor={saveBtn.current} pages={long ? 1 : mat.pages.length} long={long} page={pgm.page} onPick={(m) => { setSaveMenu(false); save(m); }} onClose={() => setSaveMenu(false)} />}
       <div className="tdock-row">
         <SubjectPicker className="tdock-subj" vertical compact />
         <DockPlugins />
@@ -260,7 +263,8 @@ function InkRows({ zoom, onZoom }: { zoom: number; onZoom: () => void }) {
 }
 
 /** 多页黑板保存方式：拼长图 / 每页一张 / 只存这一页 */
-function SaveMenu({ anchor, pages, page, onPick, onClose }: { anchor: HTMLElement | null; pages: number; page: number; onPick: (m: ExportMode) => void; onClose: () => void }) {
+type SaveChoice = ExportMode | 'pdf' | 'pdf-ink';
+function SaveMenu({ anchor, pages, long, page, onPick, onClose }: { anchor: HTMLElement | null; pages: number; long: boolean; page: number; onPick: (m: SaveChoice) => void; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const W = 232;
@@ -279,10 +283,14 @@ function SaveMenu({ anchor, pages, page, onPick, onClose }: { anchor: HTMLElemen
   }, [anchor, onClose]);
   return createPortal(
     <div ref={box} data-ink-pop className="tdock-pages tdock-save" style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 8 }}>
-      <header><b>保存板书</b><span className="num">共 {pages} 页</span></header>
-      <button onClick={() => onPick('stitch')}><b>拼成一张长图</b><span>{pages} 页从上到下接起来，方便发给家长</span></button>
-      <button onClick={() => onPick('pages')}><b>每页一张</b><span>按「名字-01、-02…」编号保存</span></button>
-      <button onClick={() => onPick('page')}><b>只存这一页</b><span>第 {page + 1} 页</span></button>
+      <header><b>保存板书</b>{pages > 1 && <span className="num">共 {pages} 页</span>}</header>
+      {pages > 1 ? <>
+        <button onClick={() => onPick('stitch')}><b>拼成一张长图</b><span>{pages} 页从上到下接起来，方便发给家长</span></button>
+        <button onClick={() => onPick('pages')}><b>每页一张</b><span>按「名字-01、-02…」编号保存</span></button>
+        <button onClick={() => onPick('page')}><b>只存这一页</b><span>第 {page + 1} 页</span></button>
+      </> : <button onClick={() => onPick('stitch')}><b>存成图片</b><span>{long ? '整块长黑板一张长图' : 'PNG 图片'}</span></button>}
+      <button onClick={() => onPick('pdf')}><b>存成 PDF</b><span>A4 纸{long ? '，长黑板自动分页' : pages > 1 ? '，一张纸放两页' : ''}，和黑板上看到的一样</span></button>
+      <button onClick={() => onPick('pdf-ink')}><b>存成 PDF · 打印省墨</b><span>白底深色字、不印格子，适合打印给学生</span></button>
     </div>,
     document.body,
   );

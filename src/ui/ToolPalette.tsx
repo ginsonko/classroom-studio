@@ -10,6 +10,11 @@ import { IAxes, ICurtain, ICurveArrow, IDArrow, IDashed, IForce, IIncline, ILase
 import { ObjectLibrary } from '../physics/edit/ObjectLibrary';
 import { SelectionEditor } from '../physics/edit/SelectionEditor';
 import { hasInk, useFormula } from '../ink/FormulaSheet';
+import { usePlugins } from '../plugins/pluginStore';
+import { rememberLast, shownTool, useToolbar, visibleGroups, type ToolbarPrefs } from './toolbarPrefs';
+import { ToolbarEditor } from './ToolbarEditor';
+
+const NO_PREFS: ToolbarPrefs = { preset: 'full', hidden: [], last: {} };
 
 const formulaTip = (sel: Stroke[]) => sel.length === 1 && sel[0].tex ? '修改选中的公式' : hasInk(sel) ? '把选中的手写笔迹识别成排版公式（用 AI 看图）' : '公式 · 先用套索圈住手写公式再点这里识别；不选就直接输入 LaTeX';
 
@@ -48,16 +53,6 @@ const GENERAL_META: Record<string, { icon?: Ico; name: string }> = {
 };
 const metaOf = (t: string, physics: boolean) => physics ? TOOL_META[t] : { ...TOOL_META[t], ...GENERAL_META[t] };
 
-const GROUPS: { id: string; tools: Tool[] }[] = [
-  { id: 'select', tools: ['pointer', 'select', 'lasso'] },
-  { id: 'write', tools: ['pen', 'marker', 'highlighter'] },
-  { id: 'erase', tools: ['eraser'] },
-  { id: 'lines', tools: ['arrow', 'line', 'darrow', 'curve', 'dashed'] },
-  { id: 'shapes', tools: ['rect', 'ellipse', 'triangle'] },
-  { id: 'physics', tools: ['force', 'axes'] },
-  { id: 'text', tools: ['text'] },
-  { id: 'teach', tools: ['laser', 'spotlight', 'curtain'] },
-];
 export const STUDENT_TOOLS: Tool[] = ['pointer', 'pen', 'highlighter', 'arrow', 'ellipse', 'eraser'];
 const SIZES = [{ v: 1, n: '超细' }, { v: 2, n: '细' }, { v: 3.5, n: '中' }, { v: 6, n: '粗' }];
 export const SIZE_MIN = 0.4, SIZE_MAX = 12;
@@ -83,16 +78,25 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
   const inkOptions = useStore((s) => s.inkOptions);
   const pgm = useStore((s) => s.pgm);
   const dark = pgmKind === 'board' && DARK_BOARDS.includes(boardSkin);
-  const [last, setLast] = useState<Record<string, Tool>>({});
+  // 学生条不跟老师的工具栏设置走
+  const saved = useToolbar();
+  const prefs = student ? NO_PREFS : saved;
+  const [studentLast, setStudentLast] = useState<Record<string, Tool>>({});
   const [fly, setFly] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const objectButton = useRef<HTMLButtonElement>(null), editorButton = useRef<HTMLButtonElement>(null);
-  const [objectsOpen, setObjectsOpen] = useState(false), [editorOpen, setEditorOpen] = useState(false);
+  const [objectsOpen, setObjectsOpen] = useState(false), [editorOpen, setEditorOpen] = useState(false), [customize, setCustomize] = useState(false);
   // 浮层窗口拿不到学生列表，用同步过来的当前学科决定形状菜单的叫法
   const physics = useStore((s) => ['physics', 'science'].includes(familyOf(s.subject)));
-  const groups = physics ? GROUPS : GROUPS.map((g) => g.id === 'physics' ? { ...g, tools: g.tools.filter((t) => t !== 'force') } : g);
+  const groups = visibleGroups(prefs, { physics, tool });
+  const lastOf = student ? { ...prefs, last: studentLast } : prefs;
+  const remember = (g: string, t: Tool) => student ? setStudentLast({ ...studentLast, [g]: t }) : rememberLast(g, t);
+  const openCustomize = () => { setCustomize(true); setFly(null); setObjectsOpen(false); setEditorOpen(false); };
   const selection = selected ? (ink[selected.key] ?? []).filter((s) => selected.ids.includes(s.id) && s.layer !== 'private') : [];
   const changeOptions = (patch: Partial<typeof inkOptions>) => useStore.getState().setShared({ inkOptions: { ...useStore.getState().inkOptions, ...patch } });
+  // 插件页、插件菜单点「去绘图库」：打开绘图库，具体停在哪个分组由绘图库自己处理
+  const wantShapes = usePlugins((s) => !!s.shapes);
+  useEffect(() => { if (wantShapes && !student && ROLE !== 'student') { setObjectsOpen(true); setEditorOpen(false); setFly(null); } }, [wantShapes, student]);
 
   useEffect(() => {
     if (!fly) return;
@@ -120,10 +124,10 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
   };
 
   return (
-    <div ref={root} className={'tp' + (vertical ? ' v' : '') + (student ? ' student' : '')}>
+    <div ref={root} className={'tp' + (vertical ? ' v' : '') + (student ? ' student' : '')} onContextMenu={student || ROLE === 'student' ? undefined : (e) => { e.preventDefault(); openCustomize(); }}>
       {/* 0.9.1 起师生工具合一：学生拿到和老师一样的工具组，只是笔色固定为品红 */}
       {groups.map((g) => {
-            const cur = g.tools.includes(tool) ? tool : last[g.id] ?? g.tools[0];
+            const cur = shownTool(g, lastOf, tool);
             const active = g.tools.includes(tool);
             return (
               <div key={g.id} className="tp-g">
@@ -140,7 +144,7 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
                     {g.id !== 'erase' && g.tools.map((t) => {
                       const M = metaOf(t, physics), I = M.icon;
                       return (
-                        <button key={t} className={'tp-fi' + (t === tool ? ' on' : '')} onClick={() => { onTool(t); setLast({ ...last, [g.id]: t }); setFly(null); }}>
+                        <button key={t} className={'tp-fi' + (t === tool ? ' on' : '')} onClick={() => { onTool(t); remember(g.id, t); setFly(null); }}>
                           <I size={17} strokeWidth={1.9} />
                           <span>{M.name.split(' · ')[0]}</span>
                           <small>{M.name.split(' · ')[1] ?? ''}</small>
@@ -158,6 +162,7 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
                       </div>
                     </div>}
                     {g.id === 'write' && <div className="ink-options"><label><input type="checkbox" checked={inkOptions.shapeSnap} onChange={(e) => changeOptions({ shapeSnap: e.target.checked })} />停笔自动规整图形</label></div>}
+                    {!student && ROLE !== 'student' && g.id !== 'erase' && <button className="tp-fi tp-customize" onClick={openCustomize}><SlidersHorizontal size={14} /><span>定制工具栏…</span><small>右键工具栏也行</small></button>}
                   </div>
                 )}
               </div>
@@ -202,6 +207,7 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
         )}
       </div>
       {objectsOpen && !student && <AnchoredPopup anchor={objectButton.current} vertical={vertical} onClose={() => setObjectsOpen(false)}><ObjectLibrary current={objKind} onClose={() => setObjectsOpen(false)} onSelect={(kind) => { useStore.getState().setShared({ objKind: kind }); onTool('obj'); setObjectsOpen(false); }} /></AnchoredPopup>}
+      {customize && !student && <AnchoredPopup anchor={root.current} vertical={vertical} onClose={() => setCustomize(false)}><ToolbarEditor meta={(t) => metaOf(t, physics)} physics={physics} onClose={() => setCustomize(false)} /></AnchoredPopup>}
       {editorOpen && selected && selection.length > 0 && <AnchoredPopup anchor={editorButton.current} vertical={vertical} onClose={() => setEditorOpen(false)}><SelectionEditor ikey={selected.key} strokes={selection} onClose={() => setEditorOpen(false)} onSelection={(ids) => useStore.getState().setShared({ selectedInk: ids.length ? { key: selected.key, ids } : null })} /></AnchoredPopup>}
     </div>
   );

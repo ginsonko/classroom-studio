@@ -82,7 +82,7 @@ function DeskTabs() {
     </div>
     <div className="dtabs-acts">
       <button className="dtabs-act" onClick={() => st().newBoard()} data-tip="再开一块空白黑板"><Plus size={12} />黑板</button>
-      <button className="dtabs-act" onClick={() => st().newLongBoard()} data-tip="长黑板：一整条往下写，滚轮 / 翻页键往下滚，写到底自动加长"><ScrollText size={12} />长黑板</button>
+      <button className="dtabs-act" data-guide="long-board" onClick={() => st().newLongBoard()} data-tip="长黑板：一整条往下写，滚轮 / 翻页键往下滚，写到底自动加长"><ScrollText size={12} />长黑板</button>
       <button className="dtabs-act" onClick={() => void snipToBoard().catch((e) => reportMaterialError(e, '截屏', 'student'))} data-tip="框选屏幕上任意区域贴到黑板。也可以用微信 / QQ 截图后直接 Ctrl+V"><Scissors size={12} />截屏</button>
       {cur && cur.id !== BASE && <button className="dtabs-act" onClick={() => st().setWin(cur.id, { mode: cur.mode === 'normal' ? 'max' : 'normal' })} data-tip="当前课件在「占满画面」和「浮在黑板上的窗口」之间切换"><AppWindow size={12} />{cur.mode === 'normal' ? '占满' : '窗口'}</button>}
       <button className="dtabs-act" disabled={docs < 2} onClick={() => st().tileWins()} data-tip={docs < 2 ? '打开两个以上课件后可以并排' : '当前课件和最近用过的课件并排（最多 4 个）'}><Columns2 size={12} />并排</button>

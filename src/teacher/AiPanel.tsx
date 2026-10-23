@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import { create } from 'zustand';
-import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, History, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, PenTool, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, History, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, PenTool, Puzzle, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
 import { archive } from '../lib/archive';
 import { AiHistory } from './AiHistory';
 import { ai, DemoError, demoByRules, demoEngine, explainToBoard, makeMotion, makePreset, materialFromObjects, runAction, SAMPLE_PROBLEM, setDemoEngine, type Action, type AiConfig, type AiOut, type DemoEngine, type DemoGuess, type RunMeta } from '../lib/ai';
@@ -20,6 +20,8 @@ import { makeManim, manimApi, useManim, type ManimQuality } from '../lib/manim';
 import { MdText, TexText } from './TexText';
 import { loadModels, ModelPicker } from '../ui/ModelPicker';
 import { importLink, showImport, type ImportSummary } from './ImportDialog';
+import { usePlugins } from '../plugins/pluginStore';
+import { guideHit } from '../guide/hits';
 import { ManimBlock, ManimInstall, ManimSteps, ManimView, manimQuality, QualityPick } from './ManimBlock';
 import '../styles/sim.css';
 import '../styles/ai.css';
@@ -45,6 +47,13 @@ export const useAiLib = create<{ open: boolean; focus: number }>(() => ({ open: 
 useAiLib.subscribe((s) => localStorage.setItem('cs.ai.lib', s.open ? '1' : '0'));
 
 const uid = () => Math.random().toString(36).slice(2, 9);
+
+/** 老师在 AI 助手里说要做 / 改插件、往绘图库加图形：这里做不了，要去 AI 工坊 */
+export const pluginIntent = (t: string) => /(做|加|写|改|添|增|新建|生成|开发|弄)[^。！？\n]{0,10}插件|插件[^。！？\n]{0,14}(加|添|增)|(绘图库|图形库)[^。！？\n]{0,14}(加|添|增|放|做)|(加|添|增|做)[^。！？\n]{0,12}(绘图库|图形库)/.test(t);
+function toWorkshopWith(ask: string) {
+  usePlugins.setState({ workshop: { id: '', ask: ask.trim() } });
+  useStore.getState().set({ page: 'agents' });
+}
 const tex = (s: string, display = false) => ({ __html: katex.renderToString(s, { throwOnError: false, displayMode: display }) });
 
 const RichText = ({ text }: { text: string }) => <TexText text={text} className="ai-text" />;
@@ -140,6 +149,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
       const { out, meta } = await runAction(action, ask, { cfg: online ? cfg : null, image, history, onStep, subject, engine: opts.engine ?? engine });
       if (out.kind === 'draw') putStrokes(out.mat, out.strokes);
       patch(id, { pending: false, out, meta });
+      guideHit('ai');
       archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta, subject });
     } catch (e) {
       patch(id, { pending: false, error: e instanceof Error ? e.message : String(e), ...(e instanceof DemoError ? { guess: e.guess, steps: e.steps } : {}) });
@@ -184,10 +194,18 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !busy && (online || canDemo)) { e.preventDefault(); void run(online ? 'ask' : 'demo'); } }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return;
+              e.preventDefault();
+              if (busy || !(online || canDemo) || (!text.trim() && !(online && useScreen))) return;
+              if (pluginIntent(text)) { toWorkshopWith(text); return; }
+              void run(online ? 'ask' : 'demo');
+            }}
             placeholder={online ? '粘贴题目，或说说你要什么。留空就让 AI 直接看学生画面。' : demos ? '粘贴题目原文（带数据和单位），点「做成演示」用规则识别生成。' : canDemo ? '粘贴题目，点「做成演示」按关键词挑一个' + packOf(subject).name + '演示；配置模型后 AI 能读题、讲题、填参数。' : '在「设置」里配置模型后，AI 能读题、讲题、画板书、回答问题。'}
             rows={3}
           />
+          {pluginIntent(text) && <div className="ai-plugin-hint"><Puzzle size={13} /><span>做插件、往绘图库加图形要在「AI 工坊」里做：AI 写好后先预览，满意了一键装上。</span><button onClick={() => toWorkshopWith(text)}>去 AI 工坊做</button></div>}
+          {(online || canDemo) && <div className="ai-compose-hint">{online ? '回车发送（问一问）' : '回车做成演示'} · Shift+回车换行</div>}
           <div className="ai-compose-bar">
             <button className={'ai-chip' + (useScreen && online ? ' on' : '')} disabled={!online} onClick={() => setUseScreen(!useScreen)} data-tip={online ? '把学生窗口当前画面作为图片发给模型（学生看不到这个操作）' : '需要先配置模型'}>
               <Camera size={12} />读学生画面

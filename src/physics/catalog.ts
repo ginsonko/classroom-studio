@@ -114,6 +114,8 @@ function MATH_ITEMS(): CatalogItem[] {
     m('m-cylinder', '圆柱', 'solid', .18, null, { ...viewProps, H: 2, axis: false }, [pos('H', '高（底面半径为 1）'), yes('axis', '画轴线和圆心'), ...view]),
     m('m-cone', '圆锥', 'solid', .18, null, { ...viewProps, H: 2, axis: false }, [pos('H', '高（底面半径为 1）'), yes('axis', '画高和圆心'), ...view]),
     m('m-frustum', '圆台', 'solid', .2, null, { ...viewProps, r1: 1, r2: .55, H: 1.3, axis: false }, [pos('r1', '下底半径'), pos('r2', '上底半径', .05), pos('H', '高'), yes('axis', '画轴线和圆心'), ...view]),
+    m('m-frustum-p', '正棱台', 'solid', .2, null, { ...viewProps, n: 4, H: 1.2, k: .5, letters: true }, [{ key: 'n', label: '底面边数', min: 3, max: 8, step: 1 }, pos('H', '高（下底面外接圆半径为 1）'), { key: 'k', label: '上底与下底的比', min: .05, max: .95, step: .05 }, yes('letters', '标顶点字母'), ...view]),
+    m('m-axes3', '空间直角坐标系', 'solid', .24, null, { ...viewProps, n: 3, nums: false, neg: false, point: false, px: 1, py: 2, pz: 2 }, [{ key: 'n', label: '每轴刻度数', min: 1, max: 10, step: 1 }, yes('nums', '标数字'), yes('neg', '画负半轴'), yes('point', '画点 P 和它的投影'), { key: 'px', label: 'P 的 x 坐标', step: .5 }, { key: 'py', label: 'P 的 y 坐标', step: .5 }, { key: 'pz', label: 'P 的 z 坐标', step: .5 }, ...view]),
     m('m-sphere', '球', 'solid', .18, null, { ...viewProps, center: true }, [yes('center', '标球心 O'), view[0], view[2]]),
   ];
 }

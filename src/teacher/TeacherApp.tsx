@@ -39,6 +39,9 @@ import { openHelp, useHelp } from '../lib/update';
 import { dismiss, useToast } from '../lib/toast';
 import { PluginsPage } from '../plugins/PluginsPage';
 import { PluginButton, PluginSheets } from '../plugins/PluginUi';
+import { SortButton, SortDialog } from './SortDialog';
+import { openSort, useSort } from '../lib/sort';
+import { Guide } from '../guide/GuideCards';
 
 export function TeacherApp() {
   const page = useStore((s) => s.page);
@@ -75,8 +78,17 @@ export function TeacherApp() {
       if (e.key === '1' && e.altKey) st.set({ page: 'console' });
     };
     window.addEventListener('keydown', k);
-    const offPaste = installPaste(() => useStore.getState().page === 'console', (m) => useRecording.setState({ error: '贴图失败：' + m }));
-    return () => { window.removeEventListener('keydown', k); offPaste(); };
+    const offPaste = installPaste(() => useStore.getState().page === 'console' && !useSort.getState().open, (m) => useRecording.setState({ error: '贴图失败：' + m }));
+    // 文件拖到没人接的地方（不是课件区、题库、资料库这些自己会接的地方）：交给 AI 整理
+    const over = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); };
+    const drop = (e: DragEvent) => {
+      if (e.defaultPrevented || !e.dataTransfer?.files.length) return;
+      e.preventDefault();
+      const paths = [...e.dataTransfer.files].map((f) => host.pathForFile(f)).filter((p): p is string => !!p);
+      if (paths.length) openSort({ paths });
+    };
+    window.addEventListener('dragover', over); window.addEventListener('drop', drop);
+    return () => { window.removeEventListener('keydown', k); offPaste(); window.removeEventListener('dragover', over); window.removeEventListener('drop', drop); };
   }, []);
 
   return (
@@ -117,11 +129,13 @@ export function TeacherApp() {
       <SavedNotice />
       <Toasts />
       <ImportDialog />
+      <SortDialog />
       <HelpCenter />
       <UpdateToast />
       <SkillRunner />
       <FormulaHost />
       <PluginSheets />
+      <Guide />
       <Tooltips />
     </div>
   );
@@ -197,12 +211,13 @@ function TopBar() {
       <SubjectPicker className="tb-subj" />
       <div className="tb-now"><span className="tally-dot" /><span className="tb-now-t">学生画面</span><b title={pgmTitle}>{pgmTitle}</b></div>
       <span className="flex" />
+      <SortButton />
       <PenHolder />
       <button className="tb-cmd" onClick={focusSearch}><Command size={13}/><span>搜索课件</span><kbd>Ctrl K</kbd></button>
       <PluginButton />
       <DockToggle />
       <button className="tb-ico" onClick={()=>useRecording.setState({panel:true})} data-tip="窗口、录课与回放"><Settings2 size={16}/></button>
-      <button className="tb-ico" onClick={()=>host.openStudentWindow()} data-tip="打开学生窗口"><MonitorUp size={16} /></button>
+      <button className="tb-ico" data-guide="student-window" onClick={()=>host.openStudentWindow()} data-tip="打开学生窗口"><MonitorUp size={16} /></button>
     </header>
   );
 }

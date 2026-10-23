@@ -16,7 +16,7 @@ export const OBJ_KINDS = [
   // 数学：曲线
   'm-func', 'm-ellipse', 'm-hyperbola', 'm-parabola',
   // 数学：立体
-  'm-cube', 'm-cuboid', 'm-prism', 'm-pyramid', 'm-cylinder', 'm-cone', 'm-sphere', 'm-frustum',
+  'm-cube', 'm-cuboid', 'm-prism', 'm-pyramid', 'm-cylinder', 'm-cone', 'm-sphere', 'm-frustum', 'm-frustum-p', 'm-axes3',
   // 化学仪器
   'c-test-tube', 'c-beaker', 'c-conical', 'c-round-flask', 'c-cylinder', 'c-burette', 'c-funnel', 'c-sep-funnel', 'c-lamp',
   'c-stand', 'c-tube', 'c-gas-bottle', 'c-trough', 'c-condenser', 'c-dropper', 'c-dish', 'c-thermometer', 'c-u-tube',

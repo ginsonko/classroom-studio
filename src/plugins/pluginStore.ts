@@ -1,6 +1,7 @@
 // 插件列表（主进程 plugins.list）+ 正在打开的插件面板。教师窗口和浮层各有一份，插件变化时主进程发 plugins 事件刷新。
 import { create } from 'zustand';
 import { host } from '../lib/host';
+import { bus } from '../lib/bus';
 
 export type Permission = 'student' | 'board' | 'present' | 'bank.read' | 'bank.write' | 'ai' | 'ai.image' | 'files';
 export interface PanelDef { id: string; title: string; entry: string; where: ('console' | 'dock')[]; width: number; height: number }
@@ -27,9 +28,38 @@ interface State {
   /** AI 工坊预览中的插件（plugin://dev-xxx/）：桥接按它检查权限 */
   dev: Record<string, Manifest>;
   /** 插件页点「用 AI 做 / 改」：AI 工坊打开时直接停在做插件的新任务上（id 空 = 新做一个） */
-  workshop: { id: string } | null;
+  workshop: { id: string; ask?: string } | null;
+  /** 要打开绘图库并停在某个插件图形分组（key 同绘图库里的 pl:插件id:序号）；绘图库打开后清空 */
+  shapes: { key: string; subject: string } | null;
 }
-export const usePlugins = create<State>()(() => ({ list: null, error: '', open: [], dev: {}, workshop: null }));
+export const usePlugins = create<State>()(() => ({ list: null, error: '', open: [], dev: {}, workshop: null, shapes: null }));
+
+/** 装好后在哪里用：老师照着就能找到 */
+export function whereText(m: Manifest) {
+  const c = m.contributes, out: string[] = [];
+  if (c.panels.some((x) => x.where.includes('console'))) out.push('导播台顶栏的「插件」按钮');
+  if (c.panels.some((x) => x.where.includes('dock'))) out.push('上课浮层工具条的「插件」按钮');
+  if (c.lessons.length) out.push('顶栏「插件」→ 学生画面页面');
+  if (c.pages.length) out.push('「学情」页上方的分页');
+  for (const g of c.shapes) if (g.items.length) out.push(`浮层工具条「绘图库」→「${g.group}」分组`);
+  if (c.skills.length) out.push('「备课 → AI 工坊」新任务的「做什么」');
+  if (c.templates.length) out.push('导出作业 / 试卷时的排版模板（插件页上方选）');
+  return out;
+}
+
+/** 打开绘图库并停在插件的图形分组。绘图库在浮层工具条里，所以同时发给浮层 */
+export function openShapes(p: Pick<Manifest, 'id' | 'contributes'>, i = 0) {
+  const g = p.contributes.shapes[i];
+  if (!g) return;
+  const shapes = { key: `pl:${p.id}:${i}`, subject: g.subject };
+  usePlugins.setState({ shapes });
+  if (host.role !== 'dock') bus.post({ t: 'cmd', name: 'objLib', arg: shapes });
+}
+bus.on((m) => {
+  if (m.t !== 'cmd' || m.name !== 'objLib' || host.role === 'student') return;
+  const a = m.arg as { key?: unknown; subject?: unknown } | null;
+  if (typeof a?.key === 'string' && typeof a.subject === 'string') usePlugins.setState({ shapes: { key: a.key, subject: a.subject } });
+});
 
 let loading: Promise<void> | null = null, listening = false;
 export function loadPlugins(force = false) {

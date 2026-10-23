@@ -11,7 +11,9 @@ export type BusMsg =
   | { t: 'edit'; key: string; remove?: string[]; upsert?: unknown[]; order?:string[]; actor?: string }
   | { t: 'history'; key: string; actor: string; redo: boolean }
   | { t: 'live'; key: string; stroke: unknown | null; from: string }
-  | { t: 'laser'; key: string; pts: number[]; from: string };
+  | { t: 'laser'; key: string; pts: number[]; from: string }
+  /** 教师窗口和浮层之间的小指令（打开绘图库、新手引导进度等），学生窗口不处理 */
+  | { t: 'cmd'; name: string; arg?: unknown };
 
 type Fn = (m: BusMsg) => void;
 const ch = !host.electron && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('classroom-studio-preview-v2') : null;

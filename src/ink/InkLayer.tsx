@@ -6,6 +6,7 @@ import type { Author, Stroke, Tool } from '../lib/types';
 import { familyOf } from '../lib/subjects';
 import { createObject, isObjKind, keepsAspect, updateObject } from '../physics/catalog';
 import { SelectionEditor } from '../physics/edit/SelectionEditor';
+import { useFormula } from './FormulaSheet';
 import { draw, hit, recognize, type DrawCtx } from './draw';
 import { texTick } from './texCache';
 import { imgTick } from './imgCache';
@@ -24,6 +25,9 @@ const FREE: Tool[] = ['pen', 'marker', 'highlighter', 'curve'];
 // 局部擦除能切断的笔迹；箭头、图形、文字、器材切开就没有意义了，仍然整个擦掉
 const CUTTABLE: Tool[] = [...FREE, 'line', 'dashed'];
 const ERASER_R = { s: .007, m: .014, l: .028 };
+// 这些工具下双击文字就地修改；橡皮、激光笔、聚光灯、幕布不算
+const DBL_TOOLS: Tool[] = ['select', 'lasso', ...FREE, ...TWO_POINT];
+const isTap = (s: Stroke) => FREE.includes(s.tool) && Math.hypot(s.pts[s.pts.length - 3] - s.pts[0], s.pts[s.pts.length - 2] - s.pts[1]) < .004 && s.pts.length <= 15;
 export const eraserRadius = () => ERASER_R[useStore.getState().inkOptions.eraserSize ?? 'm'] ?? ERASER_R.m;
 const remoteDraft = new Map<string, { key: string; stroke: Stroke; at: number }>();
 const laserTrails = new Map<string, { key: string; pts: number[]; at: number[] }>();
@@ -59,7 +63,10 @@ export function InkLayer(props: Props) {
   const layer = props.inkLayer ?? (showPrivate ? 'private' : 'public');
   const wrap = useRef<HTMLDivElement>(null), base = useRef<HTMLCanvasElement>(null), live = useRef<HTMLCanvasElement>(null);
   const strokes = useStore((s) => s.ink[ikey]), boardSkin = useStore((s) => s.boardSkin), sharedSelection = useStore((s) => s.selectedInk);
-  const [px, setPx] = useState({ w: 0, h: 0, dpr: 1 }), [text, setText] = useState<{ x: number; y: number; value: string } | null>(null);
+  // 文字输入框：id 是这段文字的笔迹 id；edit = 改已有的文字（原来那段先藏起来，输入框里接着改）
+  const [px, setPx] = useState({ w: 0, h: 0, dpr: 1 }), [text, setTextState] = useState<{ x: number; y: number; value: string; id: string; edit?: Stroke } | null>(null);
+  const textRef = useRef(text), editingId = useRef<string | null>(null), lastTap = useRef<{ t: number; x: number; y: number } | null>(null), pendingTap = useRef<{ stroke: Stroke; timer: number } | null>(null);
+  const setText = (t: typeof text) => { textRef.current = t; editingId.current = t?.edit ? t.id : null; dirty.current = true; setTextState(t); };
   const [selectedIds, setSelectedIds] = useState<string[]>([]), [snap, setSnap] = useState<Point | null>(null);
   const token = useRef(Symbol('ink')), draft = useRef<Stroke | null>(null), gesture = useRef<Gesture | null>(null), preview = useRef<Stroke[]>([]);
   const selected = useRef<string[]>([]), lasso = useRef<number[] | null>(null), dirty = useRef(true), still = useRef(0), snapTimer = useRef(0), sendRaf = useRef(0);
@@ -128,7 +135,7 @@ export function InkLayer(props: Props) {
       const remote = [...remoteDraft.values()].filter((r) => r.key === ikey && r.stroke.layer !== 'private');
       if (full) {
         setup(bc); const bd = context(bc);
-        const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id)]);
+        const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id), ...(editingId.current ? [editingId.current] : [])]);
         const list = gesture.current?.type === 'erase' ? gesture.current.working : all();
         // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
         for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
@@ -161,7 +168,7 @@ export function InkLayer(props: Props) {
       if (!enabled || focusedCanvas !== token.current || (e.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]')) return;
       const command = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), items = chosen(), consume = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       if (command && (k === 'z' || k === 'y')) { consume(); cancelGesture(); const st = useStore.getState(); if (k === 'y' || e.shiftKey) st.redo(ikey, author); else st.undo(ikey, author); return; }
-      if (e.key === 'Escape') { consume(); cancelGesture(); setSelection([]); setText(null); return; }
+      if (e.key === 'Escape') { consume(); cancelGesture(); setSelection([]); cancelText(); return; }
       if (!items.length) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { consume(); useStore.getState().editInk(ikey, { remove: items.map((s) => s.id) }, author); setSelection([]); }
       if (command && k === 'd') { consume(); const copies = items.map((s) => ({ ...duplicateStroke(s), author })); useStore.getState().editInk(ikey, { upsert: copies }, author); setSelection(copies.map((s) => s.id)); }
@@ -195,13 +202,25 @@ export function InkLayer(props: Props) {
       // 不取消默认动作的话，按下之后浏览器会把焦点还给画布，刚弹出的输入框立刻失焦、空内容提交后消失
       e.preventDefault(); focusedCanvas = token.current;
       const p = point(e);
-      if (text?.value.trim()) commitText();
+      if (textRef.current) commitText();
+      // 文字工具点在已有的文字上：接着改这段文字
+      const t = textAt(p);
+      if (t) { openEdit(t, e); return; }
       textOpened.current = performance.now();
-      setText({ x: p.x, y: p.y, value: '' });
+      setText({ x: p.x, y: p.y, value: '', id: freshId() });
       return;
     }
-    focusedCanvas = token.current; wrap.current?.focus({ preventScroll: true }); e.currentTarget.setPointerCapture(e.pointerId);
     const p = point(e), pointer = e.pointerId;
+    // 双击文字（选择工具、各种笔都行）：像腾讯会议 / ClassIn 一样直接在原处改
+    const now = performance.now(), lt = lastTap.current;
+    lastTap.current = { t: now, x: p.x, y: p.y };
+    if (lt && now - lt.t < 420 && Math.hypot(p.x - lt.x, p.y - lt.y) < 14 / Math.max(1, px.w) && DBL_TOOLS.includes(tool)) {
+      const t = textAt(p);
+      if (t) { e.preventDefault(); if (pendingTap.current) { clearTimeout(pendingTap.current.timer); pendingTap.current = null; } lastTap.current = null; openEdit(t, e); return; }
+    }
+    flushTap();
+    if (textRef.current) commitText();
+    focusedCanvas = token.current; wrap.current?.focus({ preventScroll: true }); e.currentTarget.setPointerCapture(e.pointerId);
     if (tool === 'eraser' || e.button === 5 || (e.buttons & 32)) { gesture.current = { type: 'erase', original: all(), working: all(), last: p, pointer }; eraseAt(p); return; }
     if (tool === 'laser') return;
     if (tool === 'spotlight' || tool === 'curtain') { gesture.current = { type: 'overlay', pointer }; overlay(p); return; }
@@ -272,13 +291,40 @@ export function InkLayer(props: Props) {
     if (g.type === 'erase') { const ids = new Set(g.working.map((s) => s.id)), originals = new Map(g.original.map((s) => [s.id, s])); const remove = g.original.filter((s) => !ids.has(s.id) && editable(s)).map((s) => s.id), upsert = g.working.filter((s) => originals.get(s.id) !== s); if (remove.length || upsert.length) st.editInk(ikey, { remove, upsert }, author); }
     else if (g.type === 'lasso') { const poly = lasso.current; if (poly && poly.length >= 6) setSelection(all().filter((s) => editable(s) && insideLasso(s, poly)).map((s) => s.id)); }
     else if (g.type === 'move' || g.type === 'scale' || g.type === 'rotate') { if (preview.current.length) st.editInk(ikey, { upsert: preview.current }, author); }
+    else if (g.type === 'draw' && draft.current && isTap(draft.current) && textAt(g.start)) {
+      // 在文字上点了一下：可能是双击改字的第一下，先等一会儿再落这个点
+      const d = draft.current; flushTap();
+      pendingTap.current = { stroke: d, timer: window.setTimeout(flushTap, 430) };
+    }
     else if (g.type === 'draw' && draft.current) { const d = draft.current, tiny = TWO_POINT.includes(d.tool) && Math.hypot(d.pts[3] - d.pts[0], d.pts[4] - d.pts[1]) < .003; if (!tiny) { st.addStroke(ikey, d); if (d.obj) { setSelection([d.id]); if (author === 'teacher') st.setShared({ tool: 'select' }); } } }
     gesture.current = null; draft.current = null; preview.current = []; lasso.current = null; dirty.current = true;
   };
-  const commitText = () => { if (text?.value.trim()) useStore.getState().addStroke(ikey, { id: freshId(), tool: 'text', color, size, pts: [text.x, text.y, .5], text: text.value, author, layer }); setText(null); };
+  const textAt = (p: Point) => [...all()].reverse().find((s) => s.tool === 'text' && editable(s) && hit(s, p.x, p.y, 4 / Math.max(1, px.w)));
+  const flushTap = () => { const t = pendingTap.current; if (!t) return; clearTimeout(t.timer); pendingTap.current = null; useStore.getState().addStroke(ikey, t.stroke); };
+  const openEdit = (t: Stroke, e: { preventDefault(): void }) => {
+    e.preventDefault(); cancelGesture(); focusedCanvas = token.current;
+    if (t.tex) { if (author === 'teacher' && ROLE !== 'student') useFormula.getState().open({ ikey, ids: [t.id], actor: author }); return; }
+    textOpened.current = performance.now();
+    setText({ x: t.pts[0], y: t.pts[1], value: t.text ?? '', id: t.id, edit: t });
+  };
+  /** 输入框里正在打的字（新写或修改）实时给学生画面看 */
+  const textStroke = (t: NonNullable<typeof text>): Stroke => t.edit ? { ...t.edit, text: t.value } : { id: t.id, tool: 'text', color, size, pts: [t.x, t.y, .5], text: t.value, author, layer };
+  const commitText = () => {
+    const t = textRef.current; if (!t) return;
+    setText(null); clearLive();
+    const st = useStore.getState();
+    if (t.edit) {
+      const orig = all().find((s) => s.id === t.id); if (!orig) return;
+      if (!t.value.trim()) st.editInk(ikey, { remove: [orig.id] }, author);
+      else if (t.value !== orig.text) st.editInk(ikey, { upsert: [{ ...orig, text: t.value }] }, author);
+      return;
+    }
+    if (t.value.trim()) st.addStroke(ikey, textStroke(t));
+  };
+  const cancelText = () => { setText(null); clearLive(); };
   const textBlur = (e: React.FocusEvent<HTMLTextAreaElement>) => {
     // 刚弹出就失焦（窗口激活、焦点桥切换）不算输入完成：拉回焦点
-    if (performance.now() - textOpened.current < 400 && !text?.value) { const el = e.currentTarget; setTimeout(() => el.isConnected && el.focus({ preventScroll: true }), 0); return; }
+    if (performance.now() - textOpened.current < 400 && (!text?.value || text.edit)) { const el = e.currentTarget; setTimeout(() => el.isConnected && el.focus({ preventScroll: true }), 0); return; }
     commitText();
   };
   const selectedList = (strokes ?? []).filter((s) => selectedIds.includes(s.id) && editable(s));
@@ -288,7 +334,10 @@ export function InkLayer(props: Props) {
     <canvas ref={base} className="ink-c" style={bandStyle} />
     <canvas ref={live} className="ink-c" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={(e) => { if (!foreign(e)) finish(); }} onLostPointerCapture={(e) => { if (!foreign(e)) finish(); }} onPointerLeave={() => { eraserAt.current = null; penAt.current = null; dirty.current = true; if (tool === 'laser') { myLaser.current = { pts: [], at: [] }; dirty.current = true; } }} style={{ ...bandStyle, touchAction: 'none' }} />
     {snap && <div className="snap-flash" style={{ left: snap.x * 100 + '%', top: snap.y / ratio * 100 + '%' }} />}
-    {text && <textarea autoFocus className="ink-text" style={{ left: text.x * 100 + '%', top: text.y / ratio * 100 + '%', fontSize: Math.max(16, size * 8) * px.w / 1000, color: resolveColor(color, boardSkin, onPage) }} value={text.value} placeholder="输入文字，Ctrl+Enter 完成" ref={(el) => { if (el && document.activeElement !== el && performance.now() - textOpened.current < 400) requestAnimationFrame(() => el.isConnected && el.focus({ preventScroll: true })); }} onPointerDown={(e) => e.stopPropagation()} onChange={(e) => setText({ ...text, value: e.target.value })} onBlur={textBlur} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') setText(null); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitText(); }} />}
+    {text && <textarea autoFocus className={'ink-text' + (text.edit ? ' editing' : '')} style={{ left: text.x * 100 + '%', top: text.y / ratio * 100 + '%', fontSize: Math.max(16, (text.edit?.size ?? size) * 8) * px.w / 1000, color: resolveColor(text.edit?.color ?? color, boardSkin, onPage) }} value={text.value} placeholder={text.edit ? '修改文字，点空白处完成；清空就删除' : '输入文字，Ctrl+Enter 完成'} rows={Math.max(1, text.value.split('\n').length)}
+      ref={(el) => { if (el && document.activeElement !== el && performance.now() - textOpened.current < 400) requestAnimationFrame(() => { if (!el.isConnected) return; el.focus({ preventScroll: true }); if (text.edit) el.setSelectionRange(el.value.length, el.value.length); }); }}
+      onPointerDown={(e) => e.stopPropagation()} onChange={(e) => { const next = { ...text, value: e.target.value }; setText(next); sendLive(textStroke(next)); }} onBlur={textBlur}
+      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Escape') cancelText(); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitText(); }} />}
     {layer === 'private' && ROLE !== 'student' && selectedList.length > 0 && createPortal(<div className="obj-private-editor"><SelectionEditor ikey={ikey} strokes={selectedList} actor={author} onClose={() => setSelection([])} onSelection={(ids) => setSelection(ids)} /></div>, document.body)}
   </div>;
 }

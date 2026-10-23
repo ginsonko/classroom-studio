@@ -24,6 +24,8 @@ export interface Question {
   checkNote?: string;                        // 自检没通过的原因（答案对不上 / 题目条件有问题）
   createdAt: string;
   updatedAt?: string;
+  batch?: string;            // 同一次导入 / 同一次 AI 整理带进来的题共用一个批次号，可以整批撤回
+  needsAi?: boolean;         // 拍照的卷子没配 AI：先存原图，配好 AI 后再拆题、识题
 }
 export interface Attempt { id: string; studentId: string; questionId: string; result: Result; at: string; note?: string }
 export interface LessonNote {
@@ -37,15 +39,27 @@ export interface SendRecord { channel: 'wecom' | 'email'; ok: boolean; at: strin
 export interface Homework { id: string; studentId: string; title: string; at: string; questionIds: string[]; points: string[]; files: string[] }
 export interface Portrait { text: string; at: string; via: 'ai' | 'rules' }
 /** 老师交给 AI 的学生资料：家长聊天记录、家长要求、老师自己的备注 */
-export interface StudentNote { id: string; studentId: string; at: string; kind: 'parent' | 'requirement' | 'teacher'; text: string; source?: string }
+export interface StudentNote {
+  id: string; studentId: string; at: string; kind: 'parent' | 'requirement' | 'teacher'; text: string; source?: string;
+  /** 需要老师动手的事（家长要调课：只提醒，课表不自动改）；done 是处理掉的时间 */
+  todo?: 'reschedule'; done?: string;
+}
+/** 一次 AI 整理写进去的东西，整批撤销用 */
+export interface SortRecord {
+  id: string; at: string; title: string; studentIds: string[]; lines: string[];
+  questions: string[]; attempts: string[]; notes: string[];
+  /** 批改没认准的题：归档后老师点对错 */
+  unsure: { questionId: string; studentId: string }[];
+  undone?: string;
+}
 /** 一次备课：给哪节课、用哪些本地课件和题、AI 写的备课建议和导出的文件 */
 export interface Prep {
   id: string; studentId: string; subject?: SubjectId; date: string; start?: number; slotId?: string; at: string; topic: string;
   points: string[]; materials: string[]; questionIds: string[]; plan: string; files: string[]; courseware?: string[];
   via: 'ai' | 'rules'; auto?: boolean;
 }
-export interface StudyData { questions: Question[]; attempts: Attempt[]; lessons: LessonNote[]; homework: Homework[]; notes: StudentNote[]; preps: Prep[]; portraits: Record<string, Portrait> }
-export const emptyStudy = (): StudyData => ({ questions: [], attempts: [], lessons: [], homework: [], notes: [], preps: [], portraits: {} });
+export interface StudyData { questions: Question[]; attempts: Attempt[]; lessons: LessonNote[]; homework: Homework[]; notes: StudentNote[]; preps: Prep[]; portraits: Record<string, Portrait>; sorts?: SortRecord[] }
+export const emptyStudy = (): StudyData => ({ questions: [], attempts: [], lessons: [], homework: [], notes: [], preps: [], portraits: {}, sorts: [] });
 
 export const RESULT_NAME: Record<Result, string> = { right: '对', wrong: '错', half: '半对' };
 export const DIFF_NAME = ['', '基础', '巩固', '中档', '提高', '压轴'];
@@ -450,5 +464,23 @@ export function looseJSON(s: string): unknown {
   for (const src of [s, t]) { try { return JSON.parse(src); } catch { /* 继续 */ } }
   const i = s.indexOf('{'), j = s.lastIndexOf('}');
   if (i >= 0 && j > i) { try { return JSON.parse(s.slice(i, j + 1)); } catch { /* 无 */ } }
-  return null;
+  // 有的模型（中转）会在正文前多吐一个 {"recipients":…} 之类的对象，或者先给半份草稿：挑字段最多的那个，一样多取后面的
+  let best: Record<string, unknown> | null = null;
+  for (const o of topObjects(s)) if (!best || Object.keys(o).length >= Object.keys(best).length) best = o;
+  return best;
+}
+/** 文字里并排的几个顶层 JSON 对象（跳过字符串里的花括号） */
+function topObjects(s: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  let depth = 0, start = -1, str = false, esc = false;
+  for (let k = 0; k < s.length; k++) {
+    const c = s[k];
+    if (str) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') str = false; continue; }
+    if (c === '"') str = depth > 0;
+    else if (c === '{') { if (depth++ === 0) start = k; }
+    else if (c === '}' && depth > 0 && --depth === 0) {
+      try { const v = JSON.parse(s.slice(start, k + 1)); if (v && typeof v === 'object' && !Array.isArray(v)) out.push(v); } catch { /* 坏的跳过 */ }
+    }
+  }
+  return out;
 }

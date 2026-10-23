@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpenCheck, BookX, Camera, ClipboardList, ClipboardPaste, Download, FileUp, GitBranch, Inbox, Library, Loader2, NotebookPen, Presentation, ScanText, Search, X, Zap } from 'lucide-react';
+import { BookOpenCheck, BookX, Camera, ClipboardList, ClipboardPaste, Download, FileUp, GitBranch, Inbox, Library, Loader2, NotebookPen, Presentation, ScanText, Search, Trash2, Undo2, X, Zap } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { host } from '../lib/host';
 import { DIFF_NAME, RESULT_NAME, guessDifficulty, guessPoints, guessType, normStem, pointLabel, pointsOf, questionSubject, wrongBook, wrongbookMarkdown, type Question, type Result } from '../lib/studyLogic';
 import { LEVEL_NAME, LEVELS, byLevel, packOf, type SubjectId } from '../lib/subjects';
 import { useSubject } from '../lib/subjectState';
 import { TexText, clipTex } from './TexText';
-import { addQuestion, ensureStudy, patchQuestion, recordAttempt, useStudy } from '../lib/studyStore';
+import { addQuestion, deleteWithUndo, ensureStudy, patchQuestion, recordAttempt, useStudy } from '../lib/studyStore';
 import { aiConfig, autoReadOn, captureFromScreen, presetHomework, readInBackground, setAutoRead, useReading } from '../lib/studyActions';
-import { importFiles, trimShot, type ImportResult } from '../lib/importQuestions';
+import { importFiles, readPending, trimShot, type ImportResult } from '../lib/importQuestions';
+import { online } from '../lib/studyAi';
 import { IMPORT_EXT } from '../lib/importLogic';
 import { Chips, Outputs, QImage, QuestionEditor } from './StudyParts';
 import { CoursewareTab, HomeworkTab, LessonTab } from './StudyTools';
@@ -71,17 +72,42 @@ export function StudyPage() {
   </div>;
 }
 
-function QRow({ q, onOpen, extra }: { q: Question; onOpen: () => void; extra?: React.ReactNode }) {
+function QRow({ q, onOpen, extra, pick }: { q: Question; onOpen: () => void; extra?: React.ReactNode; pick?: { on: boolean; toggle: (shift: boolean) => void } }) {
   const reading = useReading((s) => s.ids.includes(q.id)), err = useReading((s) => s.errors[q.id]);
-  return <article className="sd-q">
+  return <article className={'sd-q' + (pick?.on ? ' picked' : '')}>
+    {pick && <label className="sd-pick" onClick={(e) => { e.preventDefault(); pick.toggle(e.shiftKey); }} aria-label="选中这道题"><input type="checkbox" checked={pick.on} readOnly /></label>}
     <QImage path={q.image} />
     <button className="sd-q-main" onClick={onOpen}>
-      {reading || !q.stem ? <p className={q.stem ? '' : 'empty'}>{reading ? '正在识题…' : '（只有截图，点开整理或让 AI 识题）'}</p> : <TexText as="p" text={clipTex(q.stem, 220)} />}
+      {reading || !q.stem ? <p className={q.stem ? '' : 'empty'}>{reading ? '正在识题…' : q.needsAi ? '（拍照的卷子，配置 AI 后自动拆成一道道题）' : '（只有截图，点开整理或让 AI 识题）'}</p> : <TexText as="p" text={clipTex(q.stem, 220)} />}
       <div className="sd-q-meta"><Chips keys={q.points} /><span className="sd-tag">{q.qtype}</span><span className="sd-tag">{q.difficulty} {DIFF_NAME[q.difficulty]}</span>{q.check === 'mismatch' && <span className="sd-tag warn" data-tip={q.checkNote}>AI 自检未通过</span>}{q.check === 'ok' && <span className="sd-tag ok">AI 自检通过</span>}{q.source && <i>{q.source}</i>}</div>
       {err && <span className="sd-err">{err}</span>}
     </button>
     {extra && <div className="sd-q-act">{extra}</div>}
   </article>;
+}
+
+const DelBtn = ({ q }: { q: Question }) => <button className="sd-del" onClick={() => deleteWithUndo([q.id], '这道题')} data-tip="删除这道题（10 秒内可以撤销）" aria-label="删除这道题"><Trash2 size={13} /></button>;
+
+/** 多选：勾选、Shift 连选、全选，批量删除 / 入库 */
+function usePick(items: Question[]) {
+  const [ids, setIds] = useState<string[]>([]), [anchor, setAnchor] = useState('');
+  const live = new Set(items.map((q) => q.id)), sel = ids.filter((id) => live.has(id));
+  const toggle = (id: string, shift: boolean) => {
+    if (shift && anchor && live.has(anchor)) {
+      const a = items.findIndex((q) => q.id === anchor), b = items.findIndex((q) => q.id === id), [lo, hi] = a < b ? [a, b] : [b, a];
+      setIds([...new Set([...sel, ...items.slice(lo, hi + 1).map((q) => q.id)])]);
+    } else setIds(sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]);
+    setAnchor(id);
+  };
+  const pickOf = (q: Question) => ({ on: sel.includes(q.id), toggle: (shift: boolean) => toggle(q.id, shift) });
+  const bar = (more?: React.ReactNode) => sel.length > 0 && <div className="sd-pickbar">
+    <b>已选 {sel.length} 题</b>
+    <button className="sd-btn" onClick={() => setIds(sel.length === items.length ? [] : items.map((q) => q.id))}>{sel.length === items.length ? '全不选' : `全选（${items.length}）`}</button>
+    {more}
+    <button className="sd-btn danger" onClick={() => { deleteWithUndo(sel); setIds([]); }}><Trash2 size={13} />删除所选</button>
+    <button className="sd-btn" onClick={() => setIds([])}>取消</button>
+  </div>;
+  return { sel, pickOf, bar, clear: () => setIds([]) };
 }
 
 function AttemptButtons({ q }: { q: Question }) {
@@ -96,10 +122,10 @@ function useImport(onAdded?: () => void) {
   const [step, setStep] = useState(''), [report, setReport] = useState<ImportResult | null>(null), [over, setOver] = useState(false);
   const run = async (paths: string[]) => {
     const ok = paths.filter((p) => IMPORT_EXT.test(p));
-    if (!ok.length) { setReport({ added: [], dup: 0, files: paths.map((p) => ({ name: p.split(/[\\/]/).pop() ?? p, added: 0, dup: 0, error: '不支持这种文件，可以导入 Word、PDF、图片、txt' })), ai: false }); return; }
+    if (!ok.length) { setReport({ added: [], dup: 0, files: paths.map((p) => ({ name: p.split(/[\\/]/).pop() ?? p, added: 0, dup: 0, error: '不支持这种文件，可以导入 Word、PDF、图片、txt' })), ai: false, batch: '', photos: 0 }); return; }
     setReport(null); setStep('准备导入…');
     try { setReport(await importFiles(ok, subject, setStep)); onAdded?.(); }
-    catch (e) { setReport({ added: [], dup: 0, files: [{ name: '导入', added: 0, dup: 0, error: (e as Error).message }], ai: false }); }
+    catch (e) { setReport({ added: [], dup: 0, files: [{ name: '导入', added: 0, dup: 0, error: (e as Error).message }], ai: false, batch: '', photos: 0 }); }
     finally { setStep(''); }
   };
   const pick = async () => { const ps = await host.call<string[]>('study.pickImport'); if (ps.length) await run(ps); };
@@ -116,7 +142,9 @@ function useImport(onAdded?: () => void) {
       <b>{report.added.length ? `导入 ${report.added.length} 道题，已放进收件箱` : '没有导入新题'}{report.dup ? `，跳过 ${report.dup} 道重复题` : ''}。</b>
       {report.ai && report.added.length > 0 && <span>AI 正在后台补答案、解析和知识点，并独立再解一遍自检。</span>}
       {!report.ai && report.added.length > 0 && <span>答案、知识点可以点开逐题补；配好 AI 并打开「收题后自动 AI 识题」会自动补全。</span>}
+      {(report.photos ?? 0) > 0 && !report.ai && <span className="sd-warn-line">其中 {report.photos} 张是拍照的卷子：不用 AI 认不准照片上的字，先原样存下了。<button className="sd-link" onClick={() => useStore.getState().set({ aiOpen: true })}>去配置 AI</button>配好后点「AI 识别未整理的题」，会自动拆成一道道题。</span>}
       {report.files.filter((f) => f.error || f.note || report.files.length > 1).map((f) => <i key={f.name} className={f.error ? 'err' : ''}>{f.name}：{f.error ?? `${f.added} 题${f.dup ? `，重复 ${f.dup}` : ''}${f.note ? `（${f.note}）` : ''}`}</i>)}
+      {report.added.length > 0 && <button className="sd-btn sd-undo-import" onClick={() => { const ids = new Set(useStudy.getState().data.questions.filter((q) => q.batch === report.batch).map((q) => q.id)); deleteWithUndo([...ids], `这次导入的 ${ids.size} 道题`); setReport(null); }}><Undo2 size={13} />撤回这次导入</button>}
       <button onClick={() => setReport(null)} aria-label="关闭"><X size={12} /></button>
     </div>}
   </>;
@@ -129,8 +157,13 @@ function InboxTab() {
   const items = questions.filter((q) => q.status === 'inbox' && questionSubject(q) === subject).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const [open, setOpen] = useState<Question | null>(null), [paste, setPaste] = useState(false), [msg, setMsg] = useState(''), [busy, setBusy] = useState(false), [auto, setAuto] = useState(autoReadOn());
   const imp = useImport();
+  const pick = usePick(items);
   const capture = async () => { setBusy(true); setMsg(''); try { await captureFromScreen({ fresh: true }); setMsg('已把学生画面收进收件箱。'); } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); } };
-  const readAll = async () => { const cfg = await aiConfig(); for (const q of items.filter((x) => !x.stem || !x.points.length)) await readInBackground(q.id, cfg); };
+  const readAll = async () => {
+    const cfg = await aiConfig(), todo = items.filter((x) => !x.stem || !x.points.length);
+    if (todo.some((x) => x.needsAi) && !online(cfg)) { setMsg('拍照的卷子要配好 AI 才能拆题。'); useStore.getState().set({ aiOpen: true }); }
+    await readPending(todo.map((x) => x.id), cfg);
+  };
   return <div className="sd-pane" {...imp.drop}>
     <div className="sd-bar">
       <button className="ags-go" disabled={busy || !host.electron} onClick={() => void capture()}>{busy ? <Loader2 size={14} className="ags-spin" /> : <Camera size={14} />}收学生画面上的题</button>
@@ -139,13 +172,14 @@ function InboxTab() {
       <button className="sd-btn" disabled={!items.length} onClick={() => void readAll()}><ScanText size={13} />AI 识别未整理的题</button>
       <label className="ags-check"><input type="checkbox" checked={auto} onChange={(e) => { setAuto(e.target.checked); setAutoRead(e.target.checked); }} />收题后自动 AI 识题</label>
       <span className="flex" />
-      {items.length > 0 && <button className="sd-btn" data-tip="AI 自检没通过的题要逐题核对，不会一起入库" onClick={() => { for (const q of items) if ((q.stem.trim() || q.image) && q.check !== 'mismatch') patchQuestion(q.id, { status: 'bank' }); }}>全部入库</button>}
+      {items.length > 0 && <button className="sd-btn" data-tip="AI 自检没通过的题要逐题核对，拍照还没识别的卷子要等 AI 拆题，都不会一起入库" onClick={() => { for (const q of items) if ((q.stem.trim() || q.image) && q.check !== 'mismatch' && !q.needsAi) patchQuestion(q.id, { status: 'bank' }); }}>全部入库</button>}
     </div>
     {msg && <p className="sd-msg">{msg}</p>}
     {imp.view}
     <p className="ags-sub">上课时在右侧学生卡点「对 / 半对 / 错」，题目会自动截图收进这里，同时记下作答。整理好知识点和答案后入库，组作业和错题本才能用上。</p>
     {!items.length && <div className="lib-empty">收件箱是空的。可以收学生画面上的题、粘贴题目文字或截图，也可以把 Word / PDF / 图片拖到这里导入。</div>}
-    <div className="sd-list">{items.map((q) => <QRow key={q.id} q={q} onOpen={() => setOpen(q)} extra={q.check === 'mismatch' ? <button className="sd-btn" onClick={() => setOpen(q)}>核对</button> : <button className="btn-cue" disabled={!q.stem.trim() && !q.image} onClick={() => patchQuestion(q.id, { status: 'bank' })}>入库</button>} />)}</div>
+    {pick.bar(<button className="sd-btn" onClick={() => { for (const q of items) if (pick.sel.includes(q.id) && (q.stem.trim() || q.image) && q.check !== 'mismatch' && !q.needsAi) patchQuestion(q.id, { status: 'bank' }); pick.clear(); }}>入库所选</button>)}
+    <div className="sd-list">{items.map((q) => <QRow key={q.id} q={q} pick={pick.pickOf(q)} onOpen={() => setOpen(q)} extra={<>{q.check === 'mismatch' ? <button className="sd-btn" onClick={() => setOpen(q)}>核对</button> : <button className="btn-cue" disabled={(!q.stem.trim() && !q.image) || q.needsAi} onClick={() => patchQuestion(q.id, { status: 'bank' })}>入库</button>}<DelBtn q={q} /></>} />)}</div>
     {open && <QuestionEditor q={open} onClose={() => setOpen(null)} />}
     {paste && <PasteDialog onClose={() => setPaste(false)} onDone={(q) => { setPaste(false); setOpen(q); }} />}
   </div>;
@@ -207,6 +241,7 @@ function BankTab() {
     && (!d || x.difficulty === d)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [questions, q, ch, d, subject, pack]);
   const chapters = useMemo(() => (pack ? [...new Map(pointsOf(pack.id).map((p) => [p.ci, p])).values()] : []), [pack]);
   const imp = useImport();
+  const pick = usePick(items);
   return <div className="sd-pane" {...imp.drop}>
     <div className="sd-bar">
       {imp.button}
@@ -218,7 +253,8 @@ function BankTab() {
     </div>
     {imp.view}
     {!items.length && <div className="lib-empty">{questions.some((x) => x.status === 'bank') ? '没有符合条件的题。' : '题库还是空的。先在收件箱收题、整理后入库；组作业时 AI 出的原创题也会进题库。'}</div>}
-    <div className="sd-list">{items.map((x) => <QRow key={x.id} q={x} onOpen={() => setOpen(x)} extra={<AttemptButtons q={x} />} />)}</div>
+    {pick.bar(<button className="sd-btn" data-tip="放回收件箱重新整理" onClick={() => { for (const id of pick.sel) patchQuestion(id, { status: 'inbox' }); pick.clear(); }}>退回收件箱</button>)}
+    <div className="sd-list">{items.map((x) => <QRow key={x.id} q={x} pick={pick.pickOf(x)} onOpen={() => setOpen(x)} extra={<><AttemptButtons q={x} /><DelBtn q={x} /></>} />)}</div>
     {open && <QuestionEditor q={open} onClose={() => setOpen(null)} />}
   </div>;
 }

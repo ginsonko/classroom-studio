@@ -4,7 +4,7 @@ import { CheckCircle2, Loader2, Paperclip, PackageCheck, RefreshCw, Sparkles, Tr
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
-import { loadPlugins, openPanel, pluginUrl, usePlugins, type Manifest, type PluginItem } from '../plugins/pluginStore';
+import { loadPlugins, openPanel, openShapes, pluginUrl, usePlugins, whereText, type Manifest, type PluginItem } from '../plugins/pluginStore';
 import { PluginFrame } from '../plugins/PluginFrame';
 
 export type Effort = '' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -126,7 +126,8 @@ export function PluginPreview({ task, onAsk, onError }: { task: PluginTask; onAs
       const p = await host.call<PluginItem>('agents.pluginInstall', { id: task.id });
       await loadPlugins(true);
       const panel = p.contributes.panels.find((x) => x.where.includes('console'));
-      toast(`已装上「${p.name}」v${p.version}`, panel ? { action: { label: '去导播台打开', run: () => { useStore.getState().set({ page: 'console' }); openPanel(p.id, panel.id); } } } : {});
+      const where = whereText(p), g = p.contributes.shapes.findIndex((x) => x.items.length);
+      toast(`已装上「${p.name}」v${p.version}` + (where.length ? `，在${where[0]}里用` : ''), panel ? { action: { label: '去导播台打开', run: () => { useStore.getState().set({ page: 'console' }); openPanel(p.id, panel.id); } } } : g >= 0 ? { action: { label: '去绘图库', run: () => openShapes(p, g) } } : {});
     } catch (e) { onError((e as Error).message); } finally { setBusy(false); }
   };
 

@@ -9,6 +9,8 @@
 .help-tabs { display: flex; gap: 4px; margin-left: 18px; padding: 3px; border-radius: 10px; background: var(--bg-0); }
 .help-tabs button { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; color: var(--fg-2); white-space: nowrap; }
 .help-tabs button.on { color: var(--fg-0); background: var(--bg-3); }
+.help-tabs button.help-rehearse { color: var(--cue); }
+.help-tabs button.help-rehearse:hover { background: var(--cue-soft); }
 .help-dot { position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 2px var(--bg-0); }
 .help-x { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--fg-2); }
 .help-x:hover { background: var(--bg-3); color: var(--fg-0); }

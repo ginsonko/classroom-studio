@@ -276,7 +276,7 @@ ipcMain.on('cs:bus',(e,message)=>{try{const role=safeRole(e),m=authorizeMessage(
  if(m.t==='hello'){send(BrowserWindow.fromWebContents(e.sender),'cs:bus',{t:'snapshot',to:m.from,shared:projection(publicData)});return;}
  if(m.t==='snapshot')return;
  applyMessage(publicData,m);if(['shared','stroke','edit','erase'].includes(m.t))rememberPublic();
- for(const[r,w]of windows)if(r!=='recorder'&&w.webContents.id!==e.sender.id)send(w,'cs:bus',m);
+ for(const[r,w]of windows)if(r!=='recorder'&&!(m.t==='cmd'&&r==='student')&&w.webContents.id!==e.sender.id)send(w,'cs:bus',m);
  }catch(err){notify('notice',{message:'同步操作未应用：'+err.message,error:true});}});
 ipcMain.handle('cs:call',async(e,{method,value})=>{
  // 窗口关闭或被重建时，渲染进程里还在路上的调用会晚到；窗口已经没了就静默丢弃，不当成错误
@@ -364,6 +364,21 @@ async function exportBoard(value,role){
  const stamp=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16).replace('T',' ').replace(':','.');
  const safe=String(value?.title||'课堂板书').replace(/[\\/:*?"<>|\r\n]/g,'_').trim().slice(0,40)||'课堂板书';
  const pngs=Array.isArray(value?.pngs)?value.pngs:null;
+ // PDF：渲染端已经排好 A4 页（JPEG），这里拼成一个 PDF
+ if(Array.isArray(value?.pdf)){
+  const pages=value.pdf;
+  if(!pages.length||pages.length>300)throw Error('PDF 页数不对');
+  let total=0;for(const p of pages){if(typeof p!=='string'||!p.startsWith('data:image/jpeg;base64,')||p.length>30*1024*1024)throw Error('PDF 页面数据无效');total+=p.length;}
+  if(total>500*1024*1024)throw Error('板书太大，请分成几次保存');
+  const owner=role==='dock'?(windows.get('student')||windows.get('teacher')):windows.get('teacher');
+  const to=TEST&&value?.to?String(value.to):(await dialog.showSaveDialog(owner,{title:`保存板书 PDF（共 ${pages.length} 页 A4）`,defaultPath:path.join(settings.recordings,`${safe}-${stamp}.pdf`),filters:[{name:'PDF 文档',extensions:['pdf']}]})).filePath;
+  if(!to)return null;
+  const file=/\.pdf$/i.test(to)?to:to+'.pdf';
+  await fs.promises.writeFile(file,require('./jpegPdf.cjs').jpegsToPdf(pages.map(p=>Buffer.from(p.slice(23),'base64')),safe));
+  log.info('保存板书 PDF',pages.length,file);
+  if(!TEST)shell.showItemInFolder(file);
+  return [normal(file)];
+ }
  if(pngs){
   if(!pngs.length||pngs.length>200)throw Error('板书图片数量不对');
   let total=0;for(const p of pngs){if(typeof p!=='string'||!p.startsWith('data:image/png;base64,')||p.length>80*1024*1024)throw Error('板书图片数据无效');total+=p.length;}

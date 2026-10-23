@@ -35,6 +35,11 @@
 .obj-check { display: flex; align-items: center; gap: 7px; padding: 6px 0; font-size: 11px; }
 .obj-check input { accent-color: var(--cue); }
 .obj-colors { display: flex; gap: 10px; padding: 5px 2px; }
+.obj-turns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 4px 0; }
+.obj-turns button, .obj-turn-reset { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 44px; border: 1px solid var(--line-strong); border-radius: 5px; font-size: 11px; }
+.obj-turns button:hover, .obj-turn-reset:hover { background: var(--bg-4); }
+.obj-turn-reset { width: 100%; min-height: 28px; margin-top: 4px; flex-direction: row; }
+.obj-hint { margin: 6px 0 2px; font-size: 11px; line-height: 1.5; color: var(--fg-3); }
 .obj-colors button { width: 21px; height: 21px; border-radius: 50%; border: 2px solid transparent; }
 .obj-colors button.on { outline: 2px solid var(--cue); outline-offset: 2px; }
 .obj-actions { display: flex; gap: 5px; padding: 8px 10px; border-top: 1px solid var(--line); }

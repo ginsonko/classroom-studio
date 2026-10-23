@@ -5,7 +5,8 @@ import { Eye, MonitorUp, Puzzle, Settings2, X } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { openMaterial } from '../doc/actions';
 import type { FileEntry } from '../lib/library';
-import { activePlugins, closePanel, loadPlugins, openPanel, pluginUrl, usePlugins, type PluginItem } from './pluginStore';
+import { activePlugins, closePanel, loadPlugins, openPanel, openShapes, pluginUrl, usePlugins, type PluginItem } from './pluginStore';
+import { toast } from '../lib/toast';
 import { PluginFrame } from './PluginFrame';
 import '../styles/plugins.css';
 
@@ -29,6 +30,7 @@ export function PluginButton() {
   const items = activePlugins(list);
   const panels = items.flatMap((p) => p.contributes.panels.filter((x) => x.where.includes('console')).map((x) => ({ p, x })));
   const lessons = items.flatMap((p) => p.contributes.lessons.map((x) => ({ p, x })));
+  const shapes = items.flatMap((p) => p.contributes.shapes.map((g, i) => ({ p, g, i })).filter((x) => x.g.items.length));
   const set = useStore((s) => s.set);
   const r = btn.current?.getBoundingClientRect();
   return (
@@ -56,7 +58,13 @@ export function PluginButton() {
                 </span>
               </div>
             ))}
-            {!panels.length && !lessons.length && <p className="pl-empty">{items.length ? '启用中的插件没有可以在这里打开的面板。' : '还没有插件。插件页里有现成的示例，一键就能装。'}</p>}
+            {!!shapes.length && <header>绘图库图形</header>}
+            {shapes.map(({ p, g, i }) => (
+              <button key={p.id + i} className="pl-row" onClick={() => { openShapes(p, i); setOpen(false); toast('已在浮层工具条打开绘图库，点一个图形就放到黑板上'); }} data-tip="在上课浮层工具条里打开绘图库，停在这个分组">
+                <PluginIcon p={p} /><b>{g.group}</b><i>{g.items.length} 个图形</i>
+              </button>
+            ))}
+            {!panels.length && !lessons.length && !shapes.length && <p className="pl-empty">{items.length ? '启用中的插件没有可以在这里打开的面板。' : '还没有插件。插件页里有现成的示例，一键就能装。'}</p>}
             <footer><button onClick={() => { set({ page: 'plugins' }); setOpen(false); }}><Settings2 size={13} />管理插件</button></footer>
           </div>
         </>,

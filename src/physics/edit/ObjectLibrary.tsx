@@ -39,18 +39,28 @@ export function ObjectLibrary({ current, onSelect, onClose }: { current: string;
   const [lib, setLibState] = useState<ObjLib>(() => lastLib?.subject === subject ? lastLib.lib : libOfFamily(familyOf(subject)));
   const groups = OBJECT_GROUPS.filter((g) => g.lib === lib);
   const [group, setGroup] = useState<ObjGroup>(() => OBJECT_CATALOG[current as ObjKind] && libOfKind(current) === lib ? OBJECT_CATALOG[current as ObjKind].group : groups[0].id), [query, setQuery] = useState('');
-  const [pgroup, setPgroup] = useState('');
+  const [wantGroup, setPgroup] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => { void loadPlugins(); }, []);
   const plist = usePlugins((s) => s.list);
+  const want = usePlugins((s) => s.shapes);
+  useEffect(() => {
+    if (!want) return;
+    const own = OBJECT_LIBS.find((x) => x.id === want.subject)?.id;
+    if (own) { lastLib = { subject, lib: own }; setLibState(own); setGroup((g) => OBJECT_GROUPS.find((x) => x.id === g)?.lib === own ? g : OBJECT_GROUPS.find((x) => x.lib === own)!.id); }
+    setPgroup(want.key); setQuery('');
+    usePlugins.setState({ shapes: null });
+  }, [want, subject]);
   const pgroups = pluginGroups(activePlugins(plist), lib);
+  // 插件被停用 / 卸载（或还没加载完）时找不到这组，先显示自带的分组，免得一片空白
+  const pgroup = pgroups.some((x) => x.key === wantGroup) ? wantGroup : '';
   const setLib = (id: ObjLib) => { lastLib = { subject, lib: id }; setLibState(id); setGroup(OBJECT_GROUPS.find((g) => g.lib === id)!.id); setPgroup(''); setQuery(''); };
   const q = query.trim().toLowerCase();
   const list = OBJECTS.filter((o) => q ? `${o.name} ${o.kind}`.toLowerCase().includes(q) : !pgroup && o.group === group);
   const shapes = pgroups.flatMap(({ key, p, g }) => g.items.filter(() => q || key === pgroup).filter((it) => !q || it.name.toLowerCase().includes(q)).map((it) => ({ key: key + it.file, p, g, it })));
   const place = (p: PluginItem, g: ShapeGroup, file: string) => {
     setErr('');
-    void imageToBoard(pluginUrl(p.id, file), `已放到黑板（${g.group}）：可以拖动、缩放，上面也能写字`).then(onClose, (e) => setErr((e as Error).message));
+    void imageToBoard(pluginUrl(p.id, file), `已放到黑板（${g.group}）：可以拖动、缩放、旋转，上面也能写字`, true).then(onClose, (e) => setErr((e as Error).message));
   };
   const meta = OBJECT_LIBS.find((x) => x.id === lib)!;
   return <div className="obj-library" role="dialog" aria-label="绘图库">
@@ -67,6 +77,6 @@ export function ObjectLibrary({ current, onSelect, onClose }: { current: string;
       {!list.length && !shapes.length && <p className="obj-empty">没有匹配的器材，试试别的名称。</p>}
     </div>
     {err && <p className="obj-err">{err}</p>}
-    <footer>{pgroup && !query ? <>点一下放到黑板<br />放好后用选择工具移动、缩放</> : <>单击画布放置 · 拖动设定大小<br />选择工具可移动、缩放与旋转</>}</footer>
+    <footer>{pgroup && !query ? <>点一下放到黑板<br />放好后用选择工具移动、缩放、旋转</> : <>单击画布放置 · 拖动设定大小<br />选择工具可移动、缩放与旋转</>}</footer>
   </div>;
 }
