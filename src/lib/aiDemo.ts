@@ -18,11 +18,11 @@ const s = (v: unknown, n = 300) => (typeof v === 'string' ? v.trim().slice(0, n)
 /** 比较两个方案：会动的优先，其次是更晚（修改过）的 */
 const better = (a: Candidate | null, b: Candidate) => (!a || (b.trial.ok && !a.trial.ok) || b.trial.ok === a.trial.ok ? b : a);
 
-export async function demoAgent(problem: string, image: string | undefined, chat: AgentChat, onStep: (text: string) => void = () => {}): Promise<AgentResult> {
+export async function demoAgent(problem: string, images: string[], chat: AgentChat, onStep: (text: string) => void = () => {}): Promise<AgentResult> {
   const steps: string[] = [];
   const step = (t: string) => { steps.push(t); onStep(t); };
-  const first: Part[] = [{ type: 'text', text: demoAgentFirst(problem, !!image) }];
-  if (image) first.push({ type: 'image_url', image_url: { url: image } });
+  const first: Part[] = [{ type: 'text', text: demoAgentFirst(problem, images.length > 0) }];
+  for (const url of images) first.push({ type: 'image_url', image_url: { url } });
   const msgs: AgentMsg[] = [{ role: 'system', content: DEMO_AGENT_SYSTEM }, { role: 'user', content: first }];
   let best: Candidate | null = null, last: Candidate | null = null, accepted = false, why = '', model = '', ms = 0, calls = 0, plans = 0;
   const issues: string[] = [];
@@ -46,7 +46,7 @@ export async function demoAgent(problem: string, image: string | undefined, chat
       return chat(msgs, { json: true, maxTokens: 3000, temperature: 0.15, images: hasImages() });
     }
   };
-  step(image ? '读题：看学生画面里的题目' : '读题');
+  step(images.length ? '读题：看图片里的题目' : '读题');
   while (calls < MAX_CALLS) {
     calls++;
     const r = await ask();

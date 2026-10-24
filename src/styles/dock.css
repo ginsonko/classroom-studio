@@ -57,6 +57,11 @@ html, body, #root { background: transparent !important; overflow: hidden; }
 .tdock-steps:hover { background: var(--bg-3); }
 .tdock-steps.on { color: #ffd28a; background: rgba(255, 179, 64, .12); }
 
+/* 聚光灯 / 幕布开着时，浮层上出现一个明确的关闭入口（以前只能切课件或重启才会消失） */
+.tdock-overlay { grid-template-columns: 1fr; gap: 3px; }
+.tdock-overlay button { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 26px; border-radius: 7px; font-size: 11.5px; color: #ffd28a; background: rgba(255, 179, 64, .12); cursor: pointer; }
+.tdock-overlay button:hover { background: rgba(255, 179, 64, .22); }
+
 /* 页码弹层：缩略图跳页 */
 .tdock-pages {
   position: fixed; z-index: 90;

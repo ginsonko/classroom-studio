@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { PageThumb } from '../ui/PageThumb';
 import {
   ArrowUpToLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, EyeOff, ImageDown, ScrollText, GripVertical, LayoutGrid, Lock, LockOpen,
-  Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2,
+  Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2, X,
 } from 'lucide-react';
 import { snipToBoard } from '../ink/pasteImage';
 import { addBoardPage, defaultView, inkKey, stepView, useStore } from '../lib/store';
@@ -212,6 +212,8 @@ function InkRows({ zoom, applied, onZoom }: { zoom: number; applied: number; onZ
   const counter = useRef<HTMLButtonElement>(null);
   const [grid, setGrid] = useState(false), [snip, setSnip] = useState(false);
   const guard = useStore((s) => s.answerGuard !== false);
+  const spotlight = useStore((s) => s.spotlight);
+  const curtain = useStore((s) => s.curtain);
   useEffect(() => setGrid(false), [mat.id]);
   const long = isLong(mat), screen = long ? screenLabel(mat, pgm).replace(' 屏', '').split(' / ') : [];
   const saveBtn = useRef<HTMLButtonElement>(null);
@@ -247,6 +249,12 @@ function InkRows({ zoom, applied, onZoom }: { zoom: number; applied: number; onZ
       {grid && <PageGrid anchor={counter.current} mat={mat} page={pgm.page} onClose={() => setGrid(false)}
         onPick={(i) => { st().setShared({ pgm: { ...pgm, page: i, slide: 0, region: undefined, fit: pgm.fit === 'region' ? 'page' : pgm.fit } }); setGrid(false); }} />}
       {guard && isAnswer(mat, pgm.page) && <AnswerRow mat={mat} page={pgm.page} />}
+      {(spotlight || curtain !== null) && (
+        <div className="tdock-row tdock-overlay">
+          {spotlight && <button onClick={() => st().setShared({ spotlight: null })} data-tip="关掉聚光灯：学生重新看到整页（按 Esc 也行）"><X size={14} />聚光灯</button>}
+          {curtain !== null && <button onClick={() => st().setShared({ curtain: null })} data-tip="收起幕布：学生重新看到整页（把幕布拖到最下面，或按 Esc 也行）"><X size={14} />幕布</button>}
+        </div>
+      )}
       <div className="tdock-row">
         {long ? (
           <button className="tp-b" onClick={() => seekLong(0)} data-tip="回到长黑板顶部"><ArrowUpToLine size={17} /></button>

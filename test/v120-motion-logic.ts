@@ -101,7 +101,7 @@ const film = (shots: unknown[]) => ({ title: 't', shots });
     const replies = [JSON.stringify(bad), '```json\n' + JSON.stringify({ ...good, fix: '去掉不存在的部件' }) + '\n```', '{"accept": true, "why": "画面清楚"}'];
     const seen: AgentMsg[][] = [];
     const steps: string[] = [];
-    const r = await motionAgent('光的折射', undefined, '高中物理', async (msgs) => { seen.push(msgs.map((m) => ({ ...m }))); return { content: replies.shift()!, model: 'fake', ms: 10 }; }, (t) => steps.push(t));
+    const r = await motionAgent('光的折射', [], '高中物理', async (msgs) => { seen.push(msgs.map((m) => ({ ...m }))); return { content: replies.shift()!, model: 'fake', ms: 10 }; }, (t) => steps.push(t));
     assert.equal(r.accepted, true); assert.equal(r.calls, 3); assert.equal(r.best!.spec.title, '光的折射'); assert.equal(r.best!.round, 2);
     assert.ok(steps.some((s) => s.includes('没通过校验')) && steps.some((s) => s.includes('AI 修改：去掉不存在的部件')) && steps.some((s) => s.includes('审片通过')), steps.join('\n'));
     const fixMsg = seen[1].at(-1)!.content as string;
@@ -113,12 +113,12 @@ const film = (shots: unknown[]) => ({ title: 't', shots });
 
   await ok('智能体：取消后立即停止', async () => {
     const sig = { cancelled: false };
-    await assert.rejects(motionAgent('x', undefined, '物理', async () => { sig.cancelled = true; return { content: '{}', model: 'f', ms: 1 }; }, () => {}, sig), /已取消/);
+    await assert.rejects(motionAgent('x', [], '物理', async () => { sig.cancelled = true; return { content: '{}', model: 'f', ms: 1 }; }, () => {}, sig), /已取消/);
   });
 
   await ok('智能体：一版都没过校验时，去掉坏部件仍给出可放的版本', async () => {
     const half = { film: { title: '半成品', shots: [{ dur: 5, items: [{ type: 'title', text: '能放' }, { type: 'laser' }] }] } };
-    const r = await motionAgent('x', undefined, '物理', async () => ({ content: JSON.stringify(half), model: 'f', ms: 1 }), () => {});
+    const r = await motionAgent('x', [], '物理', async () => ({ content: JSON.stringify(half), model: 'f', ms: 1 }), () => {});
     assert.equal(r.accepted, false); assert.equal(r.best!.spec.shots[0].items.length, 1); assert.ok(r.issues.some((x) => x.includes('laser')));
   });
 

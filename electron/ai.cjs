@@ -161,24 +161,27 @@ function sanitizeMessages(list) {
   if (!Array.isArray(list)) throw new Error('消息格式不对');
   return list.slice(-24).map((m) => {
     const role = ['system', 'user', 'assistant'].includes(m?.role) ? m.role : 'user';
-    if (Array.isArray(m?.content)) return { role, content: m.content.filter((c) => c && (c.type === 'text' || c.type === 'image_url')).slice(0, 8) };
+    if (Array.isArray(m?.content)) return { role, content: m.content.filter((c) => c && (c.type === 'text' || c.type === 'image_url')).slice(0, 16) };
     return { role, content: String(m?.content ?? '').slice(0, 20000) };
   });
 }
 
 async function chat(cfg, value, windows) {
   const messages = sanitizeMessages(value?.messages);
-  let image = '';
-  if (value?.image === 'student') image = await studentShot(windows);
-  else if (typeof value?.image === 'string' && value.image.startsWith('data:image/')) image = value.image;
-  if (image) {
+  // 一次可以带多张图：学生画面 + 老师粘进来的题目照片 / 截图（顺序按老师给的来）
+  const images = [];
+  if (value?.image === 'student') images.push(await studentShot(windows));
+  else if (typeof value?.image === 'string' && value.image.startsWith('data:image/')) images.push(value.image);
+  for (const x of Array.isArray(value?.images) ? value.images : []) if (typeof x === 'string' && x.startsWith('data:image/')) images.push(x);
+  const shots = images.slice(0, 8);
+  if (shots.length) {
     const last = [...messages].reverse().find((m) => m.role === 'user');
     if (last) {
       const text = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content) }];
-      last.content = [...text, { type: 'image_url', image_url: { url: image } }];
+      last.content = [...text, ...shots.map((url) => ({ type: 'image_url', image_url: { url } }))];
     }
   }
-  const model = String(value?.model || (image && cfg.visionModel) || cfg.model || '').trim();
+  const model = String(value?.model || (shots.length && cfg.visionModel) || cfg.model || '').trim();
   if (!model) throw new Error('还没有选择模型：在 AI 设置里点「读取模型列表」后选一个');
   const body = { model, messages, temperature: typeof value?.temperature === 'number' ? value.temperature : 0.3 };
   if (value?.maxTokens) body.max_tokens = Math.min(16000, Number(value.maxTokens) || 2000);
@@ -213,7 +216,7 @@ async function chat(cfg, value, windows) {
     : Array.isArray(choice?.message?.content) ? choice.message.content.map((c) => c.text || '').join('') : '';
   if (process.env.CS_AI_DUMP) dump(body, choice, r.usage, Date.now() - t0);
   if (!content) throw new Error(choice?.finish_reason === 'length' ? '模型的回答太长被截断了（还没写出内容就到了长度上限），请重试' : '模型没有返回内容' + (choice?.finish_reason ? '（' + choice.finish_reason + '）' : ''));
-  return { content, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, sawImage: !!image, finish: choice?.finish_reason || '', rid: r.__rid || '' };
+  return { content, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, sawImage: shots.length > 0, finish: choice?.finish_reason || '', rid: r.__rid || '' };
 }
 
 // 没指定生图模型时，从服务的模型列表里按这个顺序挑第一个有的

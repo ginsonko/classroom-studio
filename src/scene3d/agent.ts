@@ -25,11 +25,11 @@ async function makeCandidate(spec: S3DSpec, issues: string[], understand: string
   return { spec, issues, summary, sheet, understand, expect, round };
 }
 
-export async function s3dAgent(problem: string, image: string | undefined, subject: string, chat: AgentChat, onStep: (text: string) => void = () => {}): Promise<S3DAgentResult> {
+export async function s3dAgent(problem: string, images: string[], subject: string, chat: AgentChat, onStep: (text: string) => void = () => {}): Promise<S3DAgentResult> {
   const steps: string[] = [];
   const step = (t: string) => { steps.push(t); onStep(t); };
-  const first: Part[] = [{ type: 'text', text: s3dFirst(problem, subject, !!image) }];
-  if (image) first.push({ type: 'image_url', image_url: { url: image } });
+  const first: Part[] = [{ type: 'text', text: s3dFirst(problem, subject, images.length > 0) }];
+  for (const url of images) first.push({ type: 'image_url', image_url: { url } });
   const msgs: AgentMsg[] = [{ role: 'system', content: S3D_SYSTEM }, { role: 'user', content: first }];
   let best: S3DCandidate | null = null, last: S3DCandidate | null = null, accepted = false, why = '', model = '', ms = 0, calls = 0, plans = 0;
   const issues: string[] = [];
@@ -53,7 +53,7 @@ export async function s3dAgent(problem: string, image: string | undefined, subje
       return chat(msgs, { json: true, maxTokens: 6000, temperature: 0.15, images: hasImages() });
     }
   };
-  step(image ? '读题：看学生画面里的题目' : '读题');
+  step(images.length ? '读题：看图片里的题目' : '读题');
   while (calls < MAX_CALLS) {
     calls++;
     const r = await ask();

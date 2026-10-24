@@ -637,7 +637,7 @@ body.resizing .con { transition: none; }
   animation: slide-in .28s var(--ease-out);
 }
 @keyframes slide-in { from { transform: translateX(30px); opacity: 0; } }
-.ai { display: flex; flex-direction: column; height: 100%; }
+.ai { position: relative; display: flex; flex-direction: column; height: 100%; }
 .ai-h { flex: none; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line); }
 .ai-h b { font-size: 13.5px; white-space: nowrap; flex: none; }
 .ai-h > button { margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--fg-2); }

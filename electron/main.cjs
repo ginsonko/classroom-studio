@@ -339,6 +339,8 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'warmup.html':{const p=String(value?.path||''),url=/^https?:\/\//i.test(p)?new URL(p).href:files.url(p);if(!/^(https?|lesson):/i.test(url))throw Error('只能检查网页课件');const ses=session.fromPartition('persist:studio-public');if(!ses.csReady){guardSession(ses);ses.csReady=true;}return warmup.checkHtml({url,session:ses,log});}
  case 'pickFolder':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'添加课件目录',properties:['openDirectory']});return r.canceled?null:files.authorize(r.filePaths[0],true);}
  case 'pickFiles':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'打开课件',properties:['openFile','multiSelections']});return r.canceled?[]:r.filePaths.map(p=>files.authorize(p));}
+ // AI 答疑的附件：题目照片、截图、PDF、Word、PPT、Excel、txt/md
+ case 'pickAttach':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'给 AI 添加附件',properties:['openFile','multiSelections'],filters:[{name:'题目与资料',extensions:['png','jpg','jpeg','bmp','webp','pdf','docx','doc','pptx','ppt','rtf','xlsx','csv','txt','md']},{name:'所有文件',extensions:['*']}]});return r.canceled?[]:r.filePaths.map(p=>files.authorize(p));}
  case 'student':{const w=await makeWindow('student');if(!TEST)await dockManager.ensure();return;}
  case 'dock':await dockManager.ensure();return dockManager.state;
  case 'dockState':return dockManager.state;
@@ -601,6 +603,10 @@ async function start(){
  if(!saved.shared.inkOptions?.eraserV)saved.shared.inkOptions={shapeSnap:true,...saved.shared.inkOptions,eraserMode:'segment',eraserSize:'m',eraserV:2};
  // 书写权不跨次启动：上次下课时笔在学生手里，这次打开也应先回到老师手里
  saved.shared.drawAuthor='teacher';
+ // 聚光灯 / 幕布也是「这会儿」的临时遮挡，不跨次启动：否则重启后学生画面还是一片黑，老师找不到关的地方
+ saved.shared.curtain=null;saved.shared.spotlight=null;
+ // 已经揭晓的答案页同理：揭晓是「这会儿」的动作，下次打开先遮住，免得学生一上来就看到答案
+ saved.shared.revealed=[];
  publicData=projection(saved.shared);if(publicData.sim)publicData.sim.playing=false;
  recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});}});
  // 自动更新：清单地址和公钥可以用环境变量换成测试服务器（两个都给才生效）

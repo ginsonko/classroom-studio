@@ -110,7 +110,7 @@ export function scenePrompt(problem: string, withImage: boolean): string {
   const list = PRESETS.map((p) => `- ${p.id}（${p.title}）：${p.params.map((d) => `${d.key}=${d.label}${d.unit ? '[' + d.unit + ']' : ''} ${d.min}~${d.max}${d.options ? '（可选 ' + d.options.map((o) => o.v + '=' + o.label).join('，') + '）' : ''}`).join('；')}`).join('\n');
   return [
     '任务：把一道高中物理题变成可以播放的物理演示。只输出一个 JSON 对象，不要任何解释。',
-    withImage ? '题目在附带的截图里（学生当前看到的画面）。先读懂截图中的题目和图，再选择模板。' : '',
+    withImage ? '题目在附带的图片里（学生当前看到的画面，或老师上传的题目照片）。有多张图时，它们是同一道题的多个部分，都要看。先读懂题目和图，再选择模板。' : '',
     '首选：从下面的模板里选最贴切的一个：{"preset":"<id>","params":{...},"title":"<不超过 16 字>","g":10,"why":"<一句话说明为什么选它>"}',
     '参数必须换算成括号里的单位（例如磁场模板速度用 ×10⁶ m/s，电场模板板长用 cm）；题目没给的参数直接省略，不要编造。',
     '如果所有模板都明显不合适，再输出自由场景：{"preset":"none","title":"...","world":{"g":10,"ppm":0.1},"duration":8,"objs":[...]}',
@@ -150,7 +150,7 @@ export const DEMO_AGENT_SYSTEM = [
 
 export function demoAgentFirst(problem: string, withImage: boolean): string {
   return [
-    withImage ? '题目在附带的截图里（学生当前看到的画面；若截图里有多道题，以老师文字说明为准，否则选画面中央最完整的那道）。' : '',
+    withImage ? '题目在附带的图片里（学生当前看到的画面，或老师上传的题目照片；若有多张，是同一道题的多个部分）。若图片里有多道题，以老师文字说明为准，否则选画面中央最完整的那道。' : '',
     problem ? '老师给的题目 / 要求：\n' + problem.slice(0, 4000) : '',
     '',
     '可用模板：',
@@ -181,7 +181,7 @@ export function explainPrompt(problem: string, withImage: boolean, subject: Subj
   const pack = packOf(subject);
   return [
     `你是经验丰富的${pack.stage}老师，正在给一位学生一对一讲题。只输出一个 JSON 对象，不要任何解释。`,
-    withImage ? '题目在附带的截图里（学生当前看到的画面），先完整读出题目。' : '',
+    withImage ? '题目在附带的图片里（学生当前看到的画面，或老师上传的题目照片），先完整读出题目。' : '',
     '格式：{"title":"<题型，不超过 12 字>","problem":"<读出的题目原文，含所有数据>","idea":"<解题突破口，一两句话>","steps":[{"t":"<这一步在做什么>","tex":"<这一步的公式，LaTeX>","plain":"<同一公式的纯文本写法，用 Unicode 上下标，如 v₀、m/s²>"}],"answer":"<最终答案，带单位>","pitfalls":["<学生最容易错的地方>"]}',
     '步骤 3~7 步，每步只写一条关键式子。tex 只写公式本身：不要用 $ 包裹，不要把整句中文写进 tex（文字放在 t 里，公式里少量中文用 \\text{}）。answer 和 pitfalls 里的公式用 $…$ 包起来。' + pack.prompt.explain,
     problem ? '题目：\n' + problem.slice(0, 4000) : '',
@@ -206,7 +206,7 @@ export const DRAW_COLORS = ['ink', 'red', 'blue', 'green', 'orange', 'violet'];
 export function drawPrompt(request: string, withImage: boolean, subject: SubjectId = 'physics'): string {
   return [
     `你是${packOf(subject).stage}老师的板书助手。把要求画成矢量板书，只输出一个 JSON 对象，不要任何解释。`,
-    withImage ? '附带的截图是学生当前看到的画面（题目/图），按截图内容来画。' : '',
+    withImage ? '附带的图片是学生当前看到的画面或老师上传的题目照片（题目/图），按图片内容来画。' : '',
     '画布 160×90，原点在左上角，x 向右，y 向下。留 6 格边距，文字不要互相重叠，整体布局要清楚好看。',
     '格式：{"title":"<不超过 14 字>","items":[...]}，items 可用：',
     '  {"t":"line"|"dashed"|"arrow","from":[x,y],"to":[x,y],"color":"ink"}',

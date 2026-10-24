@@ -22,12 +22,12 @@ async function render(spec: FilmSpec): Promise<{ sheet: string | null; problems:
   }
 }
 
-export async function motionAgent(ask: string, image: string | undefined, subject: string, chat: AgentChat, onStep: (t: string) => void = () => {}, signal?: { cancelled: boolean }): Promise<MotionAgentResult> {
+export async function motionAgent(ask: string, images: string[], subject: string, chat: AgentChat, onStep: (t: string) => void = () => {}, signal?: { cancelled: boolean }): Promise<MotionAgentResult> {
   const steps: string[] = [];
   const step = (t: string) => { steps.push(t); onStep(t); };
   const stop = () => { if (signal?.cancelled) throw new Error('已取消'); };
-  const first: Part[] = [{ type: 'text', text: motionFirst(ask, subject, !!image) }];
-  if (image) first.push({ type: 'image_url', image_url: { url: image } });
+  const first: Part[] = [{ type: 'text', text: motionFirst(ask, subject, images.length > 0) }];
+  for (const url of images) first.push({ type: 'image_url', image_url: { url } });
   const msgs: AgentMsg[] = [{ role: 'system', content: MOTION_SYSTEM }, { role: 'user', content: first }];
   let best: MotionCandidate | null = null, accepted = false, why = '', model = '', ms = 0, calls = 0, plans = 0, sheets = true;
   let fallback: FilmSpec | null = null;
@@ -44,7 +44,7 @@ export async function motionAgent(ask: string, image: string | undefined, subjec
       return chat(msgs, { json: true, maxTokens: 16000, temperature: 0.4, images: hasImages() });
     }
   };
-  step(image ? 'AI 正在看学生画面、构思镜头…' : 'AI 正在构思镜头、写分镜…');
+  step(images.length ? 'AI 正在看图片、构思镜头…' : 'AI 正在构思镜头、写分镜…');
   while (calls < MAX_CALLS) {
     stop();
     calls++;

@@ -47,8 +47,8 @@ async function xlsxText(path: string) {
   return out.join('\n\n');
 }
 
-/** 一个课表文件 → 文字或图片 */
-export async function readSource(path: string, onStep: (t: string) => void = () => {}): Promise<Source> {
+/** 一个课表文件 / 附件 → 文字或图片。maxPages 只影响 PDF 和转换出来的文档 */
+export async function readSource(path: string, onStep: (t: string) => void = () => {}, maxPages = 6): Promise<Source> {
   const name = baseName(path), ext = (/\.([a-z0-9]+)$/i.exec(path)?.[1] ?? '').toLowerCase();
   onStep(`读取：${name}`);
   if (ext === 'xls' || ext === 'et') throw new Error('旧版表格（.xls / .et）请先在 Excel 或 WPS 里「另存为」.xlsx 再导入，或者直接截图粘贴');
@@ -61,7 +61,7 @@ export async function readSource(path: string, onStep: (t: string) => void = () 
   if (/^(png|jpe?g|bmp|webp)$/.test(ext)) return { name, text: '', image: await imageData(host.fileUrl(path)) };
   let pdf = path;
   if (ext !== 'pdf') { onStep(`转换文档：${name}`); const c = await host.convert(path); if (!c.pdf) throw new Error('这份文档没有转换成功，可以另存为 .docx 或截图粘贴'); pdf = c.pdf; }
-  const pages = await pdfPageLines(pdf, 6);
+  const pages = await pdfPageLines(pdf, maxPages);
   const text = pages.map((p) => p.lines.map((l) => l.t).join('\n')).join('\n').trim();
   if (!text) throw new Error('这份 PDF 是扫描件，没有文字。请截图后粘贴进来，交给 AI 看图识别');
   return { name, text, image: '' };

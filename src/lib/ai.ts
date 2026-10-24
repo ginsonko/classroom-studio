@@ -34,8 +34,8 @@ export const ai = {
   models: () => host.call<string[]>('ai.models'),
   test: (model?: string) => host.call<{ ok: boolean; model: string; ms: number; reply: string }>('ai.test', { model }),
   screen: () => host.call<string>('ai.screen'),
-  // feature 用于 AI 账本按用途分类
-  chat: (messages: (Msg | AgentMsg)[], o: { image?: string; json?: boolean; maxTokens?: number; temperature?: number; feature?: string; model?: string; timeout?: number } = {}) => host.call<ChatResult>('ai.chat', { messages, ...o }),
+  // feature 用于 AI 账本按用途分类。image / images 都是图片：学生画面 + 老师附上的照片、截图
+  chat: (messages: (Msg | AgentMsg)[], o: { image?: string; images?: string[]; json?: boolean; maxTokens?: number; temperature?: number; feature?: string; model?: string; timeout?: number } = {}) => host.call<ChatResult>('ai.chat', { messages, ...o }),
 };
 
 /** 当前学生的学科（没选学生按物理） */
@@ -53,7 +53,7 @@ export interface AnimOut { kind: 'anim'; data: Explain; video: ManimResult }
 /** 课堂动画：本机动画引擎的片子规格（实时播放、导出 MP4） */
 export interface MotionOut { kind: 'motion'; spec: FilmSpec; sheet?: string; note: string; issues: string[]; checked: boolean; steps?: string[] }
 export type AiOut = DemoOut | ExplainOut | DrawOut | AskOut | AnimOut | MotionOut;
-export interface RunMeta { model?: string; ms?: number; image?: string }
+export interface RunMeta { model?: string; ms?: number; image?: string; /** 附件文件名，存档和卡片上显示用 */ attach?: string[] }
 export interface DemoGuess { preset: string; title: string; src: string }
 /** AI 没搭出可用演示。guess 是规则识别的猜测，只作为老师可选的备选项，不自动替换。 */
 export class DemoError extends Error {
@@ -92,20 +92,25 @@ export function describeRecognition(r: Recognized): string {
 
 function userMsg(prompt: string, subject: SubjectId): Msg[] { return [{ role: 'system', content: systemOf(subject) }, { role: 'user', content: prompt }]; }
 
-/** 跑一个动作。cfg 为空或没有 Key 时，只有「做成演示」能用规则兜底。 */
-export async function runAction(action: Action, text: string, o: { cfg: AiConfig | null; image?: string; history?: Msg[]; onStep?: (t: string) => void; subject?: SubjectId; engine?: DemoEngine }): Promise<{ out: AiOut; meta: RunMeta }> {
+/** 跑一个动作。cfg 为空或没有 Key 时，只有「做成演示」能用规则兜底。
+ *  image = 学生画面；images = 老师附上的图片；attach = 附件里文档抽出来的文字。 */
+export async function runAction(action: Action, text: string, o: { cfg: AiConfig | null; image?: string; images?: string[]; attach?: string; history?: Msg[]; onStep?: (t: string) => void; subject?: SubjectId; engine?: DemoEngine }): Promise<{ out: AiOut; meta: RunMeta }> {
   const subj = o.subject ?? subjectNow();
   const online = !!o.cfg?.hasKey && !!(o.cfg.model || o.cfg.visionModel);
+  // 学生画面（image，卡片上做缩略图）+ 附件图片，一起发（顺序：学生画面在前，附件按老师给的顺序）
   const image = o.image;
+  const images = [...(o.image ? [o.image] : []), ...(o.images ?? [])];
+  // 附件文档的文字拼在题目后面发给模型；卡片上仍然只显示老师自己写的那句话
+  const full = [text.trim(), (o.attach ?? '').trim()].filter(Boolean).join('\n\n');
   if (action === 'anim' || action === 'motion') throw new Error('动画由面板单独处理');
 
   if (action === 'demo') {
     const engine = o.engine ?? demoEngine();
     let fallbackNote = '';
     // 立体引擎（默认，在线时全学科）：失败后自动回退经典引擎，并在备注里说明
-    if (engine === 's3d' && online && (text.trim() || image)) {
+    if (engine === 's3d' && online && (full || images.length)) {
       try {
-        const r = await s3dDemo(text, subj, image, o.cfg!, o.onStep);
+        const r = await s3dDemo(full, subj, images, o.cfg!, o.onStep, image);
         if (r) return r;
         fallbackNote = '立体演示没有做出能通过校验的画面，已改用经典演示';
       } catch (e) {
@@ -117,23 +122,23 @@ export async function runAction(action: Action, text: string, o: { cfg: AiConfig
       if (fallbackNote && res.out.kind === 'demo') { res.out.note = fallbackNote + '\n' + res.out.note; res.out.issues = [fallbackNote, ...res.out.issues]; }
       return res;
     };
-    if (!packOf(subj).demos) return finish(await kitDemo(text, subj, online, image));
+    if (!packOf(subj).demos) return finish(await kitDemo(full, subj, online, images, image));
     if (!online) {
-      if (!text.trim()) throw new Error('还没有配置模型，AI 读不了学生画面。可以先把题目文字粘贴进来，用规则识别做演示；或在「设置」里填 API Key。');
-      const r = demoByRules(text);
+      if (!full) throw new Error('还没有配置模型，AI 读不了学生画面。可以先把题目文字粘贴进来，用规则识别做演示；或在「设置」里填 API Key。');
+      const r = demoByRules(full);
       if (!r) throw new Error('规则识别没认出题型。可以补全题目数据和单位，或在「设置」里配置模型让 AI 来读题。');
       return finish({ out: r, meta: {} });
     }
-    if (!text.trim() && !image) throw new Error('请输入题目或要求，或打开「读学生画面」。');
-    return finish(await classicDemoModel(text, image, o.cfg!, o.onStep));
+    if (!full && !images.length) throw new Error('请输入题目或要求，或打开「读学生画面」，或加一个附件。');
+    return finish(await classicDemoModel(full, images, o.cfg!, o.onStep, image));
   }
 
   if (!online) throw new Error('这个功能需要先在「设置」里填写 API Key 和模型。');
-  if (!text.trim() && !image) throw new Error('请输入题目或要求，或打开「读学生画面」。');
+  if (!full && !images.length) throw new Error('请输入题目或要求，或打开「读学生画面」，或加一个附件。');
 
   if (action === 'explain') {
     const subject = subj;
-    const r = await ai.chat(userMsg(explainPrompt(text, !!image, subject), subject), { image, json: true, maxTokens: 8000, temperature: 0.2, feature: 'AI 讲题', timeout: 8 * 60000 });
+    const r = await ai.chat(userMsg(explainPrompt(full, !!images.length, subject), subject), { images, json: true, maxTokens: 8000, temperature: 0.2, feature: 'AI 讲题', timeout: 8 * 60000 });
     const data = parseExplain(r.content);
     if (!data) throw new Error('模型的讲解格式不对，请重试一次');
     return { out: { kind: 'explain', data }, meta: { model: r.model, ms: r.ms, image } };
@@ -141,25 +146,25 @@ export async function runAction(action: Action, text: string, o: { cfg: AiConfig
 
   if (action === 'draw') {
     const subject = subj;
-    const r = await ai.chat(userMsg(drawPrompt(text || packOf(subject).prompt.draw, !!image, subject), subject), { image, json: true, maxTokens: 10000, temperature: 0.2, feature: 'AI 画图', timeout: 8 * 60000 });
+    const r = await ai.chat(userMsg(drawPrompt(full || packOf(subject).prompt.draw, !!images.length, subject), subject), { images, json: true, maxTokens: 10000, temperature: 0.2, feature: 'AI 画图', timeout: 8 * 60000 });
     const d = parseDraw(r.content, uid);
     if (!d) throw new Error('模型没有给出可以画的图元，请换个说法再试');
     const mat: Material = { id: 'board-ai-' + uid(), kind: 'board', title: 'AI 板书 · ' + d.title, pages: [{ ...WIDE }], total: 1 };
     return { out: { kind: 'draw', mat, strokes: d.strokes, issues: d.issues }, meta: { model: r.model, ms: r.ms, image } };
   }
 
-  const msgs: Msg[] = [{ role: 'system', content: systemOf(subj) }, ...(o.history ?? []).slice(-8), { role: 'user', content: text || '请看学生当前的画面，告诉我这是什么题，关键点在哪里。' }];
-  const r = await ai.chat(msgs, { image, maxTokens: 6000, temperature: 0.4, feature: 'AI 问答', timeout: 5 * 60000 });
+  const msgs: Msg[] = [{ role: 'system', content: systemOf(subj) }, ...(o.history ?? []).slice(-8), { role: 'user', content: full || '请看学生当前的画面，告诉我这是什么题，关键点在哪里。' }];
+  const r = await ai.chat(msgs, { images, maxTokens: 6000, temperature: 0.4, feature: 'AI 问答', timeout: 5 * 60000 });
   return { out: { kind: 'ask', text: r.content }, meta: { model: r.model, ms: r.ms, image } };
 }
 
-/** 数学 / 化学：从演示目录里挑一个并填参数（模型优先，失败或没配模型时按关键词） */
-async function kitDemo(text: string, subject: SubjectId, online: boolean, image?: string): Promise<{ out: AiOut; meta: RunMeta }> {
+/** 数学 / 化学：从演示目录里挑一个并填参数（模型优先，失败或没配模型时按关键词）。shot = 学生画面（卡片缩略图用） */
+async function kitDemo(text: string, subject: SubjectId, online: boolean, images: string[], shot?: string): Promise<{ out: AiOut; meta: RunMeta }> {
   const name = packOf(subject).name;
-  if (online && (text.trim() || image)) {
-    const r = await ai.chat(userMsg(pickPrompt(text, subject, !!image), subject), { image, json: true, maxTokens: 4000, temperature: 0.1, feature: 'AI 演示' });
+  if (online && (text.trim() || images.length)) {
+    const r = await ai.chat(userMsg(pickPrompt(text, subject, !!images.length), subject), { images, json: true, maxTokens: 4000, temperature: 0.1, feature: 'AI 演示' });
     const pk = parsePick(r.content, subject);
-    if (pk) return { out: { kind: 'demo', mat: pk.mat, note: '演示：' + pk.def.title + (pk.note ? '\n' + pk.note : ''), issues: pk.issues, via: 'model', src: text, kit: true }, meta: { model: r.model, ms: r.ms, image } };
+    if (pk) return { out: { kind: 'demo', mat: pk.mat, note: '演示：' + pk.def.title + (pk.note ? '\n' + pk.note : ''), issues: pk.issues, via: 'model', src: text, kit: true }, meta: { model: r.model, ms: r.ms, image: shot } };
   }
   const rb = text.trim() ? pickByRules(text, subject) : null;
   if (!rb) throw new Error(online ? `AI 没有选出合适的${name}演示。可以在下方「${name}演示库」里直接挑一个。` : `没有从文字里认出对应的${name}演示。可以在下方「${name}演示库」里直接挑，或配置模型让 AI 读题。`);
@@ -167,9 +172,9 @@ async function kitDemo(text: string, subject: SubjectId, online: boolean, image?
 }
 
 /** 立体演示：模型写规格 → 本机校验 + 联系表自检。做不出来返回 null，由调用方回退经典引擎。 */
-async function s3dDemo(text: string, subj: SubjectId, image: string | undefined, cfg: AiConfig, onStep?: (t: string) => void): Promise<{ out: AiOut; meta: RunMeta } | null> {
+async function s3dDemo(text: string, subj: SubjectId, images: string[], cfg: AiConfig, onStep?: (t: string) => void, shot?: string): Promise<{ out: AiOut; meta: RunMeta } | null> {
   const vision = cfg.visionModel || cfg.model;
-  const res = await s3dAgent(text, image, subj, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: 'AI 立体演示', ...(c.images ? { model: vision } : {}) }), onStep);
+  const res = await s3dAgent(text, images, subj, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: 'AI 立体演示', ...(c.images ? { model: vision } : {}) }), onStep);
   const b = res.best;
   if (!b) return null;
   const mat = makeS3DMaterial(b.spec, { title: 'AI 演示 · ' + b.spec.title });
@@ -178,14 +183,14 @@ async function s3dDemo(text: string, subj: SubjectId, image: string | undefined,
     ...(!res.accepted ? ['AI 没来得及最后确认，请在预览里看一遍再上屏'] : []),
     ...b.issues.slice(0, 3),
   ];
-  return { out: { kind: 'demo', mat, note: head + (b.expect ? '\n应看到：' + b.expect : ''), issues, via: 'model', src: text, steps: res.steps, preview: b.sheet ?? undefined, checked: res.accepted }, meta: { model: res.model, ms: res.ms, image } };
+  return { out: { kind: 'demo', mat, note: head + (b.expect ? '\n应看到：' + b.expect : ''), issues, via: 'model', src: text, steps: res.steps, preview: b.sheet ?? undefined, checked: res.accepted }, meta: { model: res.model, ms: res.ms, image: shot } };
 }
 
 /** 经典物理引擎演示（原「AI 演示」全流程） */
-async function classicDemoModel(text: string, image: string | undefined, cfg: AiConfig, onStep?: (t: string) => void): Promise<{ out: AiOut; meta: RunMeta }> {
+async function classicDemoModel(text: string, images: string[], cfg: AiConfig, onStep?: (t: string) => void, shot?: string): Promise<{ out: AiOut; meta: RunMeta }> {
   const vision = cfg.visionModel || cfg.model;
-  const res = await demoAgent(text, image, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: 'AI 演示', ...(c.images ? { model: vision } : {}) }), onStep);
-  const meta = { model: res.model, ms: res.ms, image };
+  const res = await demoAgent(text, images, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: 'AI 演示', ...(c.images ? { model: vision } : {}) }), onStep);
+  const meta = { model: res.model, ms: res.ms, image: shot };
   const b = res.best;
   if (!b) {
     // 不再自动换成规则识别：规则只认关键词，常常选到和题目无关的模板。只把它的猜测作为可选项给老师。
@@ -203,13 +208,15 @@ async function classicDemoModel(text: string, image: string | undefined, cfg: Ai
 }
 
 /** 课堂动画：一句话 → 分镜规格 → 本机试渲染 → AI 看截图审片。几分钟，期间其它 AI 功能照常用。 */
-export async function makeMotion(text: string, o: { cfg: AiConfig | null; image?: string; subject?: SubjectId; onStep?: (t: string) => void; signal?: { cancelled: boolean } }): Promise<{ out: MotionOut; meta: RunMeta }> {
+export async function makeMotion(text: string, o: { cfg: AiConfig | null; image?: string; images?: string[]; attach?: string; subject?: SubjectId; onStep?: (t: string) => void; signal?: { cancelled: boolean } }): Promise<{ out: MotionOut; meta: RunMeta }> {
   const cfg = o.cfg;
   if (!cfg?.hasKey || !(cfg.model || cfg.visionModel)) throw new Error('课堂动画需要先在「设置」里填写 API Key 和模型。');
-  if (!text.trim() && !o.image) throw new Error('请说说要做什么动画，例如「光的折射，讲清入射角和折射角的关系」，或打开「读学生画面」。');
+  const images = [...(o.image ? [o.image] : []), ...(o.images ?? [])];
+  const full = [text.trim(), (o.attach ?? '').trim()].filter(Boolean).join('\n\n');
+  if (!full && !images.length) throw new Error('请说说要做什么动画，例如「光的折射，讲清入射角和折射角的关系」，或打开「读学生画面」，或加一个附件。');
   const subj = o.subject ?? subjectNow(), vision = cfg.visionModel || cfg.model;
   // 一整部片子的 JSON 较长，推理模型要写几分钟，给 8 分钟
-  const res = await motionAgent(text, o.image, packOf(subj).stage, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: '课堂动画', timeout: 8 * 60000, ...(c.images ? { model: vision } : {}) }), o.onStep, o.signal);
+  const res = await motionAgent(full, images, packOf(subj).stage, (messages, c) => ai.chat(messages, { json: c.json, maxTokens: c.maxTokens, temperature: c.temperature, feature: '课堂动画', timeout: 8 * 60000, ...(c.images ? { model: vision } : {}) }), o.onStep, o.signal);
   const b = res.best;
   if (!b) throw new Error('AI 没能写出可以播放的动画' + (res.issues.length ? '：' + res.issues.slice(0, 3).join('；') : '') + '。可以换个说法，或把要讲的内容说得更具体一些。');
   const issues = [

@@ -218,7 +218,7 @@ await (async () => {
   ];
   let i = 0;
   const chat = async () => ({ content: script[Math.min(i++, script.length - 1)], model: 'fake', ms: 1 });
-  const res = await s3dAgent('平抛运动', undefined, 'physics', chat);
+  const res = await s3dAgent('平抛运动', [], 'physics', chat);
   assert.equal(res.accepted, true);
   assert.equal(res.calls, 3);
   assert.ok(res.best && res.best.spec.title === '测试平抛');
@@ -226,7 +226,7 @@ await (async () => {
   assert.ok(res.steps.some((t) => t.includes('格式不对')) && res.steps.some((t) => t.includes('一致')));
 
   // 全程胡说：5 次调用后 best 为 null
-  const bad = await s3dAgent('x', undefined, 'physics', async () => ({ content: '嗯', model: 'fake', ms: 1 }));
+  const bad = await s3dAgent('x', [], 'physics', async () => ({ content: '嗯', model: 'fake', ms: 1 }));
   assert.equal(bad.best, null);
   assert.equal(bad.calls, 5);
   n += 2; console.log('ok 智能体：格式纠正、校验、确认；全错时 5 次后放弃');

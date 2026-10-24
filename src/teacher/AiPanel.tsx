@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import { create } from 'zustand';
-import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, History, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, PenTool, Puzzle, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, FileText, History, Image as ImageIcon, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, Paperclip, PenTool, Puzzle, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
 import { archive } from '../lib/archive';
+import { addFiles, addPaths, attachImages, attachNames, attachPrompt, attachFromDataUrl, ATTACH_MAX, pickAttachments, type Attach } from '../lib/attach';
 import { AiHistory } from './AiHistory';
 import { ai, DemoError, demoByRules, demoEngine, explainToBoard, makeMotion, makePreset, materialFromObjects, runAction, SAMPLE_PROBLEM, setDemoEngine, type Action, type AiConfig, type AiOut, type DemoEngine, type DemoGuess, type RunMeta } from '../lib/ai';
 import { SHOWCASE } from '../motion/showcase';
@@ -26,7 +27,7 @@ import { ManimBlock, ManimInstall, ManimSteps, ManimView, manimQuality, QualityP
 import '../styles/sim.css';
 import '../styles/ai.css';
 
-interface Card { id: string; action: Action; ask: string; pending?: boolean; error?: string; out?: AiOut; meta?: RunMeta; at: number; overlay?: { key: string; ids: string[] }; steps?: string[]; guess?: DemoGuess; subject?: SubjectId }
+interface Card { id: string; action: Action; ask: string; attach?: Attach[]; pending?: boolean; error?: string; out?: AiOut; meta?: RunMeta; at: number; overlay?: { key: string; ids: string[] }; steps?: string[]; guess?: DemoGuess; subject?: SubjectId }
 
 const ACTIONS: { id: Action; label: string; sub: string; icon: typeof Bot }[] = [
   { id: 'demo', label: '做成演示', sub: '物理引擎 · 可调参数', icon: Atom },
@@ -81,6 +82,11 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   // 「做成演示」的引擎：立体（three.js，全学科，默认）或经典（物理引擎 / 学科演示库）
   const [engine, setEngine] = useState<DemoEngine>(demoEngine);
   const [cards, setCards] = useState<Card[]>([]);
+  // 附件：粘贴 / 拖入 / 选文件，最多 6 个。图片发给模型看图，文档抽出文字发过去。
+  const [atts, setAtts] = useState<Attach[]>([]);
+  const [attBusy, setAttBusy] = useState('');
+  const [attErr, setAttErr] = useState('');
+  const [drop, setDrop] = useState(false);
   // 讲解动画要几分钟，渲染时其它 AI 功能照常可用；同一时间只做一个动画
   const busy = cards.some((c) => c.pending && !LONG(c.action));
   const animBusy = cards.some((c) => c.pending && c.action === 'anim');
@@ -110,23 +116,64 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
 
   const patch = (id: string, p: Partial<Card>) => setCards((all) => all.map((c) => (c.id === id ? { ...c, ...p } : c)));
 
-  const run = async (action: Action, ask = text, opts: { screen?: boolean; engine?: DemoEngine } = {}) => {
+  // ── 附件：粘贴、拖入、选文件三条路都汇到 setAtts ──────────────────
+  const takeAtts = ({ added, errors }: { added: Attach[]; errors: string[] }) => {
+    if (added.length) setAtts((all) => [...all, ...added].slice(0, ATTACH_MAX));
+    setAttErr(errors[0] ?? '');
+  };
+  const readList = async (read: (step: (t: string) => void) => Promise<{ added: Attach[]; errors: string[] }>, busyText: string) => {
+    setAttErr(''); setAttBusy(busyText);
+    try { takeAtts(await read((t) => setAttBusy(t))); }
+    catch (e) { setAttErr(e instanceof Error ? e.message : String(e)); }
+    finally { setAttBusy(''); }
+  };
+  const attachFiles = (files: File[]) => files.length
+    ? readList((step) => addFiles(files, atts, step), files.length > 1 ? `正在读 ${files.length} 个附件…` : '正在读附件…')
+    : Promise.resolve();
+  const attachPick = async () => {
+    setAttErr('');
+    try { const paths = await pickAttachments(); if (paths.length) await readList((step) => addPaths(paths, atts, step), paths.length > 1 ? `正在读 ${paths.length} 个附件…` : '正在读附件…'); }
+    catch (e) { setAttErr(e instanceof Error ? e.message : String(e)); }
+  };
+  /** 微信 / QQ 里「复制」的图片在网页事件里拿不到 File：让主进程从系统剪贴板读 */
+  const attachClipboard = async () => {
+    setAttErr(''); setAttBusy('正在读剪贴板里的图片…');
+    try {
+      if (atts.length >= ATTACH_MAX) { setAttErr(`一次最多 ${ATTACH_MAX} 个附件，先移除一个再加`); return; }
+      const data = await host.call<string | null>('clipboardImage');
+      if (!data) { setAttErr('剪贴板里没有图片。微信 / QQ 里请先点开图片，右键「复制」再粘贴；也可以直接把图片拖进来。'); return; }
+      const a = await attachFromDataUrl(`剪贴板图片 ${atts.length + 1}.png`, data);
+      setAtts((all) => [...all, a].slice(0, ATTACH_MAX));
+    } catch (e) { setAttErr(e instanceof Error ? e.message : String(e)); }
+    finally { setAttBusy(''); }
+  };
+  const dropFiles = (dt: DataTransfer | null): File[] => {
+    const out = [...(dt?.files ?? [])];
+    for (const it of [...(dt?.items ?? [])]) if (it.kind === 'file') { const f = it.getAsFile(); if (f) out.push(f); }
+    return out.filter((f, i) => out.indexOf(f) === i);
+  };
+
+  const run = async (action: Action, ask = text, opts: { screen?: boolean; engine?: DemoEngine; attach?: Attach[] } = {}) => {
     const id = uid();
+    const att = opts.attach ?? atts;
     const screen = (opts.screen ?? useScreen) && online && host.electron;
-    setCards((all) => [{ id, action, ask: ask.trim(), pending: true, at: Date.now(), subject }, ...all].slice(0, 30));
+    setCards((all) => [{ id, action, ask: ask.trim(), attach: att, pending: true, at: Date.now(), subject }, ...all].slice(0, 30));
     try {
       const image = screen ? await ai.screen() : undefined;
+      const images = attachImages(att), attachText = attachPrompt(att), names = attachNames(att);
+      // 存档和卡片上只留附件名字：图片本体太大，不进存档
+      const withAtt = (m: RunMeta): RunMeta => (names.length ? { ...m, attach: names } : m);
       const history = cards.filter((c) => c.action === 'ask' && c.out?.kind === 'ask').slice(0, 4).reverse()
         .flatMap((c) => [{ role: 'user' as const, content: c.ask || '（看学生画面）' }, { role: 'assistant' as const, content: (c.out as { text: string }).text }]);
-      if (image) patch(id, { meta: { image } });
+      if (image) patch(id, { meta: withAtt({ image }) });
       const steps: string[] = [];
       const onStep = (t: string) => { steps.push(t); patch(id, { steps: [...steps] }); };
       if (action === 'motion') {
         if (cards.some((c) => c.pending && c.action === 'motion')) throw new Error('上一个动画还在做，做完再点。');
         const sig = { cancelled: false, job: '' }; signals.current.set(id, sig);
-        const { out, meta } = await makeMotion(ask, { cfg: online ? cfg : null, image, subject, onStep, signal: sig });
-        patch(id, { pending: false, out, meta });
-        archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta, subject });
+        const { out, meta } = await makeMotion(ask, { cfg: online ? cfg : null, image, images, attach: attachText, subject, onStep, signal: sig });
+        patch(id, { pending: false, out, meta: withAtt(meta) });
+        archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: withAtt(meta), subject });
         return;
       }
       if (action === 'anim') {
@@ -134,23 +181,23 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
         if (!online) throw new Error('讲解动画需要先在「设置」里填写 API Key 和模型。');
         const sig = { cancelled: false, job: crypto.randomUUID() }; signals.current.set(id, sig);
         onStep('AI 正在读题，先把题讲清楚…');
-        const ex = await runAction('explain', ask, { cfg, image, subject });
+        const ex = await runAction('explain', ask, { cfg, image, images, attach: attachText, subject });
         if (ex.out.kind !== 'explain') throw new Error('讲题没有成功');
         const e = ex.out.data;
         if (sig.cancelled) throw new Error('已取消');
-        patch(id, { meta: ex.meta });
+        patch(id, { meta: withAtt(ex.meta) });
         onStep(`讲解好了：${e.title}（${e.steps.length} 步）`);
         const video = await makeManim(e, subject, { quality: animQ, job: sig.job, onStep, signal: sig, review: true });
         const out: AiOut = { kind: 'anim', data: e, video };
-        patch(id, { pending: false, out, meta: ex.meta });
-        archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: { ...ex.meta, image }, subject });
+        patch(id, { pending: false, out, meta: withAtt(ex.meta) });
+        archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: withAtt({ ...ex.meta, image }), subject });
         return;
       }
-      const { out, meta } = await runAction(action, ask, { cfg: online ? cfg : null, image, history, onStep, subject, engine: opts.engine ?? engine });
+      const { out, meta } = await runAction(action, ask, { cfg: online ? cfg : null, image, images, attach: attachText, history, onStep, subject, engine: opts.engine ?? engine });
       if (out.kind === 'draw') putStrokes(out.mat, out.strokes);
-      patch(id, { pending: false, out, meta });
+      patch(id, { pending: false, out, meta: withAtt(meta) });
       guideHit('ai');
-      archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta, subject });
+      archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: withAtt(meta), subject });
     } catch (e) {
       patch(id, { pending: false, error: e instanceof Error ? e.message : String(e), ...(e instanceof DemoError ? { guess: e.guess, steps: e.steps } : {}) });
     } finally { signals.current.delete(id); }
@@ -174,7 +221,16 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="ai">
+    <div className={'ai' + (drop ? ' dropping' : '')}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDrop(true); } }}
+      onDragLeave={(e) => { if (!(e.currentTarget as Node).contains(e.relatedTarget as Node)) setDrop(false); }}
+      onDrop={(e) => {
+        const files = dropFiles(e.dataTransfer);
+        if (!files.length) return;
+        e.preventDefault(); e.stopPropagation(); setDrop(false);
+        void attachFiles(files);
+      }}>
+      {drop && <div className="ai-drop"><Paperclip size={15} />松开就把它们当附件：题目照片、截图、PDF、Word、PPT、Excel、txt / md</div>}
       <div className="ai-h">
         <span className="ai-orb"><Bot size={14} /></span>
         <b>AI 助手</b>
@@ -191,31 +247,53 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
         {showCfg && <Settings key={cfgGen} cfg={cfg} err={cfgErr} onSaved={(c, close) => { setCfg(c); if (close && c.hasKey && c.model) setShowCfg(false); }} />}
 
         <div className="ai-compose">
+          {(atts.length > 0 || attBusy || attErr) && <div className="ai-atts">
+            {atts.map((a) => <span key={a.id} className={'ai-att ' + a.kind} data-tip={a.note || (a.kind === 'image' ? '图片会直接发给模型看图' : '文档会抽出文字发给模型')}>
+              {a.kind === 'image' ? <ImageIcon size={11} /> : <FileText size={11} />}
+              <b>{a.name}</b>
+              {a.note && <em>!</em>}
+              <button onClick={() => setAtts((all) => all.filter((x) => x.id !== a.id))} aria-label={'移除附件 ' + a.name}><X size={10} /></button>
+            </span>)}
+            {attBusy && <span className="ai-att busy"><Loader2 size={11} className="spin" /><b>{attBusy}</b></span>}
+            {attErr && <span className="ai-att bad" data-tip={attErr}><AlertTriangle size={11} /><b>{attErr}</b></span>}
+            {atts.length > 0 && <button className="ai-att-clear" onClick={() => setAtts([])}>全部移除</button>}
+          </div>}
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = dropFiles(e.clipboardData);
+              if (files.length) { e.preventDefault(); void attachFiles(files); return; }
+              // 只复制了文字：照常粘贴；什么都没复制到（微信 / QQ 复制的图片）才去系统剪贴板找
+              if (e.clipboardData.getData('text/plain') || !host.electron) return;
+              e.preventDefault();
+              void attachClipboard();
+            }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return;
               e.preventDefault();
-              if (busy || !(online || canDemo) || (!text.trim() && !(online && useScreen))) return;
+              if (busy || !(online || canDemo) || (!text.trim() && !atts.length && !(online && useScreen))) return;
               if (pluginIntent(text)) { toWorkshopWith(text); return; }
               void run(online ? 'ask' : 'demo');
             }}
-            placeholder={online ? '粘贴题目，或说说你要什么。留空就让 AI 直接看学生画面。' : demos ? '粘贴题目原文（带数据和单位），点「做成演示」用规则识别生成。' : canDemo ? '粘贴题目，点「做成演示」按关键词挑一个' + packOf(subject).name + '演示；配置模型后 AI 能读题、讲题、填参数。' : '在「设置」里配置模型后，AI 能读题、讲题、画板书、回答问题。'}
+            placeholder={online ? '粘贴题目，或说说你要什么。留空就让 AI 直接看学生画面；图片和题目文件可以直接拖进来或粘贴。' : demos ? '粘贴题目原文（带数据和单位），点「做成演示」用规则识别生成。也可以拖入题目照片或文件。' : canDemo ? '粘贴题目，点「做成演示」按关键词挑一个' + packOf(subject).name + '演示；配置模型后 AI 能读题、讲题、填参数。' : '在「设置」里配置模型后，AI 能读题、讲题、画板书、回答问题。'}
             rows={3}
           />
           {pluginIntent(text) && <div className="ai-plugin-hint"><Puzzle size={13} /><span>做插件、往绘图库加图形要在「AI 工坊」里做：AI 写好后先预览，满意了一键装上。</span><button onClick={() => toWorkshopWith(text)}>去 AI 工坊做</button></div>}
-          {(online || canDemo) && <div className="ai-compose-hint">{online ? '回车发送（问一问）' : '回车做成演示'} · Shift+回车换行</div>}
+          {(online || canDemo) && <div className="ai-compose-hint">{online ? '回车发送（问一问）' : '回车做成演示'} · Shift+回车换行 · 可以粘贴、拖入图片或题目文件</div>}
           <div className="ai-compose-bar">
             <button className={'ai-chip' + (useScreen && online ? ' on' : '')} disabled={!online} onClick={() => setUseScreen(!useScreen)} data-tip={online ? '把学生窗口当前画面作为图片发给模型（学生看不到这个操作）' : '需要先配置模型'}>
               <Camera size={12} />读学生画面
+            </button>
+            <button className={'ai-chip' + (atts.length ? ' on' : '')} disabled={!host.electron || atts.length >= ATTACH_MAX} onClick={() => void attachPick()} data-tip={!host.electron ? '浏览器样稿不能选文件，请在桌面版里用' : atts.length >= ATTACH_MAX ? `一次最多 ${ATTACH_MAX} 个附件，先移除一个再加` : `加题目照片、截图、PDF、Word、PPT、Excel、txt / md 当附件（最多 ${ATTACH_MAX} 个）。也可以直接拖进来，或在输入框里 Ctrl+V 粘贴`}>
+              <Paperclip size={12} />添加附件{atts.length ? ` ${atts.length}/${ATTACH_MAX}` : ''}
             </button>
             {!online && demos && <button className="ai-chip" onClick={() => setText(SAMPLE_PROBLEM)}>填入示例题</button>}
             <button className={'ai-chip' + (engine === 's3d' ? ' on' : '')} onClick={() => { const e: DemoEngine = engine === 's3d' ? 'classic' : 's3d'; setDemoEngine(e); setEngine(e); }} data-tip="「做成演示」用的引擎。立体：three.js 三维动画，全学科通用，默认；经典：物理引擎（物理课）/ 学科演示库（数学、化学）。没配模型时都用规则识别。">
               <Box size={12} />{engine === 's3d' ? '立体演示' : '经典演示'}
             </button>
             <span className="flex" />
-            {text && <button className="ai-chip" onClick={() => setText('')}>清空</button>}
+            {(text || atts.length > 0) && <button className="ai-chip" onClick={() => { setText(''); setAtts([]); setAttErr(''); }}>清空</button>}
           </div>
           <SubjectPick value={subject} student={studentSubj} onChange={(id) => { setSubject(id); setLibSubject(id); }} />
           <div className="ai-acts">
@@ -258,10 +336,11 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
             <div className="ai-empty">
               <p><b>生成的内容先只给你看</b>，确认后再点「上屏」，学生才看得到。</p>
               <p>{online ? '打开「读学生画面」后，可以什么都不输入，直接让 AI 读当前题目。' : '配置模型后，AI 可以直接读学生画面里的题目、分步讲解、画受力图。'}</p>
+              <p>题目照片、截图、PDF、Word 都可以拖进来，或在输入框里 Ctrl+V 粘贴，当附件一起发给 AI。</p>
               {host.electron && <p>每次的结果都会自动存档，右上角 <History size={11} /> 可以找回以前的内容。</p>}
             </div>
           )}
-          {cards.map((c) => <ResultCard key={c.id} c={c} onCancel={() => cancelAnim(c.id)} onRetry={() => void run(c.action, c.ask)} onClassic={() => void run('demo', c.ask, { engine: 'classic', screen: !!c.meta?.image })} onDemo={(p) => void run('demo', p, { screen: false })} onOverlay={overlay} onUnOverlay={unOverlay} onRemove={() => setCards((all) => all.filter((x) => x.id !== c.id))} onAlt={(preset) => {
+          {cards.map((c) => <ResultCard key={c.id} c={c} onCancel={() => cancelAnim(c.id)} onRetry={() => void run(c.action, c.ask, { attach: c.attach })} onClassic={() => void run('demo', c.ask, { engine: 'classic', screen: !!c.meta?.image, attach: c.attach })} onDemo={(p) => void run('demo', p, { screen: false })} onOverlay={overlay} onUnOverlay={unOverlay} onRemove={() => setCards((all) => all.filter((x) => x.id !== c.id))} onAlt={(preset) => {
             const src = c.out?.kind === 'demo' ? c.out.src : c.guess?.src;
             const r = src ? demoByRules(src, preset) : null;
             if (r) setCards((all) => [{ id: uid(), action: 'demo', ask: c.ask, out: r, at: Date.now() }, ...all]);
@@ -451,9 +530,11 @@ function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onR
         <span className="flex" />
         {!c.pending && <button className="ai-x" onClick={onRemove} aria-label="移除"><Trash2 size={12} /></button>}
       </div>
-      {(c.ask || c.meta?.image) && <div className="ai-q">
+      {(c.ask || c.meta?.image || c.attach?.length || c.meta?.attach?.length) && <div className="ai-q">
         {c.meta?.image && <img src={c.meta.image} alt="AI 看到的学生画面" onClick={() => setZoom(!zoom)} className={zoom ? 'big' : ''} />}
-        {c.ask ? <span>{c.ask.length > 120 ? c.ask.slice(0, 120) + '…' : c.ask}</span> : <span className="dim">读取学生画面</span>}
+        {c.attach?.filter((a) => a.image).slice(0, 3).map((a) => <img key={a.id} className={'att' + (zoom ? ' big' : '')} src={a.image} alt={'附件：' + a.name} data-tip={'附件：' + a.name} onClick={() => setZoom(!zoom)} />)}
+        {c.ask ? <span>{c.ask.length > 120 ? c.ask.slice(0, 120) + '…' : c.ask}</span> : c.attach?.length ? null : <span className="dim">读取学生画面</span>}
+        {(() => { const names = c.attach?.map((a) => a.name) ?? c.meta?.attach ?? []; return names.length ? <span className="ai-q-att" data-tip={'这次一起发给 AI 的附件：' + names.join('、')}><Paperclip size={10} />{names.join('、')}</span> : null; })()}
       </div>}
       {body}
     </div>

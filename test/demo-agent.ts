@@ -37,7 +37,7 @@ async function main() {
   await ok('静止方案被发现 → 模型修正 → 确认', async () => {
     const f = scripted([plan(0), plan(2), '{"accept":true,"why":"小车向右匀速"}']);
     const live: string[] = [];
-    const r = await demoAgent('光滑水平面上小车以 2 m/s 匀速运动', undefined, f.chat, (t) => live.push(t));
+    const r = await demoAgent('光滑水平面上小车以 2 m/s 匀速运动', [], f.chat, (t) => live.push(t));
     assert.equal(r.accepted, true);
     assert.equal(r.calls, 3);
     assert.ok(r.best && r.best.trial.ok && r.best.round === 2, 'best should be the moving 2nd plan');
@@ -54,7 +54,7 @@ async function main() {
 
   await ok('静止方案不能被确认', async () => {
     const f = scripted([plan(0), '{"accept":true}', plan(1.5), '{"accept":true}']);
-    const r = await demoAgent('小车', undefined, f.chat);
+    const r = await demoAgent('小车', [], f.chat);
     assert.match(lastUser(f.seen[2]), /不能确认/);
     assert.equal(r.accepted, true);
     assert.equal(r.best!.round, 2);
@@ -72,7 +72,7 @@ async function main() {
       },
       '{"accept":true}',
     ]);
-    const r = await demoAgent('带电粒子垂直射入匀强磁场', undefined, f.chat);
+    const r = await demoAgent('带电粒子垂直射入匀强磁场', [], f.chat);
     assert.ok(r.steps.some((s) => s.includes('查看模板')));
     assert.equal(r.accepted, true, r.steps.join(' | '));
     assert.ok(r.best!.trial.ok, r.best!.trial.text);
@@ -92,7 +92,7 @@ async function main() {
 
   await ok('校验不通过时把问题发回模型；格式错误重来；最多 5 次调用', async () => {
     const f = scripted(['我不会', '{"plan":{"preset":"rocket"}}', '{"plan":{"preset":"rocket"}}', '{"plan":{"preset":"rocket"}}', '{"plan":{"preset":"rocket"}}', plan(2)]);
-    const r = await demoAgent('题目', undefined, f.chat);
+    const r = await demoAgent('题目', [], f.chat);
     assert.equal(r.best, null);
     assert.ok(f.calls() <= 5, 'calls ' + f.calls());
     assert.match(lastUser(f.seen[1]), /JSON/);
@@ -103,7 +103,7 @@ async function main() {
   await ok('题目截图发给视觉模型；没确认时仍给出会动的那一版', async () => {
     const img = 'data:image/png;base64,AAAA';
     const f = scripted([plan(2), plan(3), plan(4), plan(5), plan(6)]);
-    const r = await demoAgent('', img, f.chat);
+    const r = await demoAgent('', [img], f.chat);
     const first = f.seen[0][1];
     assert.ok(Array.isArray(first.content) && first.content.some((p) => p.type === 'image_url' && p.image_url.url === img));
     assert.ok(f.flags[0]);

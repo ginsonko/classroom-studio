@@ -168,7 +168,7 @@ export function InkLayer(props: Props) {
       if (!enabled || focusedCanvas !== token.current || (e.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]')) return;
       const command = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), items = chosen(), consume = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       if (command && (k === 'z' || k === 'y')) { consume(); cancelGesture(); const st = useStore.getState(); if (k === 'y' || e.shiftKey) st.redo(ikey, author); else st.undo(ikey, author); return; }
-      if (e.key === 'Escape') { consume(); cancelGesture(); setSelection([]); cancelText(); return; }
+      if (e.key === 'Escape') { consume(); cancelGesture(); setSelection([]); cancelText(); const st = useStore.getState(); if (author === 'teacher' && (st.spotlight || st.curtain !== null)) st.setShared({ spotlight: null, curtain: null }); return; }
       if (!items.length) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { consume(); useStore.getState().editInk(ikey, { remove: items.map((s) => s.id) }, author); setSelection([]); }
       if (command && k === 'd') { consume(); const copies = items.map((s) => ({ ...duplicateStroke(s), author })); useStore.getState().editInk(ikey, { upsert: copies }, author); setSelection(copies.map((s) => s.id)); }
@@ -188,7 +188,8 @@ export function InkLayer(props: Props) {
     }
     g.last = p; dirty.current = true;
   };
-  const overlay = (p: Point) => { if (layer === 'private' || author !== 'teacher') return; const st = useStore.getState(); if (tool === 'spotlight') st.setShared({ spotlight: { x: p.x, y: p.y / ratio, r: st.spotlight?.r ?? .16 } }); if (tool === 'curtain') st.setShared({ curtain: Math.max(.02, Math.min(.98, p.y / ratio)) }); };
+  // 聚光灯 / 幕布：幕布往下拖是揭开，拖到最下面就整个收起（不用再跑去别处找关闭按钮）
+  const overlay = (p: Point) => { if (layer === 'private' || author !== 'teacher') return; const st = useStore.getState(); if (tool === 'spotlight') st.setShared({ spotlight: { x: p.x, y: p.y / ratio, r: st.spotlight?.r ?? .16 } }); if (tool === 'curtain') { const t = p.y / ratio; st.setShared({ curtain: t > .95 ? null : Math.max(.02, t) }); } };
   const beginTransform = (type: 'move' | 'scale' | 'rotate', p: Point, items: Stroke[], pointer: number) => { const box = selectionBounds(items); gesture.current = { type, start: p, center: { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }, before: items, pointer }; };
   const down = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!enabled || e.button > 0 && e.button !== 5) return;
