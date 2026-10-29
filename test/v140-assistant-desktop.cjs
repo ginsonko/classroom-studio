@@ -14,6 +14,7 @@ process.env.CS_TEST = '1'; process.env.CS_DATA_DIR = path.join(out, 'data');
 process.env.CS_AGENT_CODEX = path.join(__dirname, 'fake-app-server.cjs');
 const LOG = path.join(out, 'fake-log.jsonl'); process.env.FAKE_LOG = LOG;
 fs.mkdirSync(process.env.CS_DATA_DIR, { recursive: true });
+const PLAN = path.join(out, '浮力教案.md').replace(/\\/g, '/'); fs.writeFileSync(PLAN, '# 浮力\n\n1. 阿基米德原理\n'); process.env.FAKE_FILE = PLAN;
 const today = new Date(), day = (today.getDay() + 6) % 7;
 fs.writeFileSync(path.join(process.env.CS_DATA_DIR, 'workspace.json'), JSON.stringify({
   shared: { pgmMat: { id: 'board', kind: 'board', title: '课堂黑板', pages: [{ w: 1600, h: 900 }], total: 1 }, pgm: { materialId: 'board', page: 0, slide: 0, fit: 'page', zoom: 1 }, ink: {}, studentTools: 'open' },
@@ -71,6 +72,11 @@ const logLines = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim()
   assert.ok(start.params.baseInstructions.length > 400, 'rules sent as base instructions');
   assert.match(start.params.developerInstructions, /学姐[\s\S]*高中物理/, 'default persona + subject hint');
   assert.match(turn.params.input[0].text, /软件状态[\s\S]*李俊宇[\s\S]*你好$/, 'context is prepended to the teacher text');
+  // 1.5.0 默认「常用」权限：遇到要动电脑的事才问，能联网，只能写工作目录
+  assert.equal(start.params.approvalPolicy, 'on-request'); assert.equal(start.params.sandbox, 'workspace-write');
+  assert.equal(turn.params.approvalPolicy, 'on-request');
+  assert.equal(turn.params.sandboxPolicy.type, 'workspaceWrite'); assert.equal(turn.params.sandboxPolicy.networkAccess, true); assert.equal(turn.params.sandboxPolicy.writableRoots.length, 1);
+  assert.match(turn.params.input[0].text, /权限：常用/, '软件状态里告诉小羽现在的权限');
   const chatTitle = await call(`${A}.chat.title`);
   assert.equal(chatTitle, '你好');
   mark('first message: new thread with all app tools + app context, streamed reply', { tools: names.length });
@@ -159,6 +165,49 @@ const logLines = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim()
   await until(() => call(`!document.querySelector('.as-float')`), 3000, 'mascot hidden');
   assert.equal(await call(`__studioQA.assistantData.useAssistantData.getState().settings.avatar`), false);
   mark('history / triggers / settings views; hide the mascot');
+
+  // ── 9. 1.5.0 完全访问：确认一次；之后命令不再弹审批，每轮带 dangerFullAccess ──
+  await call(`__studioQA.assistant.openAssistant('settings');true`);
+  await until(() => call(`!!document.querySelector('[data-qa="as-access"] [data-qa="access-common"].on')`), 5000, '默认选中「常用」');
+  await click('[data-qa="access-full"]');
+  await until(() => call(`!!document.querySelector('[data-qa="access-full-confirm"]')`), 3000, '完全访问先确认');
+  assert.equal(await call(`__studioQA.assistantData.useAssistantData.getState().settings.access`), 'common', '没点确认前不改');
+  await shot('as-10-full-confirm.png');
+  await click('[data-qa="access-full-yes"]');
+  await until(() => call(`__studioQA.assistantData.useAssistantData.getState().settings.access==='full'`), 3000, '开启完全访问');
+  await call(`__studioQA.assistant.openAssistant('chat');true`);
+  await until(() => call(`!!document.querySelector('[data-qa="access-chip"].full')`), 5000, '输入框旁显示「完全访问」');
+  const before = logLines().length;
+  await typeSend('运行命令看看');
+  await idle();
+  await until(async () => /decision=acceptForSession/.test(await lastAi()), 8000, '命令自动放行');
+  assert.equal(await call(`!!document.querySelector('.as-ask .as-yes')`), false, '不弹审批卡');
+  const fullTurn = logLines().slice(before).find((l) => l.method === 'turn/start');
+  assert.equal(fullTurn.params.approvalPolicy, 'never'); assert.deepEqual(fullTurn.params.sandboxPolicy, { type: 'dangerFullAccess' });
+  assert.match(fullTurn.params.input[0].text, /权限：完全访问/);
+  // 输入框旁的小开关切回「常用」不用确认
+  await click('[data-qa="access-chip"]');
+  await until(() => call(`!!document.querySelector('[data-qa="access-chip-common"]')`), 3000, '权限菜单');
+  await click('[data-qa="access-chip-common"]');
+  await until(() => call(`__studioQA.assistantData.useAssistantData.getState().settings.access==='common'`), 3000, '切回常用');
+  mark('full access: confirm once, commands auto-approved, turn uses dangerFullAccess; chip switches back');
+
+  // ── 10. 1.5.0 回复里的文件路径变成可点的文件卡片；粘贴截图当附件 ──
+  await typeSend('给我文件');
+  await idle();
+  await until(() => call(`!![...document.querySelectorAll('.as-msg.ai')].at(-1)?.querySelector('[data-qa="as-file"]')`), 5000, '回复里的路径变成文件卡片');
+  assert.match(await call(`[...document.querySelectorAll('.as-msg.ai')].at(-1).querySelector('[data-qa="as-file"]').innerText`), /浮力教案\.md/);
+  await shot('as-11-file-chip.png');
+  await call(`[...document.querySelectorAll('.as-msg.ai')].at(-1).querySelector('.as-fchip-main').click();true`);
+  await until(() => call(`(()=>{const s=__studioQA.useStore.getState();return s.page==='console'&&(s.pvwMat?.title||s.reader?.mat?.title||'').includes('浮力教案')})()`), 10000, '点文件卡片在导播台预览');
+  await call(`__studioQA.assistant.openAssistant('chat');true`);
+  await until(() => call(`!!document.querySelector('.as-input textarea')`), 5000, 'input back');
+  await call(`(()=>{const c=document.createElement('canvas');c.width=200;c.height=120;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,200,120);g.fillStyle='#c00';g.fillText('截图',20,60);
+    const bin=atob(c.toDataURL('image/png').split(',')[1]);const u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+    const dt=new DataTransfer();dt.items.add(new File([u8],'shot.png',{type:'image/png'}));
+    document.querySelector('.as-input textarea').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}));return true})()`);
+  await until(() => call(`document.querySelectorAll('.as-files span img').length===1`), 8000, '粘贴的截图成为附件');
+  mark('reply file paths become clickable chips that preview in the console; pasted screenshot becomes an attachment');
 
   assert.deepEqual(errors.filter((e) => !/Autofill|DevTools|Electron Security/.test(e)), []);
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify(results, null, 2));

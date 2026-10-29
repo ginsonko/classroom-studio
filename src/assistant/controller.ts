@@ -13,7 +13,7 @@ import { baseInstructions, developerInstructions, hello } from './prompt';
 import { box, runTool, toolSpecs, toolsSignature, type ToolCtx } from './tools';
 import { changeSummary, occurrences, undoChanges, WEEK, type Change } from './toolsLogic';
 import { afterFire, dueEvent, dueTimed, PAGES, whenText, type AppEvent, type Fire } from './triggersLogic';
-import { loadAssistantData, putTrigger, setCurrent, useAssistantData } from './state';
+import { loadAssistantData, putTrigger, setCurrent, useAssistantData, type Access } from './state';
 
 export interface Meta { id: string; title: string; created: number; updated: number; running: boolean; cny: number; source: string; persona: string; count: number }
 export interface Item {
@@ -117,12 +117,23 @@ async function onAsk(a: Ask) {
     pop({ text: '需要你点一下确认', chatId: a.chatId });
     return;
   }
+  const access = useAssistantData.getState().settings.access;
+  const askGrant = (o: { paths: string[]; reason: string }) => new Promise<string[]>((resolve) => { set((s) => ({ grants: [...s.grants, { id: a.reqId, chatId: a.chatId, ...o, resolve }] })); pop({ text: '想看你电脑上的文件，需要你同意', chatId: a.chatId }); });
   const ctx: ToolCtx = {
     chatId: a.chatId,
-    confirm: (o) => new Promise((resolve) => { set((s) => ({ confirms: [...s.confirms, { id: a.reqId, chatId: a.chatId, title: o.title, detail: o.detail, yes: o.yes ?? '确定', resolve }] })); pop({ text: o.title, chatId: a.chatId }); }),
+    // 完全访问：删除也不再问（这一轮整体能撤销）
+    confirm: (o) => access === 'full' ? Promise.resolve(true) : new Promise((resolve) => { set((s) => ({ confirms: [...s.confirms, { id: a.reqId, chatId: a.chatId, title: o.title, detail: o.detail, yes: o.yes ?? '确定', resolve }] })); pop({ text: o.title, chatId: a.chatId }); }),
     sendParent: (o) => new Promise((resolve) => { pendingParent = a.reqId; set({ parent: { chatId: a.chatId, ...o, resolve } }); }),
     granted: () => G().granted[a.chatId] ?? [],
-    grant: (o) => new Promise((resolve) => { set((s) => ({ grants: [...s.grants, { id: a.reqId, chatId: a.chatId, ...o, resolve }] })); pop({ text: '想看你电脑上的文件，需要你同意', chatId: a.chatId }); }),
+    grant: async (o) => {
+      const free = access === 'full' || (access === 'common' && o.paths.length > 0 && o.paths.every((p) => inside(p, freeRoots())));
+      if (!free || !o.paths.length) return askGrant(o);
+      const got: string[] = [];
+      for (const p of o.paths) { try { got.push(await call<string>('grant', { path: p })); } catch { /* 不存在的路径跳过 */ } }
+      if (!got.length) return askGrant(o);
+      addGranted(a.chatId, got);
+      return got;
+    },
   };
   const r = await runTool(String(a.tool), a.args, ctx);
   await call('reply', { reqId: a.reqId, value: r }).catch(() => {});
@@ -183,8 +194,20 @@ export function contextText(files: string[] = []): string {
     `页面：${PAGES[st.page]}；当前${stu && isGroup(stu) ? `班组：${stu.name}（${kindName(stu.kind)}，成员 ${membersOf(stu, st.students).map((m) => m.name).join('、') || '还没有'}，${stu.grade}·${packOf(studentSubject(stu)).stage}，id=${stu.id}）` : `学生：${stu ? `${stu.name}（${stu.grade}·${packOf(studentSubject(stu)).stage}，id=${stu.id}）` : '自由课堂（没绑学生）'}`}；学生画面：${st.pgmMat.title}`,
     next.length ? '接下来的课：' + next.map((o) => `${o.date === dateKey(now) ? '今天' : '明天'} ${o.time} ${o.student}${o.group ? `（${o.group}：${(o.members ?? []).join('、')}）` : ''}${!isDefaultTopic(o.topic) ? '（' + o.topic + '）' : ''}`).join('；') : '今明两天没有课',
     files.length ? '老师附上的文件（已同意，可以直接 read_file）：' + files.join('；') : '',
+    ACCESS_TEXT[useAssistantData.getState().settings.access],
   ].filter(Boolean).join('\n');
 }
+const ACCESS_TEXT: Record<Access, string> = {
+  ask: '权限：每次都问。看文件前先 request_computer_access；运行命令、改文件都会弹窗请老师确认。',
+  common: '权限：常用。你的工作目录里随便做文件、跑命令、联网查资料；老师的课件目录、学生资料可以直接 read_file；要改工作目录以外的文件或运行越出沙箱的命令时会请老师确认。',
+  full: '权限：完全访问（老师开的）。电脑上的文件可以直接读写、命令直接运行，不会再弹确认；动手前想清楚，删除和覆盖老师的原文件前先在回复里说明。',
+};
+/** 常用权限下不用问就能看的地方：课件目录、学生关联的资料文件夹、软件自己的数据目录 */
+function freeRoots() {
+  const st = useStore.getState();
+  return [...st.roots, ...st.students.map((s) => s.folder ?? ''), host.dataDir].filter(Boolean).map((r) => norm(r).replace(/\/?$/, '/').toLowerCase());
+}
+const inside = (p: string, roots: string[]) => { const x = norm(p).toLowerCase(); return roots.some((r) => x.startsWith(r) || x + '/' === r); };
 
 function apiFlag() { const a = useAssistantData.getState().settings.api; return a === 'studio' ? true : a === 'own' ? false : undefined; }
 
@@ -204,7 +227,7 @@ export async function send(text: string, o: { files?: string[]; images?: string[
       id, text: t, files, images: o.images ?? files.filter((f) => /\.(png|jpe?g|webp|bmp)$/i.test(f)).slice(0, 4),
       context: contextText(files), base: baseInstructions(s.name),
       developer: developerInstructions({ name: s.name, persona: s.persona, custom: s.custom, memory: d.memory, subjectHint: stu ? packOf(studentSubject(stu)).stage : '' }),
-      tools: toolSpecs(), toolsSig: toolsSignature(), model: s.model || undefined, effort: s.effort || undefined, studio: apiFlag(),
+      tools: toolSpecs(), toolsSig: toolsSignature(), model: s.model || undefined, effort: s.effort || undefined, studio: apiFlag(), access: s.access,
     });
   } catch (e) {
     set({ error: (e as Error).message });

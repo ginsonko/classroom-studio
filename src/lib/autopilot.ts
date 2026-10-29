@@ -15,6 +15,7 @@ import { ensureCatalog, findLocal, organizeByAi, organizeByRules, putEntries } f
 import { cleanSettings, dueLessons, jobsToday, parsePrep, prepByRules, prepMarkdown, prepPrompt, upcoming, type AutoSettings, type PrepInput } from './autopilotLogic';
 import type { Student } from './types';
 import { isDefaultTopic } from './groups';
+import { linkFiles } from './studentFiles';
 
 export interface LogItem { id: string; at: string; kind: 'lesson' | 'homework' | 'prep' | 'catalog' | 'note' | 'error'; text: string; studentId?: string; files?: string[]; ai?: boolean }
 interface AutoState { settings: AutoSettings; log: LogItem[]; done: string[]; loaded: boolean; running: string; lastRun: number }
@@ -162,6 +163,7 @@ export async function makePrep(o: { studentId: string; topic: string; date: stri
     plan: md, files: doc.out, courseware: courseware.length ? courseware : undefined, via, auto: o.auto,
   };
   useStudy.getState().update((d) => ({ ...d, preps: [...(d.preps ?? []), prep].slice(-500) }));
+  linkFiles(st.id, [...doc.out, ...courseware], { kind: 'prep', via: 'assistant', note: `${o.date} 备课：${o.topic || '本节课'}` });
   return prep;
 }
 

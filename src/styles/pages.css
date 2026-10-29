@@ -210,6 +210,32 @@
 .map-cn { font-size: 12px; color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-cells { display: flex; flex-wrap: wrap; gap: 3px; }
 
+.sr { display: flex; flex-direction: column; gap: 10px; }
+.sr .sec-a:disabled { opacity: .4; }
+.sr-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--r-sm); background: var(--bg-3); align-self: flex-start; }
+.sr-tabs button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 7px; font-size: 12px; color: var(--fg-2); }
+.sr-tabs button.on { background: var(--bg-1); color: var(--fg-0); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.sr-tabs em { font-style: normal; font-size: 10.5px; color: var(--fg-3); }
+.sr-list { display: flex; flex-direction: column; max-height: 420px; overflow: auto; }
+.sr-i { display: flex; flex-direction: column; gap: 4px; padding: 8px 2px; border-top: 1px solid var(--line); min-width: 0; }
+.sr-i:first-child { border-top: 0; }
+.sr-file { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sr-file .as-fchip { max-width: 70%; }
+.sr-i i, .sr-h i { font-style: normal; font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+.sr-h { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font-size: 13px; color: var(--fg-0); }
+.sr-h b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sr-h.static { cursor: default; }
+.sr-who { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); color: var(--fg-2); }
+.sr-todo { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+.sr-todo.done { background: var(--bg-3); color: var(--fg-3); }
+.sr-files { display: flex; flex-wrap: wrap; gap: 2px; padding-left: 19px; }
+.sr-body { padding: 4px 0 2px 19px; font-size: 12.5px; color: var(--fg-1); }
+.sr-md { font-size: 12.5px; line-height: 1.6; }
+.sr-note { margin: 2px 0 0; font-size: 12px; color: var(--fg-2); width: 100%; }
+.sr-sum { margin: 0; padding-left: 19px; font-size: 12px; color: var(--fg-2); }
+.sr-text { margin: 0; font-size: 12.5px; color: var(--fg-1); white-space: pre-wrap; }
+.sr-empty { margin: 6px 0; font-size: 12px; color: var(--fg-3); line-height: 1.6; }
+.sr-link { color: var(--cue); font-size: 12px; text-decoration: underline; }
 .tline { display: flex; flex-direction: column; }
 .rec { display: grid; grid-template-columns: 52px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
 .rec:first-of-type { border-top: 0; }

@@ -15,6 +15,16 @@ const ASK_MS = 30 * 60 * 1000;
 const TURN_MS = 30 * 60 * 1000;
 const KEEP_ITEMS = 600;
 const EFFORTS = ['low', 'medium', 'high'];
+const ACCESS = ['ask', 'common', 'full'];
+/**
+ * 三档权限 → Codex 的审批方式和沙箱。
+ * ask：除了只读命令都问；common：命令在沙箱里跑（只能写工作目录、可以联网），要越界时才问；full：不问、不设沙箱。
+ */
+function accessPolicy(level, work) {
+  if (level === 'full') return { approval: 'never', sandbox: 'danger-full-access', policy: { type: 'dangerFullAccess' } };
+  if (level === 'ask') return { approval: 'untrusted', sandbox: 'workspace-write', policy: { type: 'workspaceWrite', writableRoots: [work], networkAccess: false } };
+  return { approval: 'on-request', sandbox: 'workspace-write', policy: { type: 'workspaceWrite', writableRoots: [work], networkAccess: true } };
+}
 const toml = (s) => JSON.stringify(String(s));
 const clip = (s, n = 4000) => { const t = String(s ?? ''); return t.length > n ? t.slice(0, n) + '…' : t; };
 const rid = () => crypto.randomBytes(6).toString('hex');
@@ -236,6 +246,8 @@ class Assistant {
     }
     if (c.items.every((x) => x.kind !== 'user') && (!c.title || c.title === '新对话')) c.title = clip(text.replace(/\s+/g, ' '), 24);
     const local = 'u-' + rid();
+    c.access = ACCESS.includes(o.access) ? o.access : 'common';
+    const pol = accessPolicy(c.access, this.work);
     this.put(c, { id: local, kind: 'user', turn: '', text: clip(text, 8000), files });
     let s;
     try {
@@ -245,7 +257,7 @@ class Assistant {
       if (c.threadId && c.toolsSig === sig && c.serverSig === s.sig) {
         if (!s.loaded.has(c.threadId)) {
           try {
-            await this.rpc(s, 'thread/resume', { threadId: c.threadId, cwd: this.work, baseInstructions: o.base || null, developerInstructions: o.developer || null, approvalPolicy: 'untrusted', sandbox: 'workspace-write', excludeTurns: true });
+            await this.rpc(s, 'thread/resume', { threadId: c.threadId, cwd: this.work, baseInstructions: o.base || null, developerInstructions: o.developer || null, approvalPolicy: pol.approval, sandbox: pol.sandbox, excludeTurns: true });
             s.loaded.add(c.threadId); this.byThread.set(c.threadId, c.id);
           } catch (e) { this.log?.warn('助教续接对话失败，改开新会话', e?.message || e); c.threadId = ''; }
         }
@@ -254,7 +266,7 @@ class Assistant {
         // 换了工具清单 / 换了接口：旧会话续接不了，开新会话并带上前面聊过的要点
         seed = c.items.some((x) => x.kind === 'user' && x.id !== local) ? this.recap(c, local) : '';
         const r = await this.rpc(s, 'thread/start', {
-          cwd: this.work, approvalPolicy: 'untrusted', sandbox: 'workspace-write', model: o.model || null,
+          cwd: this.work, approvalPolicy: pol.approval, sandbox: pol.sandbox, model: o.model || null,
           baseInstructions: o.base || null, developerInstructions: o.developer || null, dynamicTools: Array.isArray(o.tools) ? o.tools : [],
           serviceName: 'classroom-studio',
         });
@@ -262,7 +274,8 @@ class Assistant {
         s.loaded.add(c.threadId); this.byThread.set(c.threadId, c.id);
       }
       if (seed) input[0].text = seed + '\n\n' + input[0].text;
-      const r = await this.rpc(s, 'turn/start', { threadId: c.threadId, input, ...(o.model ? { model: o.model } : {}), ...(EFFORTS.includes(o.effort) ? { effort: o.effort } : {}) });
+      // 权限每轮都带上：老师中途改了档位，下一句话就按新的来，不用开新会话
+      const r = await this.rpc(s, 'turn/start', { threadId: c.threadId, input, approvalPolicy: pol.approval, sandboxPolicy: pol.policy, ...(o.model ? { model: o.model } : {}), ...(EFFORTS.includes(o.effort) ? { effort: o.effort } : {}) });
       const turnId = r.turn.id;
       c.running = turnId;
       c.turns.push({ id: turnId, at: Date.now(), status: 'running', changes: [], cny: 0 });
@@ -415,6 +428,8 @@ class Assistant {
     const d = describeApproval(m.method, p);
     if (d) {
       if (!c) { reply(approvalReply(m.method, p, 'decline')); return; }
+      // 完全访问下 Codex 一般不会再来问；万一来了（比如要更多权限）直接同意，不打扰老师
+      if (c.access === 'full' && d.type !== 'input') { reply(approvalReply(m.method, p, 'session')); return; }
       const id = 'a-' + rid();
       this.put(c, { id, kind: 'approval', turn: p.turnId, ...d, status: 'wait' });
       const v = await this.ask(s, c, { kind: 'approval', itemId: id, ...d, turnId: p.turnId });
@@ -457,4 +472,4 @@ class Assistant {
   stopAll() { this.windowGone(); this.shutdown('导播台关闭'); for (const c of this.chats.values()) this.save(c, true); }
 }
 
-module.exports = { Assistant, usageDelta, describeApproval, approvalReply, userMcpNames };
+module.exports = { Assistant, usageDelta, describeApproval, approvalReply, userMcpNames, accessPolicy };

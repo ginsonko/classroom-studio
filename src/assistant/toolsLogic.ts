@@ -111,7 +111,7 @@ export function occurrences(slots: LessonSlot[], students: Student[], from: Date
 }
 
 // ── 整轮撤销 ──────────────────────────────────────────
-export type Kind = 'student' | 'slot' | 'question' | 'attempt' | 'lesson' | 'homework' | 'note' | 'prep' | 'trigger' | 'memory';
+export type Kind = 'student' | 'slot' | 'question' | 'attempt' | 'lesson' | 'homework' | 'note' | 'prep' | 'file' | 'map' | 'trigger' | 'memory';
 /** 一处改动：before / after 是整条记录（null = 不存在） */
 export interface Change { kind: Kind; id: string; before: unknown; after: unknown }
 export interface Box { get(kind: Kind, id: string): unknown; put(kind: Kind, id: string, value: unknown): void }
@@ -149,7 +149,7 @@ export function putIn<T extends { id: string }>(list: T[], id: string, value: T 
 
 /** 卡片上的一句话：哪些东西会被撤回 */
 export function changeSummary(list: Change[]): string {
-  const NAME: Record<Kind, string> = { student: '学生', slot: '节课', question: '道题', attempt: '条作答', lesson: '份课后总结', homework: '份作业', note: '条学生资料', prep: '份备课', trigger: '个提醒', memory: '条记忆' };
+  const NAME: Record<Kind, string> = { student: '学生', slot: '节课', question: '道题', attempt: '条作答', lesson: '份课后总结', homework: '份作业', note: '条学生资料', prep: '份备课', file: '个学生文件', map: '位学生的学习地图', trigger: '个提醒', memory: '条记忆' };
   const n = new Map<Kind, number>();
   for (const c of squash(list)) n.set(c.kind, (n.get(c.kind) ?? 0) + 1);
   return [...n].map(([k, v]) => (k === 'student' ? `${v} 位学生` : `${v} ${NAME[k]}`)).join('、');

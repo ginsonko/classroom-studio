@@ -220,7 +220,7 @@ function AnswerBadge({ mat, page, open, segs }: { mat: Material; page: number; o
         {menu && <div className="ab-menu" onPointerLeave={() => setMenu(false)}>
           <button onClick={() => { toggleAnswerPage(page); setMenu(false); }}>本页不遮</button>
           <button onClick={() => { skipWholeFile(); setMenu(false); }}>这份课件都不遮</button>
-          <button onClick={() => { useStore.getState().setShared({ answerGuard: false }); setMenu(false); }}>以后都不遮（可在设置里重新打开）</button>
+          <button onClick={() => { useStore.getState().setShared({ answerGuard: false }); if (host.electron) void host.call('setSettings', { answerOff: true }).catch(() => {}); setMenu(false); }}>以后都不遮（可在设置里重新打开）</button>
         </div>}
       </div>
     </>

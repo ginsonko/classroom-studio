@@ -137,6 +137,12 @@ async function buildMac(arch) {
     if ((info.mode & 0o170000) !== 0o120000 || !name.startsWith('Electron.app/')) continue;
     links.push({ rel: name.slice('Electron.app/'.length), target: zipEntryData(zip, info).toString('utf8') });
   }
+  // 开了开发者模式（或有管理员权限）时 tar 能建出软链接：删掉，统一按上面读出来的写回去，不然收文件时会把链接当普通文件
+  for (const l of [...links].sort((a, b) => b.rel.length - a.rel.length)) {
+    const p = path.join(work, 'Electron.app', ...l.rel.split('/'));
+    if (!fs.lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) continue;
+    try { fs.unlinkSync(p); } catch { fs.rmdirSync(p); }
+  }
   log(key, `软链接 ${links.length} 个`);
   const app = path.join(work, NAME + '.app');
   fs.renameSync(path.join(work, 'Electron.app'), app);
@@ -147,7 +153,9 @@ async function buildMac(arch) {
   for (const n of ['dist', 'electron']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: keep });
   fs.mkdirSync(path.join(appDir, 'bin'), { recursive: true });
   const codexOut = path.join(CACHE, 'codex-' + key);
-  await stageCodex({ version: CODEX_VER, out: codexOut, tgz: path.join(CACHE, `codex-${CODEX_VER}-${key}.tgz`), platform: 'darwin', arch, onProgress: (m) => log('codex:', m) });
+  // 缓存在系统临时目录，可能被清理工具清掉：没有本地包就让 stageCodex 自己下载
+  const codexTgz = path.join(CACHE, `codex-${CODEX_VER}-${key}.tgz`);
+  await stageCodex({ version: CODEX_VER, out: codexOut, tgz: fs.existsSync(codexTgz) ? codexTgz : '', platform: 'darwin', arch, onProgress: (m) => log('codex:', m) });
   fs.cpSync(codexOut, path.join(appDir, 'bin/codex'), { recursive: true });
   gunzipTo(path.join(CACHE, `ffmpeg-${key}.gz`), path.join(appDir, 'bin/ffmpeg'));
   writeAppMeta(appDir);
@@ -312,10 +320,15 @@ async function main() {
 }
 
 const NOTES = [
-  'AI 答疑的附件（新）：题目照片、截图、PDF、Word、PPT、Excel、txt / md 直接拖进 AI 面板，或在输入框里 Ctrl+V 粘贴截图，也可以点「添加附件」选文件；一次最多 6 个，点 × 去掉，图片 AI 直接看、文档先抽出文字再读',
-  '聚光灯、幕布能关掉了：浮层上新增「× 聚光灯」「× 幕布」按钮，按 Esc 也能关；幕布拖到最下面自动收起（以前拖到底也留一条黑边）',
-  '「揭晓答案」不再跨次启动：以前下课忘了收，下次打开软件学生就能看到答案页；现在每次启动都重新遮住，只管这一次上课',
-  '说明书补上聚光灯 / 幕布的关闭方式、Esc 的作用，以及「题目在纸上、在 PPT 或 Word 里怎么给 AI」',
+  '录像 AI 分析（新）：下课生成回放后，AI 看一遍录像，题目进收件箱、看得出批改的记作答、讲到的知识点在学习地图上往前推、课堂小结记进档案；整批可撤销，设置里能关',
+  '回放加了课堂时间线：换课件、开黑板、收题、作答都标在进度条上，点一下跳过去',
+  '学习地图自己更新：下课按这节课的作答往前推（未学→在学、连续做对→已掌握），「薄弱」只给建议；每次更新都能撤销',
+  '学生页新增「学生资料」卡片：板书、教案、备课、课后总结、家长备注都归在学生名下，点文件直接打开',
+  '换学生自动清空课堂：上一位学生的板书先存成 PDF 放进他的资料，再关课件、擦黑板，15 秒内可撤销；也可以手动「清空课堂」',
+  '小羽：权限分「每次都问 / 常用 / 完全访问」三档，开了完全访问不再一直弹授权；回复里的文件显示成卡片，点一下打开；输入框能 Ctrl+V 粘贴截图；能查学习地图、分析录像',
+  'AI 整理能收到后台：资料多时关掉窗口去做别的，顶栏显示进度，整理单列好会提醒你',
+  '切黑板回到最近用过的那块（板书还在），不再每次新开；答案页可以设成默认全部不遮',
+  '修复：在图片课件上框选一块上屏时报错',
 ];
 
 main().catch((e) => { console.error('打包失败：', e.stack || e); process.exit(1); });

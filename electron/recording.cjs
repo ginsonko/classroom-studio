@@ -58,6 +58,40 @@ class Recording {
   await work; return {bytes:c.bytes};
  }
  async save(c=this.current){if(!c)return;const {handle,folder,failurePromise,...fields}=c,meta=JSON.parse(JSON.stringify(fields));const task=this.metaQueue.then(()=>atomicJSON(path.join(folder,'recording.json'),meta));this.metaQueue=task.catch(()=>{});await task;}
+ /** 课堂时间线：换课件、翻页、记作答……记下离开始录像多少秒，跟着 recording.json 存（录像分块写入时一起落盘） */
+ chapter(v){
+  const c=this.current;if(!c||this.status.phase!=='recording'||!c.startedAt)return false;
+  const title=String(v?.title||'').replace(/\s+/g,' ').trim().slice(0,120);if(!title)return false;
+  const kind=['material','page','board','attempt','question','note'].includes(v?.kind)?v.kind:'note';
+  const t=Math.max(0,Math.round((Date.now()-c.startedAt)/100)/10),list=c.chapters||(c.chapters=[]);
+  const last=list[list.length-1];
+  // 连着翻页只留停下来的那一页
+  if(last&&kind==='page'&&last.kind==='page'&&t-last.t<8)list.pop();
+  else if(last&&last.kind===kind&&last.title===title)return true;
+  list.push({t,kind,title,...(typeof v?.ref==='string'?{ref:v.ref.slice(0,200)}:{})});
+  if(list.length>600)list.splice(0,list.length-600);
+  return true;
+ }
+ /** 下课分析用：在给定的秒数截帧（最多 24 张，1280 宽 JPEG），返回 data URL */
+ async frames(rid,times){
+  const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
+  if(this.current?.id===rid)throw new Error('这节课还在录');
+  const src=fs.existsSync(item.mp4)?item.mp4:item.raw;if(!fs.existsSync(src))throw new Error('录像文件不在了');
+  const dir=path.join(item.folder,'frames');await fsp.mkdir(dir,{recursive:true});
+  const out=[];
+  for(const [i,t0] of (Array.isArray(times)?times:[]).slice(0,24).entries()){
+   const t=Math.max(0,Number(t0)||0),file=path.join(dir,`f${String(i).padStart(2,'0')}-${Math.round(t)}.jpg`);
+   try{await runProcess(this.ffmpeg,['-hide_banner','-y','-ss',t.toFixed(2),'-i',src,'-frames:v','1','-vf','scale=1280:-2','-q:v','4',file],{timeout:90000,lowPriority:true});out.push({t,url:'data:image/jpeg;base64,'+(await fsp.readFile(file)).toString('base64')});}catch{}
+  }
+  return out;
+ }
+ /** 给 recording.json 补字段（下课分析的结果） */
+ async patchMeta(rid,patch){
+  const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
+  const file=path.join(item.folder,'recording.json'),meta=await readJSON(file,null);if(!meta)throw new Error('找不到这段录像的信息');
+  if(patch&&typeof patch==='object'&&'analysis' in patch)meta.analysis=patch.analysis??null;
+  const task=this.metaQueue.then(()=>atomicJSON(file,meta));this.metaQueue=task.catch(()=>{});await task;return true;
+ }
  async stop(){if(!this.current||!['starting','recording'].includes(this.status.phase))return this.status;clearTimeout(this.startTimeout);this.update({phase:'stopping'});this.send({type:'record:stop',recordId:this.current.id});return this.status;}
  /** 等到这一节真正收尾（原始文件已关闭），最多等 ms */
  async settle(ms=60000){const until=Date.now()+ms;while(this.live&&Date.now()<until)await new Promise(r=>setTimeout(r,200));return !this.live;}

@@ -359,11 +359,18 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
   for(const k of ['microphone','systemAudio','autoRecord'])if(typeof value[k]==='boolean')settings[k]=value[k];if([1500000,3000000,5000000].includes(value.bitrate))settings.bitrate=value.bitrate;
   if(typeof value.captureGuard==='boolean'){settings.captureGuard=value.captureGuard;const t=windows.get('teacher');if(t&&!t.isDestroyed())t.setContentProtection(value.captureGuard);dockManager.protect();log.info('防截屏',value.captureGuard?'开启':'关闭');}
   if([0,5,10,15,30].includes(value.remindMinutes))settings.remindMinutes=value.remindMinutes;
+  if(typeof value.answerOff==='boolean')settings.answerOff=value.answerOff;
+  if(typeof value.autoClear==='boolean')settings.autoClear=value.autoClear;
+  if(typeof value.autoMap==='boolean')settings.autoMap=value.autoMap;
+  if(typeof value.autoAnalyze==='boolean')settings.autoAnalyze=value.autoAnalyze;
   if(typeof value.autostart==='boolean'){settings.autostart=value.autostart;if(app.isPackaged)app.setLoginItemSettings({openAtLogin:value.autostart});}
   scheduleSave();return settings;}
  case 'pickRecordings':{if(busy()||recording.jobs.length)throw Error('录像保存、回放生成完以后再修改目录');const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择录像保存目录',properties:['openDirectory','createDirectory']});if(!r.canceled)await changeRecordings(r.filePaths[0]);return settings.recordings;}
  case 'startLesson':{await makeWindow('student');if(busy())return recording.status;await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&value?.synthetic===true);}
  case 'stopLesson':return recording.stop();
+ case 'recordChapter':return recording.chapter(value);
+ case 'recordFrames':return recording.frames(String(value?.id||''),value?.times);
+ case 'recordPatch':return recording.patchMeta(String(value?.id||''),value?.patch);
  case 'recordStatus':return recording.status;
  case 'recordings':return recording.list();
  case 'recoverRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');if(item.phase==='converting')return null;return recording.enqueue(item.folder,{id:item.id,title:item.title,studentId:item.studentId});}
@@ -513,6 +520,7 @@ async function agentCall(method,value){
  default:throw Error('未知的任务操作：'+method);
  }
 }
+const DOC_EXT=/\.(pdf|docx?|pptx?|xlsx?|csv|md|markdown|txt|rtf|png|jpe?g|gif|webp|bmp|mp4|mp3|m4a|wav|zip)$/i;
 async function assistantCall(method,value){
  const v=value||{};
  switch(method){
@@ -532,7 +540,9 @@ async function assistantCall(method,value){
  case 'assistant.grant':{const p=path.resolve(String(v.path||''));const st=await fs.promises.stat(p);return files.authorize(p,st.isDirectory());}
  case 'assistant.pickFiles':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'给 AI 助教看的文件',properties:['openFile','multiSelections']});return r.canceled?[]:r.filePaths.slice(0,8).map(p=>files.authorize(p));}
  case 'assistant.workspace':{if(!TEST)await shell.openPath(assistant.work);return normal(assistant.work);}
- case 'assistant.open':{const f=path.resolve(String(v.path||''));if(!within(assistant.work,f)&&!within(study.dir,f))throw Error('只能打开助教做出来的文件');const err=await shell.openPath(f);if(err)throw Error('打不开：'+err);return;}
+ // 助教工作目录、学情库里的文件随便开；别处的只开文档、图片、音视频（老师在对话里点的，不开程序和脚本）
+ case 'assistant.open':{const f=path.resolve(String(v.path||''));if(!within(assistant.work,f)&&!within(study.dir,f)&&!DOC_EXT.test(f))throw Error('这种文件不能从对话里直接打开，请到文件夹里打开');if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');const err=await shell.openPath(f);if(err)throw Error('打不开：'+err);return;}
+ case 'assistant.reveal':{const f=path.resolve(String(v.path||''));if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');if(!TEST)shell.showItemInFolder(f);return normal(f);}
  default:throw Error('未知的助教操作：'+method);
  }
 }
@@ -544,6 +554,7 @@ async function studyCall(method,value){
  case 'study.image':return study.image(value);
  case 'study.imageData':return study.imageData(value);
  case 'study.document':return study.document(value||{});
+ case 'study.board':return study.board(value||{});
  case 'study.open':{const err=await shell.openPath(inside(value));if(err)throw Error('打不开：'+err);return;}
  case 'study.reveal':shell.showItemInFolder(inside(value));return;
  case 'study.folder':{const f=study.folder(value);if(!TEST)await shell.openPath(f);return normal(f);}
@@ -575,7 +586,7 @@ function remindLesson(item){
 }
 async function start(){
  await fs.promises.mkdir(files.cache,{recursive:true});cleanTemps(path.join(DATA,'workspace.json'));saved=await readJSON(path.join(DATA,'workspace.json'),{});
- settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,...saved.settings};
+ settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,...saved.settings};
  // 0.4.0：防截屏改为默认关闭（开启时部分会议软件全屏共享会显示黑块）
  if(!saved.migrated040){saved.migrated040=true;settings.captureGuard=false;}
  ledger=new Ledger(DATA);
@@ -587,7 +598,7 @@ async function start(){
  agents=new Agents({dir:path.join(DATA,'agents'),toolsDir:path.join(DATA,'tools'),fetch:(u,o)=>net.fetch(u,o),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('agent',{agent:m}),exporter:exportDoc,onCharge:()=>reconciler?.soon(120000),imageGen:(v)=>ai.handle('ai.image',v,{windows,dataDir:DATA,ledger,reconciler})});
  assistant=new Assistant({dir:path.join(DATA,'assistant'),toolsDir:path.join(DATA,'tools'),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('assistant',{assistant:m}),onCharge:()=>reconciler?.soon(120000)});try{files.authorize(assistant.work,true);}catch{}
  reconciler=new Reconciler({ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>{if(m.tasks?.length)agents.refreshCost(m.tasks);notify('ledger',m);}});if(!TEST)reconciler.start();try{files.authorize(agents.dir,true);}catch{}
- study=new Study({dir:path.join(DATA,'study'),exportDoc,log});files.authorize(study.dir,true);study.templateCss=kind=>plugins.templateCss(kind);
+ study=new Study({dir:path.join(DATA,'study'),exportDoc,log});files.authorize(study.dir,true);study.templateCss=kind=>plugins.templateCss(kind);study.watch(()=>notify('studyChanged'));
  notifier=new Notify({dir:DATA,root:study.dir,test:TEST,log});
  manim=new Manim({dir:path.join(files.cache,'manim'),log,test:TEST,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),setup:new ManimSetup({dir:path.join(DATA,'tools','manim'),fetch:(u,o)=>net.fetch(u,o),log,emit:state=>notify('manimSetup',{state}),...(TEST&&process.env.CS_MANIM_SETUP?JSON.parse(process.env.CS_MANIM_SETUP):{})})});await fs.promises.mkdir(manim.dir,{recursive:true});
  archive=new Archive({dir:path.join(DATA,'archive'),copyFrom:[manim.dir],log});files.authorize(archive.dir,true);
@@ -607,6 +618,10 @@ async function start(){
  saved.shared.curtain=null;saved.shared.spotlight=null;
  // 已经揭晓的答案页同理：揭晓是「这会儿」的动作，下次打开先遮住，免得学生一上来就看到答案
  saved.shared.revealed=[];
+ // 答案遮挡：设置里「默认答案全部不遮」是长期设置；浮层 / 监视器上的开关只管这一次，下次启动回到设置
+ // 1.5.0 之前关掉的总开关会一直保存在 shared 里，这里迁移成设置，老师原来的选择不变
+ if(settings.answerOff===undefined)settings.answerOff=saved.shared.answerGuard===false;
+ saved.shared.answerGuard=!settings.answerOff;
  publicData=projection(saved.shared);if(publicData.sim)publicData.sim.playing=false;
  recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});}});
  // 自动更新：清单地址和公钥可以用环境变量换成测试服务器（两个都给才生效）
@@ -638,6 +653,6 @@ if(!TEST&&!app.requestSingleInstanceLock())app.quit();else{app.whenReady().then(
 app.on('open-url',(e,url)=>{e.preventDefault();void offerLink(url);});
 app.on('open-file',(e,file)=>{if(/\.yzimport$/i.test(file)){e.preventDefault();void offerLink(file);}});
 app.on('activate',()=>{const t=windows.get('teacher');if(t&&!t.isDestroyed())t.show();});
-app.on('will-quit',()=>{try{agents?.stopAll();assistant?.stopAll();reminders?.stop();reconciler?.stop();}catch{}});
+app.on('will-quit',()=>{try{agents?.stopAll();assistant?.stopAll();reminders?.stop();reconciler?.stop();study?.watcher?.close();}catch{}});
 app.on('window-all-closed',()=>{if(TEST||quitting)app.quit();});
 app.on('before-quit',e=>{if(!quitting&&!TEST){e.preventDefault();void closeApp();}});

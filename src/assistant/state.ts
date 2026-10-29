@@ -6,16 +6,24 @@ import { DEFAULT_NAME, type PersonaId } from './prompt';
 import { cleanTrigger, type Trigger } from './triggersLogic';
 
 export type Api = 'auto' | 'studio' | 'own';
+/** 助教能动老师电脑到什么程度：ask 每步都问；common 在工作目录里随便做、其余要问；full 不再问 */
+export type Access = 'ask' | 'common' | 'full';
+export const ACCESS: [Access, string, string][] = [
+  ['ask', '每次都问', '看文件、运行命令、改文件前都先问你'],
+  ['common', '常用', '在它的工作目录里做文件、跑命令、联网查资料，看你的课件和学生资料都不再问；改工作目录以外的文件、删数据前会问'],
+  ['full', '完全访问', '不再弹任何确认，能读写电脑上所有文件、运行任何命令；做错了可以「撤销这一轮」（只能撤销软件里的改动）'],
+];
 export interface Settings {
   name: string; persona: PersonaId; custom: string;
   /** auto：配了导播台 AI 接口就用它，否则用老师自己登录的 Codex */
   api: Api; model: string; effort: '' | 'low' | 'medium' | 'high';
+  access: Access;
   /** 右下角的助教形象 */
   avatar: boolean;
 }
 export interface Memory { id: string; text: string; at: string; by: 'ai' | 'teacher' }
 
-export const DEFAULT_SETTINGS: Settings = { name: DEFAULT_NAME, persona: 'sister', custom: '', api: 'auto', model: '', effort: '', avatar: true };
+export const DEFAULT_SETTINGS: Settings = { name: DEFAULT_NAME, persona: 'sister', custom: '', api: 'auto', model: '', effort: '', access: 'common', avatar: true };
 const PERSONA_IDS: PersonaId[] = ['sister', 'assistant', 'expert'];
 
 export function cleanSettings(v: unknown): Settings {
@@ -27,6 +35,7 @@ export function cleanSettings(v: unknown): Settings {
     api: o.api === 'studio' || o.api === 'own' ? o.api : 'auto',
     model: String(o.model ?? '').trim().slice(0, 60),
     effort: o.effort === 'low' || o.effort === 'medium' || o.effort === 'high' ? o.effort : '',
+    access: o.access === 'ask' || o.access === 'full' ? o.access : 'common',
     avatar: o.avatar !== false,
   };
 }

@@ -25,6 +25,8 @@ const timer = setTimeout(() => { console.error('pen cursor test timed out'); app
   if (process.env.CS_SHOW === '1') teacher.show(); else teacher.showInactive();
   const T = async (code) => { const r = await call(teacher, `(async()=>{try{const Q=__studioQA,s=Q.useStore.getState();${code}}catch(e){return {__err:String(e&&e.stack||e)}}})()`); if (r && r.__err) throw Error(r.__err); return r; };
   await T(`s.set({page:'console',aiOpen:false});s.setShared({tool:'pen'});return true`);
+  // 多显示器缩放不同时，窗口挪到屏幕外后 Windows 会在一秒左右后按那块屏的 DPI 再缩放一次：等窗口宽度稳定再找画布
+  for (let i = 0, last = -1, same = 0; i < 48 && same < 6; i++) { await sleep(250); const w = await call(teacher, 'innerWidth'); same = w === last ? same + 1 : 0; last = w; }
   let prev = '';
   const box = await until(() => T(`const c=[...document.querySelectorAll('.ink')].filter(e=>e.style.pointerEvents==='auto').map(e=>e.getBoundingClientRect()).filter(r=>r.width>200).sort((a,b)=>b.width*b.height-a.width*a.height)[0];if(!c)return null;const e=document.elementFromPoint(c.x+c.width/2,c.y+c.height/2);return e&&e.classList.contains('ink-c')?{x:c.x,y:c.y,w:c.width,h:c.height}:null`).then(async (b) => { await sleep(300); const j = JSON.stringify(b); const ok = b && j === prev; prev = j; return ok ? b : null; }), 8000, 'writable canvas');
   await T(`HTMLElement.prototype.setPointerCapture=function(){};HTMLElement.prototype.releasePointerCapture=function(){};HTMLElement.prototype.hasPointerCapture=function(){return false};return true`);

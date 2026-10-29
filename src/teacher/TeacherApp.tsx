@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bot, CalendarDays, Circle, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
   PanelRightOpen, Palette, Square, Users, Settings2, PenTool, Sparkles, BellRing, BookOpenCheck, Shapes, Workflow, LifeBuoy,
-  SkipForward, Film, Clapperboard, Puzzle, UsersRound,
+  SkipForward, Film, Clapperboard, Puzzle, UsersRound, Eraser, Undo2,
 } from 'lucide-react';
+import { canRestoreClass, classHasContent, clearClass, restoreClass, studentName } from '../lib/classReset';
 import { type FileEntry } from '../lib/library';
 import { STUDENTS } from '../lib/mock';
 import { stepView, useStore } from '../lib/store';
@@ -21,6 +22,8 @@ import { Students } from './Students';
 import { host } from '../lib/host';
 import { openMaterial } from '../doc/actions';
 import { useRecording, toggleRecording, nextLesson, isLive } from '../lib/recording';
+import { startTimeline } from '../lib/timeline';
+import { startRecordAnalysis } from '../lib/recordAnalysis';
 import { ReplayPage } from './ReplayPage';
 import { installPaste } from '../ink/pasteImage';
 import { DesktopPanel } from './DesktopPanel';
@@ -36,7 +39,7 @@ import { startAutopilot, useAuto } from '../lib/autopilot';
 import { ImportDialog } from './ImportDialog';
 import { HelpCenter, UpdateToast } from './HelpCenter';
 import { openHelp, useHelp } from '../lib/update';
-import { dismiss, useToast } from '../lib/toast';
+import { dismiss, toast, useToast } from '../lib/toast';
 import { PluginsPage } from '../plugins/PluginsPage';
 import { PluginButton, PluginSheets } from '../plugins/PluginUi';
 import { SortButton, SortDialog } from './SortDialog';
@@ -57,7 +60,7 @@ export function TeacherApp() {
   const skinsOpen = useStore((s) => s.skinsOpen);
   useAnswerMarks();
 
-  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); document.title = '最强网课教辅系统 · 教师端'; }, []);
+  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); document.title = '最强网课教辅系统 · 教师端'; }, []);
   const autoOn = useAuto((s) => s.settings.on);
   const helpOpen = useHelp((s) => !!s.open), updateDot = useHelp((s) => ['available', 'ready'].includes(s.update.phase) && s.update.info?.latest !== s.skip);
   useEffect(() => {
@@ -158,6 +161,17 @@ function RailBtn({ icon, label, on, onClick }: { icon: ReactNode; label: string;
   );
 }
 
+/** 顶栏换学生：学生画面上还是别人的板书、课件时提醒一下，可以一键清空（不自动清，老师可能只是看一眼） */
+function switchStudent(id: string) {
+  const st = useStore.getState();
+  if (id === st.studentId) return;
+  st.set({ studentId: id });
+  const owner = st.classOf;
+  if (owner && owner !== id && classHasContent()) toast(`学生画面上还是「${studentName(owner)}」的板书和课件`, { ms: 10000, action: { label: '清空课堂', run: () => void clearClass({ archiveTo: owner }) } });
+}
+/** 一键清空：板书存到内容所属的学生名下 */
+const clearMine = () => { const st = useStore.getState(); return clearClass({ archiveTo: st.classOf || st.studentId }); };
+
 function TopBar() {
   const status = useRecording(s=>s.status);
   const rec={on:isLive(status.phase), start:status.startedAt??Date.now()};
@@ -200,13 +214,17 @@ function TopBar() {
           <>
           <div className="pop-bg" onPointerDown={() => setPick(false)} />
           <div className="pop stu-pop">
-            <button className={s.id==='free'?'on':''} onClick={() => { set({ studentId: 'free' }); setPick(false); }} style={{ ['--h' as string]: 192 }}><span className="ava sm">课</span><b>自由课堂</b><i>不绑学生</i></button>
+            <button className={s.id==='free'?'on':''} onClick={() => { switchStudent('free'); setPick(false); }} style={{ ['--h' as string]: 192 }}><span className="ava sm">课</span><b>自由课堂</b><i>不绑学生</i></button>
             {!students.length&&<button onClick={()=>{set({page:'students'});setPick(false);}}>添加学生档案</button>}
             {[...individuals(students), ...groups(students)].filter((x) => !x.archived || x.id === studentId).map((x) => (
-              <button key={x.id} className={(x.id === studentId ? 'on' : '') + (isGroup(x) ? ' grp' : '')} onClick={() => { set({ studentId: x.id }); setPick(false); }} style={{ ['--h' as string]: x.hue }}>
+              <button key={x.id} className={(x.id === studentId ? 'on' : '') + (isGroup(x) ? ' grp' : '')} onClick={() => { switchStudent(x.id); setPick(false); }} style={{ ['--h' as string]: x.hue }}>
                 <span className="ava sm">{isGroup(x) ? <UsersRound size={12} /> : x.name.slice(-1)}</span><b>{x.name}</b><i>{isGroup(x) ? `${kindName(x.kind)} · ${membersOf(x, students).length} 人` : x.grade}</i>
               </button>
             ))}
+            <div className="stu-pop-foot">
+              <button data-qa="clear-class" onClick={() => { setPick(false); void clearMine(); }} data-tip="关掉所有课件和多开的黑板，黑板擦干净；写过的板书先存成 PDF 放到这位学生名下。15 秒内可以撤销"><Eraser size={13} /><b>清空课堂</b></button>
+              {canRestoreClass() && <button onClick={() => { setPick(false); restoreClass(); }} data-tip="放回最近一次清空前的课件和板书"><Undo2 size={13} /><b>恢复清空前</b></button>}
+            </div>
           </div>
           </>
         )}

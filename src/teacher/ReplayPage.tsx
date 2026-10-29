@@ -1,22 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clapperboard, FolderOpen, HardDrive, Loader2, Play, RotateCcw, Trash2, FolderInput } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clapperboard, FolderOpen, HardDrive, Loader2, Play, RotateCcw, Sparkles, Trash2, FolderInput, Undo2 } from 'lucide-react';
+import { fmtT } from '../lib/timeline';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { fmtBytes, isLive, useRecording, type RecordRow, type RecordsInfo } from '../lib/recording';
+import { analyzeRecording, useRecordAnalysis } from '../lib/recordAnalysis';
+import { undoSort } from '../lib/sort';
+import { useStudy } from '../lib/studyStore';
 import { toast } from '../lib/toast';
 import '../styles/replay.css';
+
+/** 这节课的 AI 分析：进度、结果、整批撤销 */
+function Analysis({ r, busy, reload }: { r: RecordRow; busy?: string; reload: () => void }) {
+  const a = r.analysis, sortId = a?.sortId;
+  const undone = useStudy((s) => (sortId ? s.data.sorts?.find((x) => x.id === sortId)?.undone ?? (s.data.sorts?.some((x) => x.id === sortId) ? '' : 'gone') : ''));
+  if (busy !== undefined) return <p className="rp-an busy" data-qa="rp-analysis"><Loader2 size={12} className="ags-spin" />{busy || 'AI 正在分析录像'}</p>;
+  if (!a) return null;
+  if (a.error) return <p className="rp-an err" data-qa="rp-analysis">AI 分析没做完：{a.error}</p>;
+  const bits = [a.questions ? `${a.questions} 道题进收件箱` : '', a.attempts ? `${a.attempts} 条作答` : '', a.map ? `学习地图 ${a.map} 处` : ''].filter(Boolean);
+  return <div className={'rp-an' + (undone ? ' off' : '')} data-qa="rp-analysis">
+    <span><Sparkles size={12} />AI 看了 {a.frames} 张画面{bits.length ? '：' + bits.join('、') : ''}{undone ? '（已撤销）' : ''}</span>
+    {!undone && sortId && <button className="rp-an-undo" data-qa="rp-analysis-undo" onClick={() => { undoSort(sortId); reload(); }}><Undo2 size={12} />撤销</button>}
+    {a.summary && <small>{a.summary}</small>}
+  </div>;
+}
 
 const minutes = (r: RecordRow) => r.startedAt && r.endedAt ? Math.max(1, Math.round((r.endedAt - r.startedAt) / 60000)) : null;
 
 /** 全部课堂回放：播放、删除（进回收站）、看占用、换保存位置 */
 export function ReplayPage() {
   const [rows, setRows] = useState<RecordRow[] | null>(null), [info, setInfo] = useState<RecordsInfo | null>(null);
+  const [open, setOpen] = useState('');
   const [who, setWho] = useState('all'), [pick, setPick] = useState<Set<string>>(new Set()), [err, setErr] = useState(''), [busy, setBusy] = useState('');
   const students = useStore((s) => s.students);
   const status = useRecording((s) => s.status), rev = useRecording((s) => s.rev);
   const live = isLive(status.phase), jobs = status.jobs ?? [];
+  const analyzing = useRecordAnalysis((s) => s.busy), nBusy = Object.keys(analyzing).length;
   const load = () => Promise.all([host.call<RecordRow[]>('recordings'), host.call<RecordsInfo>('recordingsInfo')]).then(([r, i]) => { setRows(r); setInfo(i); }).catch((e) => setErr(e.message));
-  useEffect(() => { void load(); }, [rev, jobs.length]);
+  useEffect(() => { void load(); }, [rev, jobs.length, nBusy]);
   const run = async (key: string, fn: () => Promise<unknown>) => { setErr(''); setBusy(key); try { await fn(); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); } };
   const shown = useMemo(() => (rows ?? []).filter((r) => who === 'all' || (who === 'free' ? !students.some((s) => s.id === r.studentId) : r.studentId === who || (!!r.studentId && !!students.find((g) => g.id === r.studentId)?.members?.includes(who)))), [rows, who, students]);
   const name = (id?: string | null) => students.find((s) => s.id === id)?.name;
@@ -71,9 +92,13 @@ export function ReplayPage() {
               <b>{r.title || '课堂回放'}</b>
               <small>{stu ? <em>{stu}</em> : <em className="free">未绑定学生</em>} · {m ? `${m} 分钟` : '时长待确认'} · {fmtBytes(r.bytes)} · {recording ? '正在录' : conv ? `回放生成中 ${Math.round((p ?? 0) * 100)}%` : r.phase === 'complete' ? 'MP4 已生成' : r.error ? '回放没生成成功，原录像已保留' : '原录像已保留，可生成回放'}</small>
               {conv && <div className="rp-bar sm"><i style={{ width: `${(p ?? 0) * 100}%` }} /></div>}
+              {(r.chapters?.length ?? 0) > 0 && <button className="rp-tl-t" data-qa="rp-timeline" onClick={() => setOpen(open === r.id ? '' : r.id)}>{open === r.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}课堂时间线 · {r.chapters!.length} 条</button>}
+              {open === r.id && <ol className="rp-tl">{r.chapters!.map((c, i) => <li key={i} className={'k-' + c.kind}><span className="num">{fmtT(c.t)}</span>{c.title}</li>)}</ol>}
+              <Analysis r={r} busy={analyzing[r.id]} reload={load} />
             </div>
             <div className="rp-acts">
               {r.phase === 'complete' && <button className="sd-btn" onClick={() => void run(r.id, () => host.call('openRecording', r.id))}><Play size={14} />播放</button>}
+              {r.phase === 'complete' && !!stu && analyzing[r.id] === undefined && <button className="sd-btn" data-qa="rp-analyze" title="让 AI 看一遍录像：题目进收件箱、批改记作答、学习地图往前推、课堂小结记进档案" disabled={!!busy} onClick={() => void run(r.id, async () => { await analyzeRecording(r.id); await load(); })}><Sparkles size={14} />{r.analysis && !r.analysis.error ? '重新分析' : 'AI 分析'}</button>}
               {!recording && !conv && r.phase !== 'complete' && <button className="sd-btn" disabled={!!busy} onClick={() => void run(r.id, async () => { void host.call('recoverRecording', r.id).catch((e) => setErr(e.message)); await new Promise((ok) => setTimeout(ok, 300)); await load(); })}><RotateCcw size={14} />生成回放</button>}
               <button className="sd-btn" onClick={() => host.revealInFolder(r.folder)}><FolderOpen size={14} /></button>
               <button className="sd-btn danger" disabled={recording || conv || !!busy} onClick={() => void del([r.id])} aria-label="删除"><Trash2 size={14} /></button>

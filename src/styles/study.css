@@ -131,6 +131,8 @@
 .sd-links button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: var(--r-md); font-size: 12px; font-weight: 600; color: var(--fg-1); background: var(--bg-2); }
 .sd-links button:hover { color: var(--fg-0); background: var(--bg-3); }
 .cell.mk { box-shadow: 0 0 0 2px var(--mc); }
+.map-auto { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding: 2px 4px 2px 9px; border-radius: 999px; font-size: 11.5px; color: var(--fg-1); background: var(--bg-3); }
+.map-auto .link-btn { color: var(--cue); font-size: 11.5px; padding: 0 6px; text-decoration: underline; }
 .map-sync { margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: var(--cue); background: var(--cue-soft); }
 
 /* 导播台学生卡：课堂作答 */

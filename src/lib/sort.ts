@@ -23,8 +23,10 @@ interface SortState {
   phase: Phase; step: string; error: string;
   analyses: Analysis[]; est: { cny: number; calls: number } | null; ai: boolean;
   record: SortRecord | null;
+  /** 归档到第几样（从 0 数） */
+  cursor: number;
 }
-const fresh = (): Omit<SortState, 'open' | 'tab' | 'studentId'> => ({ items: [], phase: 'collect', step: '', error: '', analyses: [], est: null, ai: false, record: null });
+const fresh = (): Omit<SortState, 'open' | 'tab' | 'studentId'> => ({ items: [], phase: 'collect', step: '', error: '', analyses: [], est: null, ai: false, record: null, cursor: 0 });
 export const useSort = create<SortState>(() => ({ open: false, tab: 'new', studentId: '', ...fresh() }));
 
 const MAX_ITEMS = 30;
@@ -34,12 +36,12 @@ const studentName = (id: string) => useStore.getState().students.find((s) => s.i
 const subjectOf = (id: string): SubjectId => studentSubject(useStore.getState().students.find((s) => s.id === id));
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
-/** 打开 AI 整理（可以顺便带上拖进来的文件 / 粘贴的文字） */
-export function openSort(o: { paths?: string[]; texts?: string[]; tab?: 'new' | 'records' } = {}) {
+/** 打开 AI 整理（可以顺便带上拖进来的文件 / 粘贴的文字）。background：只收下资料，不弹出窗口 */
+export function openSort(o: { paths?: string[]; texts?: string[]; tab?: 'new' | 'records'; background?: boolean } = {}) {
   const s = useSort.getState(), st = useStore.getState();
   const cur = st.students.some((x) => x.id === st.studentId && !x.archived && !x.kind) ? st.studentId : st.students.find((x) => x.id === st.studentId)?.members?.find((id) => students().some((s) => s.id === id)) ?? students()[0]?.id ?? '';
   const restart = s.phase === 'done';
-  useSort.setState({ open: true, tab: o.tab ?? 'new', ...(restart ? fresh() : {}), ...(!s.studentId || restart || (s.phase === 'collect' && !s.items.length) ? { studentId: cur } : {}) });
+  useSort.setState({ open: o.background ? s.open : true, tab: o.tab ?? 'new', ...(restart ? fresh() : {}), ...(!s.studentId || restart || (s.phase === 'collect' && !s.items.length) ? { studentId: cur } : {}) });
   if (!restart && s.phase !== 'collect' && (o.paths?.length || o.texts?.length)) { useSort.setState({ error: '上一批还没归档：先归档，或点「返回修改」再加新资料' }); return; }
   if (o.paths?.length) addPaths(o.paths);
   for (const t of o.texts ?? []) addText(t);
@@ -155,7 +157,7 @@ async function analyzeOne(it: SortInput, cfg: AiConfig | null, fallback: string)
   } finally { page.close?.(); }
 }
 
-export async function analyze() {
+export async function analyze(o: { quiet?: boolean } = {}) {
   const s = useSort.getState();
   if (s.phase !== 'collect' || !s.items.length) return;
   if (!s.studentId) { useSort.setState({ error: '先在上面选一个学生（还没有学生的话，先去「学生」页添加）' }); return; }
@@ -174,6 +176,33 @@ export async function analyze() {
     useSort.setState({ analyses: [...out] });
   }
   useSort.setState({ phase: 'review', step: '' });
+  // 窗口收起来了（整理在后台跑）：好了提醒一声
+  if (!useSort.getState().open && !o.quiet) toast(`AI 整理看完了 ${out.length} 样资料，列好了整理单，等你确认后归档`, { ms: 20000, action: { label: '去确认', run: () => openSort() } });
+}
+
+/** 整理到第几样了（看资料、归档两步都算） */
+export const sortProgress = (s: Pick<SortState, 'phase' | 'analyses' | 'items' | 'cursor'>) => {
+  if (s.phase === 'analyzing') return { done: s.analyses.length, total: s.items.length };
+  if (s.phase === 'saving') return { done: s.cursor, total: s.analyses.length };
+  return null;
+};
+
+/**
+ * AI 助教用：把文件交给 AI 整理，在后台看资料、列整理单，不弹窗口。
+ * archive = true 时列好单子直接归档（老师说过不用确认时才这样）；归档后照样可以在「整理记录」里整批撤销。
+ */
+export async function sortInBackground(paths: string[], o: { studentId?: string; archive?: boolean } = {}) {
+  const s = useSort.getState();
+  if (s.phase === 'analyzing' || s.phase === 'saving' || s.phase === 'review') throw Error('上一批 AI 整理还没确认归档：请老师先在顶栏「AI 整理」里处理完');
+  openSort({ background: true });
+  if (useSort.getState().items.length) useSort.setState({ items: [] });
+  if (o.studentId && students().some((x) => x.id === o.studentId)) useSort.setState({ studentId: o.studentId });
+  addPaths(paths);
+  if (!useSort.getState().items.length) throw Error(useSort.getState().error || '这些文件 AI 整理认不了（只收图片、Word、PDF、文本）');
+  const n = useSort.getState().items.length;
+  const job = (async () => { await analyze({ quiet: o.archive }); if (o.archive && useSort.getState().phase === 'review') await archive(); })();
+  job.catch((e) => toast('AI 整理出错：' + (e as Error).message));
+  return n;
 }
 
 export function patchAnalysis(itemId: string, p: Partial<Analysis>) {
@@ -196,12 +225,12 @@ export async function archive() {
   const fill: string[] = [];
   const per = new Map<string, { q: number; right: number; wrong: number; half: number; unsure: number; notes: number; todo: number }>();
   const tally = (id: string) => { let t = per.get(id); if (!t) { t = { q: 0, right: 0, wrong: 0, half: 0, unsure: 0, notes: 0, todo: 0 }; per.set(id, t); } return t; };
-  useSort.setState({ phase: 'saving', error: '' });
+  useSort.setState({ phase: 'saving', error: '', cursor: 0 });
   try {
     for (const [i, a] of s.analyses.entries()) {
       const it = s.items.find((x) => x.id === a.itemId);
       if (!it || !Object.values(a.take).some(Boolean)) continue;
-      useSort.setState({ step: `归档第 ${i + 1} / ${s.analyses.length} 样：${it.name}` });
+      useSort.setState({ step: `归档第 ${i + 1} / ${s.analyses.length} 样：${it.name}`, cursor: i });
       const t = tally(a.studentId), source = a.title || it.name;
       const note = (kind: StudentNote['kind'], text: string, todo?: StudentNote['todo']) => {
         if (!text.trim()) return;
@@ -257,6 +286,7 @@ export async function archive() {
     rec.title = s.analyses.length === 1 ? first : `${first} 等 ${s.analyses.length} 样`;
     useStudy.getState().update((d) => ({ ...d, sorts: [...(d.sorts ?? []), rec].slice(-200) }));
     useSort.setState({ phase: 'done', step: '', record: rec });
+    if (!useSort.getState().open) toast(`AI 整理归档好了：${rec.lines[0] ?? rec.title}`, { ms: 15000, action: { label: '看结果', run: () => useSort.setState({ open: true, tab: 'new' }) } });
     if (on && fill.length) void fillByAi(fill, cfg);
     const todo = [...per.values()].reduce((n, t) => n + t.todo, 0);
     if (todo) toast(`有 ${todo} 条家长调课的消息：课表不会自动改，记得去调一下`, { ms: 12000, action: { label: '去课表', run: () => { useStore.getState().set({ page: 'schedule' }); closeSort(); } } });
@@ -264,6 +294,7 @@ export async function archive() {
     // 已经写进去的部分留着，记录也留着，老师可以整批撤销
     if (rec.questions.length || rec.notes.length || rec.attempts.length) useStudy.getState().update((d) => ({ ...d, sorts: [...(d.sorts ?? []), { ...rec, title: rec.title || '整理到一半出错', lines: [...rec.lines, '整理到一半出错：' + (e as Error).message] }] }));
     useSort.setState({ phase: 'review', step: '', error: '归档没完成：' + (e as Error).message + '。已经写进去的可以在「整理记录」里撤销' });
+    if (!useSort.getState().open) toast('AI 整理归档没完成：' + (e as Error).message, { ms: 15000, action: { label: '去看看', run: () => openSort() } });
   }
 }
 
@@ -278,7 +309,18 @@ export function undoSort(id: string) {
     ...d, attempts: d.attempts.filter((a) => !att.has(a.id)), notes: d.notes.filter((n) => !notes.has(n.id)),
     sorts: (d.sorts ?? []).map((x) => x.id === id ? { ...x, undone: nowIso() } : x),
   }));
-  toast(`已撤销这次整理：${r.questions.length} 道题、${r.attempts.length} 条作答、${r.notes.length} 条档案记录`);
+  let cells = 0;
+  if (r.map?.length) {
+    const learning = { ...useStore.getState().learning };
+    for (const c of r.map) {
+      const g = learning[c.mapKey];
+      if (g?.[c.ci]?.[c.si] !== c.to) continue;
+      learning[c.mapKey] = g.map((row, i) => (i === c.ci ? row.map((v, j) => (j === c.si ? c.from : v)) : row));
+      cells++;
+    }
+    if (cells) useStore.getState().set({ learning });
+  }
+  toast(`已撤销${r.recordId ? '这次录像分析' : '这次整理'}：${r.questions.length} 道题、${r.attempts.length} 条作答、${r.notes.length} 条档案记录${cells ? `、${cells} 处学习地图` : ''}`);
 }
 
 /** 批改没认准的题：老师点了对错再记 */

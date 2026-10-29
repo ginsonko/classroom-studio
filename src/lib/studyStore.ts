@@ -19,10 +19,10 @@ export const useStudy = create<StudyState>()((set, get) => ({
   update: (fn) => { set({ data: fn(get().data) }); schedule(); },
 }));
 
-let timer: number | undefined, queue = Promise.resolve();
-function schedule() { clearTimeout(timer); timer = window.setTimeout(() => void flushStudy(), 500); }
+let timer: number | undefined, queue = Promise.resolve(), dirty = false;
+function schedule() { dirty = true; clearTimeout(timer); timer = window.setTimeout(() => void flushStudy(), 500); }
 export function flushStudy() {
-  clearTimeout(timer);
+  clearTimeout(timer); dirty = false;
   const s = useStudy.getState();
   if (!host.electron || !s.loaded) return Promise.resolve();
   useStudy.setState({ saving: true });
@@ -31,6 +31,20 @@ export function flushStudy() {
   return queue;
 }
 window.addEventListener('pagehide', () => { void flushStudy(); });
+
+/** 重新读一遍 study.json（先把手上没存的改动存掉） */
+export async function reloadStudy() {
+  if (!useStudy.getState().loaded) { ensureStudy(); return; }
+  await flushStudy(); await queue;
+  await useStudy.getState().load();
+}
+// 学情库被软件以外的程序改了（助教在完全访问模式下直接改文件、另一台电脑同步过来）：
+// 手上没有没存的改动就直接重新读；有的话先问老师，免得互相覆盖
+host.onEvent((e) => {
+  if (e.type !== 'studyChanged' || !useStudy.getState().loaded) return;
+  if (!dirty) { void useStudy.getState().load().then(() => toast('学情库在软件外被改过，已重新载入')); return; }
+  toast('学情库在软件外被改过，但你这边还有没保存的改动', { ms: 15000, action: { label: '用外面的版本', run: () => { clearTimeout(timer); dirty = false; void useStudy.getState().load(); } } });
+});
 
 let started = false;
 export function ensureStudy() { if (!started) { started = true; void useStudy.getState().load(); } }

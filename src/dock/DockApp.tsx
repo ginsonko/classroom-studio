@@ -261,7 +261,7 @@ function InkRows({ zoom, applied, onZoom }: { zoom: number; applied: number; onZ
         ) : mat.kind === 'board' ? (
           <button className="tp-b" onClick={addBoardPage} data-tip="黑板加一页"><Plus size={17} /></button>
         ) : (
-          <button className="tp-b" onClick={() => st().focusWin('board')} data-tip="切到黑板（回到上次写的那页）"><LayoutGrid size={17} /></button>
+          <button className="tp-b" onClick={() => st().toBoard(false)} data-tip="切到黑板（回到上次写的那块、那一页）"><LayoutGrid size={17} /></button>
         )}
         <button
           className={'tp-b' + (studentTools === 'locked' ? ' warn' : '')}
@@ -273,7 +273,7 @@ function InkRows({ zoom, applied, onZoom }: { zoom: number; applied: number; onZ
         <button className={'tp-b' + (snip ? ' on' : '')} disabled={snip} onClick={() => { setSnip(true); void snipToBoard().catch((e) => { host.call('notice', String((e as Error).message)).catch(() => {}); }).finally(() => setSnip(false)); }} data-tip="截屏：框选屏幕上任意区域，贴到黑板（微信 / QQ 截图后直接在学生画面按 Ctrl+V 也行）"><Scissors size={17} /></button>
       </div>
       <div className="tdock-row">
-        <button className="tp-b" onClick={() => st().newLongBoard()} data-tip="新开一块长黑板：一整条往下写，滚轮 / 翻页往下滚，写到底自动加长"><ScrollText size={17} /></button>
+        <button className="tp-b" onClick={() => st().toBoard(true)} data-tip={long ? '新开一块长黑板' : '长黑板：回到上次那块（板书都还在），没有就新开一块'}><ScrollText size={17} /></button>
         <button ref={saveBtn} className={'tp-b' + (saving || saveMenu ? ' on' : '')} disabled={saving}
           onClick={() => { if (mat.kind === 'board') setSaveMenu(!saveMenu); else save('stitch'); }}
           data-tip={mat.kind === 'board' ? '保存板书：存成图片，或存成 A4 的 PDF 方便打印' : '保存学生画面为图片'}>

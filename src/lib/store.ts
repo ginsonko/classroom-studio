@@ -4,7 +4,7 @@ import { boardMaterial, onStepsReady } from './library';
 import {STUDENTS,SLOTS} from './mock';
 import { host } from './host';
 import type { Author, Material, Stroke, Tool, View, Student, LessonSlot, ChapterState, AnswerMark, DeskWin } from './types';
-import { BASE, DEFAULT_LIMIT, cascade, deskIds, matOfKey, syncDesk, tileDesk, tileIds, topZ, trimDesk } from './desk';
+import { BASE, DEFAULT_LIMIT, cascade, deskIds, latestBoard, matOfKey, syncDesk, tileDesk, tileIds, topZ, trimDesk } from './desk';
 import { studentSubject, type SubjectId } from './subjects';
 import { indexGroups } from './studyLogic';
 import type { SimSync } from '../physics/model';
@@ -44,7 +44,10 @@ interface Local {
   answerMarks: Record<string, number[] | AnswerMark>;   // 文件路径 → 老师确认过的答案页（旧版只存页码）
   answerAutoDetect: boolean;   // 打开 PDF / PPT 时按文字自动识别答案页
   freeSubject: SubjectId;      // 自由课堂（不绑学生）用的学科，记住老师上次选的
+  classOf: string;             // 学生画面上的板书、课件是给哪位学生的（最后一次改动时选中的学生）；'' = 不知道
 }
+/** 清空课堂前的样子，撤销时原样放回 */
+export interface DeskSnap { desk: DeskWin[]; pgmMat: Material; pgm: View; sim: SimSync | null; revealed: string[]; ink: Record<string, Stroke[]>; history: Histories; classOf: string }
 export interface InkChange { remove?: string[]; upsert?: Stroke[]; order?: string[] }
 interface HistoryEntry { before: Stroke[]; after: Stroke[]; beforeOrder?:string[]; afterOrder?:string[] }
 type Histories = Record<string, {undo: HistoryEntry[]; redo: HistoryEntry[]}>;
@@ -66,14 +69,20 @@ interface Actions {
   newBoard:()=>void;
   /** 开一块长黑板（一整条往下写） */
   newLongBoard:()=>void;
+  /** 切到黑板 / 长黑板：回到最近用过的那块；没有就开一块；已经在长黑板上切长黑板 = 新开一块 */
+  toBoard:(long:boolean)=>void;
   /** 当前项和最近用过的课件并排摆开 */
   tileWins:()=>void;
+  /** 清空课堂：关掉所有课件和其它黑板，黑板擦干净，课件上的公开笔迹清掉（老师私有批注保留）。返回清空前的样子 */
+  clearDesk:()=>DeskSnap;
+  /** 撤销清空：放回清空前的课件和笔迹；清空后新写的笔迹、新开的课件也留着 */
+  restoreDesk:(snap:DeskSnap)=>void;
 }
 export type State=Shared&Local&Actions;
 export const inkKey=(materialId:string,page:number)=>`${materialId}#${page}`;
 export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...(isLong(mat)?{y:0}:{}),...p});
 export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps'];
-const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject'];
+const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject','classOf'];
 const board=boardMaterial();
 // contextBridge 传进来的对象不可扩展：撤销记录等要原地修改的数据必须先深拷贝，否则第一次在新页面书写就抛错
 const stored = (()=>{if(host.electron)return host.initial?JSON.parse(JSON.stringify(host.initial)):{};if(ROLE!=='teacher')return {};try{return JSON.parse(localStorage.getItem('cs.v2.teacher')||'{}');}catch{return {};}})();
@@ -85,7 +94,7 @@ if(!Number.isFinite(sharedInit.deskLimit))sharedInit.deskLimit=DEFAULT_LIMIT;
 if(sharedInit.sim)sharedInit.sim={...sharedInit.sim,playing:false};
 // 0.8.1 起橡皮默认局部擦除（像真橡皮）；旧存档里的整笔擦除是当时的默认值，不是老师选的
 if(!sharedInit.inkOptions.eraserV)sharedInit.inkOptions={...sharedInit.inkOptions,eraserMode:'segment',eraserSize:'m',eraserV:2};
-const localInit:Local={students:host.electron?[]:STUDENTS,slots:host.electron?[]:SLOTS,learning:{},skin:'graphite',motion:true,page:'console',libraryOpen:true,rightOpen:true,libraryW:300,rightW:340,pinned:[],recents:[],favorites:[],expanded:[],pvw:null,reader:{mat:board,view:defaultView(board),split:null},notes:{},studentId:host.electron?'free':'junyu',rec:{on:false,start:0},aiOpen:false,skinsOpen:false,paletteOpen:false,roots:[],saveError:null,answerMarks:{},answerAutoDetect:true,freeSubject:'physics',...(ROLE==='teacher'?stored.local:{})};
+const localInit:Local={students:host.electron?[]:STUDENTS,slots:host.electron?[]:SLOTS,learning:{},skin:'graphite',motion:true,page:'console',libraryOpen:true,rightOpen:true,libraryW:300,rightW:340,pinned:[],recents:[],favorites:[],expanded:[],pvw:null,reader:{mat:board,view:defaultView(board),split:null},notes:{},studentId:host.electron?'free':'junyu',rec:{on:false,start:0},aiOpen:false,skinsOpen:false,paletteOpen:false,roots:[],saveError:null,answerMarks:{},answerAutoDetect:true,freeSubject:'physics',classOf:'',...(ROLE==='teacher'?stored.local:{})};
 // 0.7 之前的存档 shared 里没有 subject：按当前学生推一次
 const inferredSubject=!(stored.shared&&'subject'in stored.shared);
 if(inferredSubject){const stu=localInit.students.find((x)=>x.id===localInit.studentId);sharedInit.subject=stu?studentSubject(stu):localInit.freeSubject;}
@@ -171,8 +180,30 @@ export const useStore=create<State>()((set,get)=>{
   get().setShared({desk:desk.filter(x=>x.id!==id)});},
  newBoard:()=>{const n=get().desk.filter(w=>w.mat.kind==='board'&&!isLong(w.mat)).length+1;const b:Material={...boardMaterial(),id:'board-'+Date.now().toString(36),title:'黑板 '+n};get().showNow(b);},
  newLongBoard:()=>{get().showNow(longMaterial(get().desk.filter(w=>isLong(w.mat)).length+1));},
+ // 切黑板：回到最近用过的那块（板书还在）；已经在长黑板上再点「长黑板」才新开一块
+ toBoard:long=>{const st=get();const desk=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);
+  if(long&&isLong(st.pgmMat)){st.newLongBoard();return;}
+  const w=latestBoard(desk,long);if(w){st.focusWin(w.id);return;}
+  if(long)st.newLongBoard();else st.focusWin(BASE);},
  tileWins:()=>{const st=get();const desk=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);const ids=tileIds(desk,st.pgmMat.id);if(ids.length<2)return;const next=tileDesk(desk,ids);const cur=next.find(w=>w.id===ids[0])!;cur.at=Date.now();cur.z=topZ(next)+1;
   if(cur.id===st.pgmMat.id)get().setShared({desk:next});else get().setShared({desk:next,pgmMat:cur.mat,pgm:cur.view,curtain:null,spotlight:null,selectedInk:null,sim:simFor(cur.mat,st.sim,cur.sim)});},
+ clearDesk:()=>{const st=get();const desk=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);
+  const ids=new Set(desk.map(w=>w.id)),boards=new Set(desk.filter(w=>w.mat.kind==='board').map(w=>w.id));
+  const ink={...st.ink},before:Record<string,Stroke[]>={},hist:Histories={};
+  for(const key of Object.keys(st.ink)){const m=matOfKey(key);if(!ids.has(m))continue;before[key]=st.ink[key];
+   const keep=boards.has(m)?[]:st.ink[key].filter(s=>s.layer==='private');if(keep.length)ink[key]=keep;else delete ink[key];
+   // 撤销记录也一起拿走：留着的话 Ctrl+Z 会把上一位学生的笔迹画回来
+   for(const h of Object.keys(history))if(h.startsWith(key+'|')){hist[h]=history[h];delete history[h];}}
+  const b=boardMaterial(),v=defaultView(b);
+  get().setShared({desk:[{id:BASE,mat:b,view:v,rect:[0,0,1,1],mode:'max',z:0,at:Date.now()}],pgmMat:b,pgm:v,ink,sim:null,curtain:null,spotlight:null,selectedInk:null,revealed:[],takeAt:Date.now()});
+  return {desk,pgmMat:st.pgmMat,pgm:st.pgm,sim:st.sim,revealed:st.revealed,ink:before,history:hist,classOf:st.classOf};},
+ restoreDesk:snap=>{const st=get();const now=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);
+  const old=new Set(snap.desk.map(w=>w.id)),desk=[...snap.desk,...now.filter(w=>!old.has(w.id))];
+  const ink={...st.ink};for(const[key,strokes]of Object.entries(snap.ink)){const have=new Set(strokes.map(s=>s.id));ink[key]=[...strokes,...(st.ink[key]??[]).filter(s=>!have.has(s.id))];}
+  for(const[h,v]of Object.entries(snap.history))if(!history[h])history[h]=v;
+  const cur=snap.desk.find(w=>w.id===snap.pgmMat.id);
+  get().setShared({desk,pgmMat:snap.pgmMat,pgm:snap.pgm,ink,sim:cur?snap.sim:null,revealed:[...new Set([...snap.revealed,...st.revealed])],curtain:null,spotlight:null,selectedInk:null,takeAt:Date.now()});
+  set({classOf:snap.classOf});},
  pgmTo:p=>get().setShared({pgm:{...get().pgm,...p},selectedInk:null}),
  touch:id=>{if(id==='board')return;set({recents:[id,...get().recents.filter(x=>x!==id)].slice(0,60)});},
  };
@@ -189,6 +220,9 @@ indexGroups(useStore.getState().students);
 useStore.subscribe((s,prev)=>{if(s.students!==prev.students)indexGroups(s.students);});
 // 自由课堂里切换的学科（教师端或浮层都能切）记下来，下次不绑学生时沿用
 if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if(s.subject!==prev.subject&&s.subject!==s.freeSubject&&!s.students.some((x)=>x.id===s.studentId))useStore.setState({freeSubject:s.subject});});
+// 板书、课件有改动（写字、开关课件、切换）就算是当前学生的；只是换了学生没动过，内容还算上一位的
+const deskSig=(s:State)=>s.pgmMat.id+'|'+s.desk.map(w=>w.id).join(',');
+if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if(s.classOf===s.studentId)return;if(s.ink!==prev.ink||deskSig(s)!==deskSig(prev))useStore.setState({classOf:s.studentId});});
 // 长黑板滚到离底不到一屏时加长；只由教师窗口改，学生窗口滚动也会经过这里
 if(ROLE==='teacher')useStore.subscribe((s,prev)=>{if((s.pgm===prev.pgm&&s.pgmMat===prev.pgmMat)||!isLong(s.pgmMat))return;const g=grownFor(s.pgmMat,s.pgm.y??0);if(g)queueMicrotask(()=>{const cur=useStore.getState();if(cur.pgmMat.id===g.id)cur.setShared({pgmMat:g});});});
 window.addEventListener('pagehide',()=>{void flushStore();});

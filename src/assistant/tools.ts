@@ -3,11 +3,13 @@
 // 删除数据、发给家长要老师在对话里点确认；电脑上的文件要老师先同意。
 import { host } from '../lib/host';
 import { useStore, type Page } from '../lib/store';
-import type { LessonSlot, Student } from '../lib/types';
+import type { ChapterState, LessonSlot, Student } from '../lib/types';
 import { useStudy, addQuestion, patchQuestion, recordAttempt, removeQuestions, nowIso, sid } from '../lib/studyStore';
 import { buildLessonNote, captureFromScreen, dayKey, exportHomework, homeworkTitle, lessonDocument, saveLesson } from '../lib/studyActions';
-import { DIFF_NAME, findDuplicate, guessPoints, pickHomework, pointLabel, pointsOf, profile, questionSubject, RESULT_NAME, similarity, validPoints, wrongBook, type LessonNote, type Question, type Result, type SendRecord, type StudyData } from '../lib/studyLogic';
-import { SUBJECTS, byLevel, levelOfGrade, packOf, studentSubject, type SubjectId } from '../lib/subjects';
+import { DIFF_NAME, findDuplicate, guessPoints, mastery, pickHomework, pointLabel, pointsOf, profile, questionSubject, RESULT_NAME, similarity, validPoints, wrongBook, type LessonNote, type Question, type Result, type SendRecord, type StudyData } from '../lib/studyLogic';
+import { SUBJECTS, byLevel, levelOfGrade, mapKey, packOf, pointKey, studentSubject, type SubjectId } from '../lib/subjects';
+import { fullGrid, planMap, STATE_NAME } from '../lib/mapLogic';
+import { changeText, setMapStates } from '../lib/mapUpdate';
 import { addNote, makePrep } from '../lib/autopilot';
 import { useLib } from '../lib/useLib';
 import { fileEntry, search as searchLib } from '../lib/library';
@@ -16,7 +18,11 @@ import { openStudy, type StudyTab } from '../teacher/StudyPage';
 import { MANUAL } from '../help/manual';
 import { ai } from '../lib/ai';
 import { readSource } from '../lib/scheduleAi';
-import { openSort } from '../lib/sort';
+import { openSort, sortInBackground } from '../lib/sort';
+import { filesOf, linkFiles } from '../lib/studentFiles';
+import { fmtT } from '../lib/timeline';
+import type { RecordRow } from '../lib/recording';
+import { analyzeRecording } from '../lib/recordAnalysis';
 import { dateKey } from '../doc/scheduleModel';
 import { checkClash, day, lessonFrom, lessonText, occurrences, pickPeople, pickStudent, putIn, schema, signature, squash, WEEK, type Box, type Change, type Kind, type Param } from './toolsLogic';
 import { findGroupFor, GROUP_KINDS, groupsOf, individuals, isGroup, kindName, makeGroup, membersOf, peopleOf, whoText } from '../lib/groups';
@@ -130,9 +136,12 @@ const setStudents = (students: Student[]) => S().set({ students });
 
 // ── 撤销用的快照 ─────────────────────────────────────
 type Snap = Record<Kind, { id: string }[]>;
+/** 学习地图按「学生@学科」一份一份记，地图没变时沿用同一个对象，比较快照不用每次序列化 */
+const mapCache = new WeakMap<ChapterState[][], { id: string; grid: ChapterState[][] }>();
+const mapRows = () => Object.entries(S().learning).map(([id, grid]) => { const hit = mapCache.get(grid); if (hit && hit.id === id) return hit; const row = { id, grid }; mapCache.set(grid, row); return row; });
 function snap(): Snap {
   const d = D(), a = useAssistantData.getState();
-  return { student: S().students, slot: S().slots, question: d.questions, attempt: d.attempts, lesson: d.lessons, homework: d.homework, note: d.notes ?? [], prep: d.preps ?? [], trigger: a.triggers, memory: a.memory };
+  return { student: S().students, slot: S().slots, question: d.questions, attempt: d.attempts, lesson: d.lessons, homework: d.homework, note: d.notes ?? [], prep: d.preps ?? [], file: d.files ?? [], map: mapRows(), trigger: a.triggers, memory: a.memory };
 }
 function diff(before: Snap, after: Snap): Change[] {
   const out: Change[] = [];
@@ -145,8 +154,8 @@ function diff(before: Snap, after: Snap): Change[] {
   }
   return out;
 }
-type StudyKey = 'questions' | 'attempts' | 'lessons' | 'homework' | 'notes' | 'preps';
-const STUDY: Partial<Record<Kind, StudyKey>> = { question: 'questions', attempt: 'attempts', lesson: 'lessons', homework: 'homework', note: 'notes', prep: 'preps' };
+type StudyKey = 'questions' | 'attempts' | 'lessons' | 'homework' | 'notes' | 'preps' | 'files';
+const STUDY: Partial<Record<Kind, StudyKey>> = { question: 'questions', attempt: 'attempts', lesson: 'lessons', homework: 'homework', note: 'notes', prep: 'preps', file: 'files' };
 /** 撤销时读写各处的数据 */
 export const box: Box = {
   get(kind, id) { return (snap()[kind] as { id: string }[]).find((x) => x.id === id) ?? null; },
@@ -156,6 +165,7 @@ export const box: Box = {
     else if (kind === 'slot') setSlots(putIn(S().slots, id, v as LessonSlot | null));
     else if (kind === 'trigger') setTriggers(putIn(useAssistantData.getState().triggers, id, v as Trigger | null));
     else if (kind === 'memory') setMemory(putIn(useAssistantData.getState().memory, id, v as Memory | null));
+    else if (kind === 'map') { const learning = { ...S().learning }; if (v) learning[id] = (v as unknown as { grid: ChapterState[][] }).grid; else delete learning[id]; S().set({ learning }); }
     else { const k = STUDY[kind]!; useStudy.getState().update((d) => ({ ...d, [k]: putIn((d[k] ?? []) as { id: string }[], id, v) }) as StudyData); }
   },
 };
@@ -198,7 +208,82 @@ const DEFS: Def[] = [
         upcoming: occurrences(S().slots, S().students, new Date(), 14, s.id).slice(0, 6),
         homework: d.homework.filter((h) => h.studentId === s.id).slice(-3).map((h) => ({ title: h.title, at: h.at.slice(0, 10), count: h.questionIds.length })),
         preps: (d.preps ?? []).filter((x) => x.studentId === s.id).slice(-2).map((x) => ({ date: x.date, topic: x.topic, files: x.files })),
+        files: filesOf(s.id, d.files).slice(0, 8).map((f) => ({ title: f.title, kind: f.kind, at: f.at.slice(0, 10), path: f.path, ...(f.note ? { note: f.note } : {}) })),
       } };
+    },
+  },
+  {
+    name: 'get_learning_map', description: '学生的学习地图：每个知识点标的是未学 / 在学 / 已掌握 / 薄弱，以及课堂作答算出的掌握度和「按作答该怎么改」的建议。班组会列出每位成员',
+    params: { student: P('string', '学生姓名或 id；不填 = 当前学生'), all: P('boolean', 'true 把「未学」且没作答过的知识点也列出来（很长）') },
+    run(a) {
+      const s = studentOf(a.student), people = isGroup(s) ? membersOf(s, S().students) : [s], d = D();
+      return { text: people.map((p) => {
+        const subject = studentSubject(p), pack = packOf(subject), grid = fullGrid(pack, S().learning[mapKey(p.id, subject)]), ms = mastery(p.id, d, subject);
+        const plan = planMap(pack, grid, ms), counts: Record<string, number> = {};
+        const points = pack.chapters.flatMap((c, ci) => c.sec.map((sec, si) => {
+          const key = pointKey(pack, ci, si), st = grid[ci][si], m = ms.get(key);
+          counts[STATE_NAME[st]] = (counts[STATE_NAME[st]] ?? 0) + 1;
+          return st === 'none' && !m && a.all !== true ? null : { key, point: `${c.book} · ${c.ch} · ${sec}`, state: STATE_NAME[st], ...(m ? { mastery: Math.round(m.score * 100) + '%', attempts: m.n } : {}) };
+        })).filter(Boolean);
+        return { student: p.name, subject: pack.stage, counts, points, suggestions: [...plan.apply, ...plan.suggest].map((c) => ({ key: c.key, point: pointLabel(c.key), from: STATE_NAME[c.from], to: STATE_NAME[c.to] })) };
+      }) };
+    },
+  },
+  {
+    name: 'set_map_state', description: '改学习地图上知识点的状态。老师说「这几节讲完了」「这个已经掌握」「把 xx 标成薄弱」时用；班组给每位成员都改。只按作答更新时用 apply_map_suggestions', write: true,
+    params: {
+      student: P('string', '学生姓名或 id；不填 = 当前学生'), points: P('array', '知识点 key（get_learning_map 里的）或名字，最多 30 个', { items: { type: 'string' } }),
+      state: P('string', 'none=未学，learning=在学，done=已掌握，weak=薄弱', { enum: ['none', 'learning', 'done', 'weak'] }),
+    },
+    required: ['points', 'state'],
+    run(a) {
+      const s = studentOf(a.student), people = isGroup(s) ? membersOf(s, S().students) : [s];
+      const to = (['none', 'learning', 'done', 'weak'] as ChapterState[]).find((x) => x === a.state);
+      if (!to) throw Error('state 只能是 none / learning / done / weak');
+      const lines: string[] = [];
+      for (const p of people) {
+        const subject = studentSubject(p), keys = [...new Set(list(a.points).slice(0, 30).flatMap((x) => pointsFrom([x], subject)))];
+        if (!keys.length) throw Error('没找到这些知识点，先用 get_learning_map 看看 key');
+        const run = setMapStates(p.id, keys, to, '小羽改的');
+        lines.push(`${p.name}：${run ? run.changes.map(changeText).join('、') : `已经都是「${STATE_NAME[to]}」`}`);
+      }
+      return { text: { ok: true, changed: lines }, card: { title: '改了学习地图', lines } };
+    },
+  },
+  {
+    name: 'apply_map_suggestions', description: '按课堂作答把学习地图一次更新到位（和学生页「按作答更新地图」按钮一样，包括标薄弱）。只在老师要求时用；下课时软件会自动做只往前推的那部分', write: true,
+    params: { student: P('string', '学生姓名或 id；不填 = 当前学生') },
+    run(a) {
+      const s = studentOf(a.student), people = isGroup(s) ? membersOf(s, S().students) : [s], d = D(), lines: string[] = [];
+      for (const p of people) {
+        const subject = studentSubject(p), pack = packOf(subject), grid = fullGrid(pack, S().learning[mapKey(p.id, subject)]);
+        const plan = planMap(pack, grid, mastery(p.id, d, subject)), all = [...plan.apply, ...plan.suggest];
+        if (!all.length) { lines.push(`${p.name}：不用改`); continue; }
+        for (const st of ['learning', 'done', 'weak'] as ChapterState[]) { const keys = all.filter((c) => c.to === st).map((c) => c.key); if (keys.length) setMapStates(p.id, keys, st, '小羽按作答更新'); }
+        lines.push(`${p.name}：${all.slice(0, 6).map(changeText).join('、')}${all.length > 6 ? ` 等 ${all.length} 处` : ''}`);
+      }
+      return { text: { ok: true, changed: lines }, card: { title: '按作答更新了学习地图', lines } };
+    },
+  },
+  {
+    name: 'list_recordings', description: '最近的课堂录像：哪天、哪个学生、多长、课堂时间线（换课件 / 翻页 / 记作答）、AI 分析过没有和分析结论',
+    params: { student: P('string', '只看这位学生（姓名或 id）；不填 = 全部'), limit: P('integer', '最多几段，默认 8', { minimum: 1, maximum: 30 }), timeline: P('boolean', 'true 带上每段的课堂时间线') },
+    async run(a) {
+      const s = has(a.student) ? studentOf(a.student) : undefined;
+      const rows = (await host.call<RecordRow[]>('recordings')).filter((r) => !s || r.studentId === s.id);
+      return { text: { total: rows.length, recordings: rows.slice(0, int(a.limit, 1, 30, 8)).map((r) => ({
+        id: r.id, at: r.createdAt.slice(0, 16).replace('T', ' '), title: r.title ?? '', student: who(r.studentId ?? ''), minutes: r.startedAt && r.endedAt ? Math.round((r.endedAt - r.startedAt) / 60000) : null, phase: r.phase,
+        ...(a.timeline === true && r.chapters?.length ? { timeline: r.chapters.slice(0, 120).map((c) => `${fmtT(c.t)} ${c.title}`) } : {}),
+        analysis: r.analysis ? (r.analysis.error ? { error: r.analysis.error } : { questions: r.analysis.questions, attempts: r.analysis.attempts, map: r.analysis.map, summary: clip(r.analysis.summary, 400), weak: r.analysis.weak.map(pointLabel) }) : null,
+      })) } };
+    },
+  },
+  {
+    name: 'analyze_recording', description: '让看图模型看一遍某段课堂录像（按时间线截十来张画面）：认出的题进收件箱，看得出批改的记作答，学习地图往前推，课堂小结记进档案。回放生成后软件默认会自动做；老师要求重新分析或补分析时用。会花 AI 用量', write: true,
+    params: { id: P('string', '录像 id（list_recordings 里的）') }, required: ['id'],
+    async run(a) {
+      const rec = await analyzeRecording(str(a.id, 80));
+      return rec ? { text: { ok: true, lines: rec.lines, undo: '老师可以在「课堂回放」里整批撤销' }, card: { title: '分析了课堂录像', lines: rec.lines } } : { text: { ok: true, lines: ['没看到能记下来的题目或小结'] } };
     },
   },
   {
@@ -286,6 +371,24 @@ const DEFS: Def[] = [
       const kind = a.kind === 'parent' || a.kind === 'requirement' ? a.kind : 'teacher';
       addNote({ studentId: s.id, kind, text, source: 'AI 助教' });
       return { text: { ok: true }, card: { title: '记下了学生资料', lines: [`${s.name}：${clip(text, 60)}`] } };
+    },
+  },
+  {
+    name: 'link_file_to_student', description: '把文件归到学生名下：学生页「学生资料」和左侧资料库「学生档案」书架里都能看到、点开。你给某位学生做了教案、讲义、练习、报告等文件（包括在工作目录里自己写的），做完一定要调用这个；老师给的这位学生的资料也可以归进来', write: true,
+    params: {
+      student: P('string', '学生姓名或 id；不填 = 当前学生'), paths: P('array', '文件完整路径', { items: { type: 'string' } }),
+      kind: P('string', 'prep=教案 / 备课资料，doc=其他资料（讲义、练习、报告、试卷）', { enum: ['prep', 'doc'] }), note: P('string', '一句话说明，例如「10/29 期中冲刺教案」'),
+    },
+    required: ['paths'],
+    async run(a) {
+      const s = studentOf(a.student), paths = list(a.paths).map((p) => str(p, 600).replace(/\\/g, '/'));
+      if (!paths.length) throw Error('没有给文件路径');
+      const ok: string[] = [], bad: string[] = [];
+      // 工作目录、学情库里的文件和老师同意过的文件才能归档（exists 对没授权的路径也返回 false）
+      for (const p of paths) (await host.call<boolean>('exists', p).catch(() => false) ? ok : bad).push(p);
+      if (!ok.length) throw Error('这些文件不存在，或老师还没同意给你看（先用 request_computer_access）：' + bad.join('；'));
+      const made = linkFiles(s.id, ok, { kind: a.kind === 'prep' ? 'prep' : 'doc', via: 'assistant', note: str(a.note, 120) || undefined });
+      return { text: { ok: true, linked: made.length, already: ok.length - made.length, ...(bad.length ? { missing: bad } : {}) }, card: { title: `归到了「${s.name}」名下`, files: ok } };
     },
   },
   // ── 课表 ──
@@ -453,7 +556,7 @@ const DEFS: Def[] = [
     },
   },
   {
-    name: 'wrong_book', description: '学生的错题本：还没订正的错题（错几次、最近哪天错的）',
+    name: 'wrong_book', description: '学生的错题本：还没订正的错题（错几次、最近哪天错的）。老师说某道错题已经讲过 / 订正了，用 record_attempt 给它记一次 right（note 写「已订正」），它就会变成已订正',
     params: { student: P('string', '学生；不填 = 当前学生'), include_fixed: P('boolean', '也列出已订正的'), limit: P('integer', '最多几道，默认 15', { minimum: 1, maximum: 50 }) },
     run(a) {
       const s = studentOf(a.student), all = wrongBook(s.id, D()).filter((w) => a.include_fixed === true || w.status === 'open');
@@ -628,13 +731,23 @@ const DEFS: Def[] = [
     },
   },
   {
-    name: 'sort_files', description: '把老师电脑上的一批文件（卷子照片、Word、PDF、聊天截图）交给「AI 整理」：自动拆题入库、批改、归到学生档案。打开整理窗口，老师在里面确认',
-    params: { paths: P('array', '文件路径（必须是老师给你的或同意过的）', { items: { type: 'string' } }) }, required: ['paths'],
-    run(a, c) {
+    name: 'sort_files', description: '把老师电脑上的一批文件（卷子照片、Word、PDF、聊天截图）交给「AI 整理」：自动拆题入库、批改、归到学生档案。默认在后台静默整理（不弹窗口、不打断老师），列好整理单后提醒老师确认；老师明确说「直接归档、不用确认」时 archive 设 true。整理结果可以在「整理记录」里整批撤销',
+    params: {
+      paths: P('array', '文件路径（必须是老师给你的或同意过的）', { items: { type: 'string' } }),
+      student: P('string', '这些资料默认是谁的（学生名字）；不写用当前学生。AI 也会从内容里认名字'),
+      archive: P('boolean', '列好整理单后直接归档，不等老师确认；默认 false'),
+      show: P('boolean', '打开整理窗口给老师看（老师要求打开时才用）；默认 false，后台整理'),
+    }, required: ['paths'],
+    async run(a, c) {
       const ok = c.granted(), paths = list(a.paths).filter((p) => ok.some((g) => p.replace(/\\/g, '/').toLowerCase().startsWith(g.toLowerCase())));
       if (!paths.length) throw Error('这些文件老师还没有同意给你看，先用 request_computer_access');
-      openSort({ paths });
-      return { text: { ok: true, opened: paths.length }, card: { title: '打开了 AI 整理', lines: paths.slice(0, 4).map(fname) } };
+      if (a.show === true) { openSort({ paths }); return { text: { ok: true, opened: paths.length }, card: { title: '打开了 AI 整理', lines: paths.slice(0, 4).map(fname) } }; }
+      const sid0 = has(a.student) ? studentOf(a.student).id : undefined;
+      const n = await sortInBackground(paths, { studentId: sid0, archive: a.archive === true });
+      return {
+        text: { ok: true, started: n, background: true, note: a.archive === true ? '正在后台整理，看完直接归档；顶栏「AI 整理」按钮显示进度，结果在「整理记录」里，可以整批撤销' : '正在后台整理；顶栏「AI 整理」按钮显示进度，列好整理单后会提醒老师确认归档。不用等它，继续做别的事' },
+        card: { title: a.archive === true ? 'AI 整理在后台进行（完成后直接归档）' : 'AI 整理在后台进行（好了提醒你确认）', lines: paths.slice(0, 4).map(fname) },
+      };
     },
   },
   // ── 提醒和定时任务 ──
@@ -741,7 +854,7 @@ export const toolsSignature = () => signature(toolSpecs());
 
 /** 卡片上的工具名 */
 export const TOOL_LABEL: Record<string, string> = {
-  get_overview: '看了软件概况', list_students: '查了学生', get_student: '看了学生情况', add_student: '添加学生', update_student: '修改学生', add_group: '建班组', update_group: '改班组', add_student_note: '记学生资料',
+  get_overview: '看了软件概况', list_students: '查了学生', get_student: '看了学生情况', add_student: '添加学生', update_student: '修改学生', add_group: '建班组', update_group: '改班组', add_student_note: '记学生资料', link_file_to_student: '归档学生文件', get_learning_map: '看了学习地图', set_map_state: '改学习地图', apply_map_suggestions: '按作答更新地图', list_recordings: '看了课堂录像', analyze_recording: '分析课堂录像',
   list_lessons: '查了课表', add_lesson: '排课', update_lesson: '调课', delete_lesson: '删课', search_questions: '找题', get_question: '看题', add_question: '加题', update_question: '改题',
   delete_questions: '删题', record_attempt: '记作答', look_at_screen: '看了学生画面', capture_screen_question: '收题', wrong_book: '看了错题本', list_points: '查了知识点',
   write_lesson_summary: '写课后总结', edit_lesson_summary: '改课后总结', list_lesson_summaries: '查了课后总结', send_to_parent: '发给家长', make_homework: '组作业', prepare_lesson: '备课',

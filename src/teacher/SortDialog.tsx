@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Check, ClipboardPaste, FileText, FolderOpen, Image as ImageIcon, MessageSquareText, Undo2, Wand2, X } from 'lucide-react';
+import { CalendarClock, Check, ClipboardPaste, FileText, FolderOpen, Image as ImageIcon, Loader2, MessageSquareText, Minimize2, Undo2, Wand2, X } from 'lucide-react';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { useStudy } from '../lib/studyStore';
 import { KIND_NAME, actionsOf, markCount, type Analysis } from '../lib/sortLogic';
 import {
-  addImageData, addPaths, addText, analyze, openSort, archive, closeSort, describe, finishTodo, openTodos, patchAnalysis, removeItem, resetSort, settleUnsure, undoSort, useSort,
+  addImageData, addPaths, addText, analyze, openSort, archive, closeSort, describe, finishTodo, openTodos, patchAnalysis, removeItem, resetSort, settleUnsure, sortProgress, undoSort, useSort,
 } from '../lib/sort';
 import { LEVELS, byLevel } from '../lib/subjects';
 import type { SortRecord } from '../lib/studyLogic';
@@ -14,12 +14,30 @@ import '../styles/sort.css';
 const LEVEL_NAME = { senior: '高中', junior: '初中', primary: '小学' } as const;
 const when = (iso: string) => new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-/** 顶栏的「AI 整理」按钮：有没处理的调课提醒时带个数字 */
+/** 顶栏的「AI 整理」按钮：有没处理的调课提醒时带个数字；在后台整理时显示进度，列好单子等确认时提示 */
 export function SortButton() {
   const todos = useStudy((s) => openTodos(s.data.notes).length);
-  return <button className="tb-sort" onClick={() => openSort({ tab: todos ? 'records' : 'new' })} data-tip="AI 整理：卷子照片、Word / PDF、家长消息丢进来，AI 认出是谁的、是什么，你确认后再归档">
-    <Wand2 size={14} /><span>AI 整理</span>{todos > 0 && <b className="num">{todos}</b>}
+  const phase = useSort((s) => s.phase), open = useSort((s) => s.open);
+  const prog = useSort((s) => { const p = sortProgress(s); return p ? `${p.done}/${p.total}` : ''; });
+  const busy = phase === 'analyzing' || phase === 'saving', waiting = phase === 'review' && !open;
+  return <button className={'tb-sort' + (busy ? ' busy' : waiting ? ' wait' : '')} data-qa="sort-button" onClick={() => openSort({ tab: todos && !busy && !waiting ? 'records' : 'new' })}
+    data-tip={busy ? `AI 整理正在后台${phase === 'saving' ? '归档' : '看资料'}（${prog}），点开看进度` : waiting ? '整理单列好了，点开确认后归档' : 'AI 整理：卷子照片、Word / PDF、家长消息丢进来，AI 认出是谁的、是什么，你确认后再归档'}>
+    {busy ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
+    <span>{busy ? (phase === 'saving' ? '归档中' : '整理中') : waiting ? '待确认' : 'AI 整理'}</span>
+    {busy && <em className="num">{prog}</em>}
+    {todos > 0 && !busy && <b className="num">{todos}</b>}
   </button>;
+}
+
+function Progress() {
+  const done = useSort((s) => sortProgress(s)?.done ?? -1), total = useSort((s) => sortProgress(s)?.total ?? 0), step = useSort((s) => s.step);
+  if (done < 0) return null;
+  const p = { done, total };
+  return <div className="sort-prog" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done}>
+    <div className="sort-prog-t"><span>{step}</span><b className="num">{p.done} / {p.total}</b></div>
+    <div className="sort-prog-bar"><i style={{ width: `${Math.round((p.done + 0.5) / Math.max(1, p.total) * 100)}%` }} /></div>
+    <small>可以关掉这个窗口去做别的，整理在后台继续，好了会提醒你。</small>
+  </div>;
 }
 
 export function SortDialog() {
@@ -46,7 +64,7 @@ export function SortDialog() {
     return () => window.removeEventListener('paste', paste, true);
   }, [open]);
   if (!open) return null;
-  return <div className="sheet-bg" onPointerDown={(e) => e.target === e.currentTarget && !busy && closeSort()}>
+  return <div className="sheet-bg" onPointerDown={(e) => e.target === e.currentTarget && closeSort()}>
     <div className="sort" role="dialog" aria-label="AI 整理"
       onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.stopPropagation(); } }}
       onDrop={(e) => { const ps = [...e.dataTransfer.files].map((f) => host.pathForFile(f)).filter((p): p is string => !!p); if (!ps.length) return; e.preventDefault(); e.stopPropagation(); if (useSort.getState().phase === 'collect') addPaths(ps); }}>
@@ -57,7 +75,8 @@ export function SortDialog() {
           <button className={tab === 'records' ? 'on' : ''} onClick={() => useSort.setState({ tab: 'records' })}>整理记录{sorts.length ? ` · ${sorts.length}` : ''}{todos ? <i className="sort-dot">{todos}</i> : null}</button>
         </div>
         <span className="flex" />
-        <button className="sort-x" disabled={busy} onClick={closeSort} aria-label="关闭"><X size={16} /></button>
+        {busy ? <button className="sort-min" onClick={closeSort} data-tip="整理在后台继续，顶栏能看到进度，好了会提醒你"><Minimize2 size={14} />收到后台</button>
+          : <button className="sort-x" onClick={closeSort} aria-label="关闭"><X size={16} /></button>}
       </header>
       {tab === 'new' ? <NewSort /> : <Records records={sorts} />}
     </div>
@@ -96,7 +115,7 @@ function NewSort() {
       </div>}
     </div>
     {s.error && <p className="sort-err" role="alert">{s.error}</p>}
-    {s.phase === 'analyzing' ? <p className="sort-step">{s.step}</p> : <footer className="sort-f">
+    {s.phase === 'analyzing' ? <Progress /> : <footer className="sort-f">
       <p>{s.items.length === 0 ? '' : s.ai ? <>AI 会先看一遍、列出整理单，你确认后才写入。{s.est ? <>这一批大约 {s.est.calls} 次 AI 调用，估计 <b>¥{s.est.cny.toFixed(2)}</b>（按 AI 账本的价格表估算，以实际扣费为准）。</> : null}</>
         : <>还没配 AI，先按规则整理：Word / PDF 按题号拆题，文字存成家长消息，照片原样存下，配好 AI 再拆题。<button className="sd-link" onClick={() => useStore.getState().set({ aiOpen: true })}>去配置 AI</button></>}</p>
       <button className="btn-cue" disabled={!s.items.length || !s.studentId} onClick={() => void analyze()}><Wand2 size={14} />开始整理</button>
@@ -109,7 +128,7 @@ function Review() {
   const students = useStore((x) => x.students).filter((x) => !x.archived && !x.kind);
   const n = s.analyses.reduce((k, a) => k + Object.values(a.take).filter(Boolean).length, 0);
   return <div className="sort-body">
-    <p className="sort-lead">{s.phase === 'analyzing' ? s.step : s.phase === 'saving' ? s.step : `整理单：${s.analyses.length} 样资料。去掉不想要的勾，学生和学科不对可以改，然后点「全部归档」。`}</p>
+    {s.phase === 'review' ? <p className="sort-lead">{`整理单：${s.analyses.length} 样资料。去掉不想要的勾，学生和学科不对可以改，然后点「全部归档」。`}</p> : <Progress />}
     <div className="sort-cards">
       {s.analyses.map((a) => {
         const it = s.items.find((x) => x.id === a.itemId);
@@ -139,11 +158,14 @@ function Review() {
       })}
     </div>
     {s.error && <p className="sort-err" role="alert">{s.error}</p>}
-    <footer className="sort-f">
+    {s.phase === 'review' ? <footer className="sort-f">
       <p>归档以后可以在「整理记录」里整批撤销。</p>
-      <button disabled={s.phase !== 'review'} onClick={() => useSort.setState({ phase: 'collect', analyses: [] })}>返回修改</button>
-      <button className="btn-cue" disabled={s.phase !== 'review' || !n} onClick={() => void archive()}><Check size={14} />全部归档{n ? `（${n} 项）` : ''}</button>
-    </footer>
+      <button onClick={() => useSort.setState({ phase: 'collect', analyses: [] })}>返回修改</button>
+      <button className="btn-cue" disabled={!n} onClick={() => void archive()}><Check size={14} />全部归档{n ? `（${n} 项）` : ''}</button>
+    </footer> : <footer className="sort-f">
+      <p>{s.phase === 'saving' ? '正在归档，写完会显示结果。' : '全部看完才能归档；已经看完的可以先改学生、学科和勾选。'}</p>
+      <button onClick={closeSort}><Minimize2 size={14} />收到后台</button>
+    </footer>}
   </div>;
 }
 

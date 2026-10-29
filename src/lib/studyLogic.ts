@@ -57,6 +57,10 @@ export interface SortRecord {
   questions: string[]; attempts: string[]; notes: string[];
   /** 批改没认准的题：归档后老师点对错 */
   unsure: { questionId: string; studentId: string }[];
+  /** 下课分析录像时自动改的学习地图格子（mapKey = 学生@学科），撤销时还是这样的才改回去 */
+  map?: { mapKey: string; ci: number; si: number; from: ChapterState; to: ChapterState }[];
+  /** 来自哪段录像 */
+  recordId?: string;
   undone?: string;
 }
 /** 一次备课：给哪节课、用哪些本地课件和题、AI 写的备课建议和导出的文件 */
@@ -65,8 +69,14 @@ export interface Prep {
   points: string[]; materials: string[]; questionIds: string[]; plan: string; files: string[]; courseware?: string[];
   via: 'ai' | 'rules'; auto?: boolean;
 }
-export interface StudyData { questions: Question[]; attempts: Attempt[]; lessons: LessonNote[]; homework: Homework[]; notes: StudentNote[]; preps: Prep[]; portraits: Record<string, Portrait>; sorts?: SortRecord[] }
-export const emptyStudy = (): StudyData => ({ questions: [], attempts: [], lessons: [], homework: [], notes: [], preps: [], portraits: {}, sorts: [] });
+/** 归到学生名下的文件：换学生时自动存下的板书、助教做的教案、老师手动归档的资料 */
+export interface StudentFile {
+  id: string; studentId: string; at: string; kind: 'board' | 'prep' | 'doc'; title: string; path: string;
+  /** 谁放进来的：课堂（清空课堂时存的板书）、AI 助教、老师 */
+  via: 'class' | 'assistant' | 'teacher'; note?: string;
+}
+export interface StudyData { questions: Question[]; attempts: Attempt[]; lessons: LessonNote[]; homework: Homework[]; notes: StudentNote[]; preps: Prep[]; portraits: Record<string, Portrait>; sorts?: SortRecord[]; files?: StudentFile[] }
+export const emptyStudy = (): StudyData => ({ questions: [], attempts: [], lessons: [], homework: [], notes: [], preps: [], portraits: {}, sorts: [], files: [] });
 
 export const RESULT_NAME: Record<Result, string> = { right: '对', wrong: '错', half: '半对' };
 export const DIFF_NAME = ['', '基础', '巩固', '中档', '提高', '压轴'];

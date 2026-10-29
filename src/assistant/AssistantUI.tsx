@@ -1,20 +1,21 @@
 // AI 助教的界面：右下角的小羽（可拖动、可隐藏）、冒泡提醒、右侧聊天抽屉（对话、历史、设置、提醒）。
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Bell, Check, ChevronDown, CircleStop, FileText, FolderOpen, History, Loader2, MessageSquarePlus, Paperclip, Pencil, Plus, SendHorizontal, Settings2, ShieldCheck, Terminal, Trash2, Undo2, X } from 'lucide-react';
+import { Bell, Check, ChevronDown, CircleStop, FileText, FolderOpen, History, Loader2, MessageSquarePlus, Paperclip, Pencil, Plus, SendHorizontal, Settings2, Shield, ShieldCheck, ShieldOff, Terminal, Trash2, Undo2, X } from 'lucide-react';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { useStudy } from '../lib/studyStore';
 import { lessonDocument } from '../lib/studyActions';
 import { toast } from '../lib/toast';
 import type { SendRecord } from '../lib/studyLogic';
-import { MdText } from '../teacher/TexText';
+import { MdText, filePathsIn, type FileRender } from '../teacher/TexText';
+import { FileChip } from '../ui/FileChip';
 import { SendSheet, useNotify } from '../teacher/ParentSend';
 import { Mascot, type Mood } from './Mascot';
 import { PERSONAS } from './prompt';
 import { cleanTrigger, PAGES, timesText, whenText, type Trigger, type When } from './triggersLogic';
 import { changeSummary } from './toolsLogic';
 import { TOOL_LABEL } from './tools';
-import { putTrigger, removeTrigger, setMemory, setSettings, useAssistantData } from './state';
+import { ACCESS, putTrigger, removeTrigger, setMemory, setSettings, useAssistantData, type Access } from './state';
 import {
   answerApproval, answerConfirm, answerGrant, closeAssistant, closeParent, dismissBubble, helloText, newChat, openAssistant, openChat, refreshStatus,
   removeChat, renameChat, send, startAssistant, stop, undoTurn, useAssistant, type Item, type Turn,
@@ -23,7 +24,7 @@ import '../styles/assistant.css';
 
 const yuan = (v: number) => (v >= 0.01 ? '¥' + v.toFixed(2) : v > 0 ? '<¥0.01' : '');
 const fname = (p: string) => p.split(/[\\/]/).pop() ?? p;
-const openFile = (p: string) => void host.call('assistant.open', { path: p }).catch((e) => toast((e as Error).message));
+const fileChip: FileRender = (path, label, key) => <FileChip key={key} path={path} label={label} />;
 const POS = 'cs.assistant.pos';
 
 /** 当前该摆什么表情 */
@@ -131,7 +132,7 @@ function ChatView() {
   const allConfirms = useAssistant((s) => s.confirms), allGrants = useAssistant((s) => s.grants);
   const confirms = allConfirms.filter((c) => c.chatId === chat?.id), grants = allGrants.filter((c) => c.chatId === chat?.id);
   const others = allConfirms.length + allGrants.length - confirms.length - grants.length;
-  const [text, setText] = useState(''), [files, setFiles] = useState<string[]>([]), [over, setOver] = useState(false);
+  const [text, setText] = useState(''), [files, setFiles] = useState<string[]>([]), [over, setOver] = useState(false), [sureFull, setSureFull] = useState(false);
   const box = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (Date.now() - pending.at < 5000 && pending.files.length) { void grantAll(pending.files).then((p) => setFiles((f) => [...new Set([...f, ...p])])); pending.files = []; } input.current?.focus(); }, []);
   const n = chat?.items.length ?? 0, lastLen = chat?.items.at(-1)?.text?.length ?? 0;
@@ -152,15 +153,18 @@ function ChatView() {
         <div className="as-ask-b"><button className="as-no" onClick={() => answerConfirm(c.id, false)}>不要</button><button className="as-yes danger" onClick={() => answerConfirm(c.id, true)}>{c.yes}</button></div></div>)}
       {grants.map((g) => <div key={g.id} className="as-ask"><b><FolderOpen size={14} />想看你电脑上的文件</b><p>{g.reason}</p>{g.paths.length > 0 && <pre>{g.paths.join('\n')}</pre>}
         <div className="as-ask-b"><button className="as-no" onClick={() => void answerGrant(g.id, 'no')}>不行</button><button onClick={() => void answerGrant(g.id, 'pick')}>我自己选文件…</button>{g.paths.length > 0 && <button className="as-yes" onClick={() => void answerGrant(g.id, 'yes')}>同意</button>}</div></div>)}
+      {sureFull && <FullConfirm onDone={() => setSureFull(false)} />}
       {others > 0 && <div className="as-note">另一段对话里还有 {others} 件事等你确认（见「历史对话」）</div>}
       {error && <div className="as-err">{error}</div>}
     </div>
     <div className="as-input">
-      {files.length > 0 && <div className="as-files">{files.map((f) => <span key={f} title={f}><FileText size={12} />{fname(f)}<button aria-label="移除" onClick={() => setFiles(files.filter((x) => x !== f))}><X size={11} /></button></span>)}</div>}
-      <textarea ref={input} rows={2} value={text} placeholder={running ? '还在做…可以接着补充，它会看到' : '跟助教说要做什么（Enter 发送，Shift+Enter 换行，文件可以直接拖进来）'}
+      {files.length > 0 && <div className="as-files">{files.map((f) => <span key={f} title={f}>{IMG.test(f) ? <img src={host.fileUrl(f)} alt="" /> : <FileText size={12} />}{fname(f)}<button aria-label="移除" onClick={() => setFiles(files.filter((x) => x !== f))}><X size={11} /></button></span>)}</div>}
+      <textarea ref={input} rows={2} value={text} placeholder={running ? '还在做…可以接着补充，它会看到' : '跟助教说要做什么（Enter 发送，Shift+Enter 换行；截图、文件可以直接粘贴或拖进来）'}
+        onPaste={(e) => { const got = pastedFiles(e); if (got) { e.preventDefault(); void got.then((p) => p.length && setFiles((f) => [...new Set([...f, ...p])])); } }}
         onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); go(); } }} />
       <div className="as-input-b">
         <button className="as-tab" data-tip="附上电脑里的文件（Word、Excel、PDF、PPT、图片）" onClick={() => void pick()}><Paperclip size={16} /></button>
+        <AccessChip onFull={() => setSureFull(true)} />
         <span className="flex" />
         {running && <button className="as-stop" onClick={() => void stop()}><CircleStop size={14} />停下</button>}
         <button className="as-send" disabled={busy || !text.trim()} onClick={() => go()}>{busy ? <Loader2 size={15} className="ags-spin" /> : <SendHorizontal size={15} />}</button>
@@ -168,6 +172,31 @@ function ChatView() {
     </div>
     {over && <div className="as-drop">松手 · 把文件交给助教</div>}
   </div>;
+}
+const IMG = /\.(png|jpe?g|webp|bmp|gif)$/i;
+/** 截图（剪贴板里的图片）→ PNG 存到缓存目录，返回路径 */
+async function savePng(src: Blob | string): Promise<string> {
+  const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d')!.drawImage(img, 0, 0);
+    try { return await host.call<string>('saveImage', c.toDataURL('image/png')); } finally { c.width = 0; c.height = 0; }
+  } finally { if (typeof src !== 'string') URL.revokeObjectURL(url); }
+}
+/**
+ * 粘贴：复制的文件（资源管理器里 Ctrl+C）直接附上；截图存成图片再附上；纯文字不管，照常贴进输入框。
+ * 返回 null 表示这次粘贴不归这里处理
+ */
+function pastedFiles(e: React.ClipboardEvent): Promise<string[]> | null {
+  const list = [...(e.clipboardData?.files ?? [])];
+  const paths = list.map((f) => host.pathForFile(f)).filter((p): p is string => !!p);
+  if (paths.length) return grantAll(paths);
+  const imgs = list.filter((f) => /^image\//.test(f.type));
+  if (imgs.length) return (async () => { const out: string[] = []; for (const f of imgs.slice(0, 6)) { try { out.push(await savePng(f)); } catch (err) { toast('截图没贴上：' + (err as Error).message); } } return grantAll(out); })();
+  if ((e.clipboardData?.getData('text/plain') ?? '').length) return null;
+  // 微信、QQ 里「复制」的图片网页拿不到，向主进程要系统剪贴板
+  if (!host.electron) return null;
+  return host.call<string | null>('clipboardImage').then((d) => (d ? savePng(d).then((p) => grantAll([p])) : []), () => []);
 }
 async function grantAll(paths: string[]) {
   const out: string[] = [];
@@ -206,15 +235,15 @@ function ItemView({ it }: { it: Item }) {
   const approvals = useAssistant((s) => s.approvals);
   switch (it.kind) {
     case 'user': return <div className="as-msg me">{(it.text ?? '').replace(/^【定时任务「(.+?)」触发.*?】\n?/, '⏰ $1：')}{Array.isArray(it.files) && it.files.length > 0 && <div className="as-files">{(it.files as string[]).map((f) => <span key={f}><FileText size={12} />{fname(f)}</span>)}</div>}</div>;
-    case 'text': return it.phase === 'commentary' ? <div className="as-msg ai sub"><MdText text={it.text ?? ''} /></div> : <div className="as-msg ai"><MdText text={it.text ?? ''} />{it.streaming && <i className="as-caret" />}</div>;
+    case 'text': return it.phase === 'commentary' ? <div className="as-msg ai sub"><MdText text={it.text ?? ''} file={it.streaming ? undefined : fileChip} /></div> : <div className="as-msg ai"><MdText text={it.text ?? ''} file={it.streaming ? undefined : fileChip} />{it.streaming && <i className="as-caret" />}</div>;
     case 'tool': {
       const label = TOOL_LABEL[it.name ?? ''] ?? it.name, c = it.card;
       if (!c) return <div className={'as-op quiet ' + (it.status ?? '')}>{it.status === 'run' ? <Loader2 size={12} className="ags-spin" /> : it.status === 'fail' ? <X size={12} /> : <Check size={12} />}<span>{label}</span></div>;
-      return <div className={'as-op ' + (c.tone ?? 'ok')}><div className="as-op-h"><Check size={13} /><b>{c.title}</b></div>{c.lines?.map((l, i) => <p key={i}>{l}</p>)}
-        {c.files?.length ? <div className="as-op-f">{c.files.map((f) => <button key={f} onClick={() => openFile(f)}><FileText size={12} />{fname(f)}</button>)}</div> : null}</div>;
+      return <div className={'as-op ' + (c.tone ?? 'ok')}><div className="as-op-h"><Check size={13} /><b>{c.title}</b></div>{c.lines?.map((l, i) => filePathsIn(l).length ? <MdText key={i} className="as-op-l" text={l} file={fileChip} /> : <p key={i}>{l}</p>)}
+        {c.files?.length ? <div className="as-op-f">{c.files.map((f) => <FileChip key={f} path={f} />)}</div> : null}</div>;
     }
     case 'cmd': return <div className={'as-op cmd ' + (it.status ?? '')}><div className="as-op-h" onClick={() => setOpen(!open)}>{it.status === 'run' ? <Loader2 size={13} className="ags-spin" /> : <Terminal size={13} />}<b>{it.status === 'declined' ? '没有运行' : it.status === 'fail' ? '命令出错了' : '运行了命令'}</b><ChevronDown size={12} className={open ? 'up' : ''} /></div><code>{it.command}</code>{open && it.output && <pre>{it.output}</pre>}</div>;
-    case 'file': return <div className="as-op"><div className="as-op-h"><FileText size={13} /><b>{it.status === 'run' ? '正在写文件…' : '写了文件'}</b></div><div className="as-op-f">{(it.files as { path: string }[] | undefined)?.map((f) => <button key={f.path} onClick={() => openFile(f.path)}><FileText size={12} />{fname(f.path)}</button>)}</div></div>;
+    case 'file': return <div className="as-op"><div className="as-op-h"><FileText size={13} /><b>{it.status === 'run' ? '正在写文件…' : '写了文件'}</b></div><div className="as-op-f">{(it.files as { path: string }[] | undefined)?.map((f) => <FileChip key={f.path} path={f.path} />)}</div></div>;
     case 'approval': return <Approval it={it} live={!!approvals[it.id]} />;
     case 'note': return <div className="as-note">{it.text}</div>;
     case 'error': return <div className="as-err">{it.text}</div>;
@@ -247,10 +276,32 @@ function ListView() {
   </div>)}</div>;
 }
 
+// ── 权限 ─────────────────────────────────────────────
+/** 切到完全访问前确认一次 */
+function FullConfirm({ onDone }: { onDone: () => void }) {
+  const name = useAssistantData((x) => x.settings.name);
+  return <div className="as-ask" data-qa="access-full-confirm"><b><ShieldCheck size={14} />给{name}完全访问？</b>
+    <p>开了之后{name}运行命令、读写你电脑上的任何文件都不再问你（软件里的改动仍然可以「撤销这一轮」，电脑上被改掉的文件撤销不了）。只在你信得过它要做的事时开，做完可以改回「常用」。</p>
+    <div className="as-ask-b"><button className="as-no" onClick={onDone}>算了</button><button className="as-yes danger" data-qa="access-full-yes" onClick={() => { setSettings({ access: 'full' }); onDone(); toast(`已开启完全访问，${name}不会再弹确认`); }}>开启完全访问</button></div>
+  </div>;
+}
+const ACCESS_ICON: Record<Access, ReactNode> = { ask: <ShieldCheck size={12} />, common: <Shield size={12} />, full: <ShieldOff size={12} /> };
+/** 输入框下面的小开关：点一下换档 */
+function AccessChip({ onFull }: { onFull: () => void }) {
+  const access = useAssistantData((x) => x.settings.access);
+  const [open, setOpen] = useState(false);
+  const cur = ACCESS.find(([k]) => k === access)!;
+  return <span className="as-acc-w">
+    <button className={'as-acc ' + access} data-qa="access-chip" data-tip={cur[2]} onClick={() => setOpen(!open)}>{ACCESS_ICON[access]}{cur[1]}<ChevronDown size={11} /></button>
+    {open && <div className="as-acc-pop" onPointerLeave={() => setOpen(false)}>{ACCESS.map(([k, n, d]) => <button key={k} className={access === k ? 'on' : ''} data-qa={'access-chip-' + k} onClick={() => { setOpen(false); if (k === 'full' && access !== 'full') onFull(); else setSettings({ access: k }); }}><b>{ACCESS_ICON[k]}{n}</b><span>{d}</span></button>)}</div>}
+  </span>;
+}
+
 // ── 设置 ─────────────────────────────────────────────
 function SettingsView() {
   const s = useAssistantData((x) => x.settings), memory = useAssistantData((x) => x.memory), status = useAssistant((x) => x.status);
-  const [mem, setMem] = useState('');
+  const [mem, setMem] = useState(''), [sureFull, setSureFull] = useState(false);
+  const pickAccess = (k: Access) => { if (k === 'full' && s.access !== 'full') setSureFull(true); else { setSureFull(false); setSettings({ access: k }); } };
   return <div className="as-set">
     <section><h4>名字和性格</h4>
       <label>名字<input value={s.name} maxLength={12} onChange={(e) => setSettings({ name: e.target.value })} /></label>
@@ -266,6 +317,10 @@ function SettingsView() {
       <p className="as-hint">{status ? (status.found ? `内核 Codex ${status.version || ''} 已就绪` : '还没有安装内核 Codex：到「备课」页的任务中心安装') + (status.studioKey ? '；导播台 AI 接口已配置' : '；导播台 AI 接口未配置') : '…'}</p>
       <div className="record-two"><label>模型<input value={s.model} placeholder="默认" onChange={(e) => setSettings({ model: e.target.value })} /></label>
         <label>思考深度<select value={s.effort} onChange={(e) => setSettings({ effort: e.target.value as typeof s.effort })}><option value="">默认</option><option value="low">快</option><option value="medium">适中</option><option value="high">深入（更慢、更贵）</option></select></label></div>
+    </section>
+    <section><h4>能动你的电脑到什么程度</h4>
+      <div className="as-radio" data-qa="as-access">{ACCESS.map(([k, n, d]) => <button key={k} data-qa={'access-' + k} className={s.access === k ? 'on' : ''} onClick={() => pickAccess(k)}><b>{n}{k === 'common' && <em>推荐</em>}</b><span>{d}</span></button>)}</div>
+      {sureFull && <FullConfirm onDone={() => setSureFull(false)} />}
     </section>
     <section><h4>其他</h4>
       <label className="as-check"><input type="checkbox" checked={s.avatar} onChange={(e) => setSettings({ avatar: e.target.checked })} />右下角显示{s.name}</label>

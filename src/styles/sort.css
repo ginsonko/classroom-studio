@@ -1,6 +1,20 @@
 /* ── AI 整理 ─────────────────────────────────────────── */
 .tb-sort { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-sm); color: var(--fg-1); font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .tb-sort:hover { background: var(--bg-3); color: var(--fg-0); }
+.tb-sort.busy { color: var(--cue); box-shadow: inset 0 0 0 1px var(--cue); }
+.tb-sort.wait { color: #1a1204; background: var(--warn); box-shadow: none; }
+.tb-sort em { font-style: normal; font-size: 11.5px; opacity: .85; }
+.tb-sort .spin { animation: sort-spin 1s linear infinite; }
+@keyframes sort-spin { to { transform: rotate(360deg); } }
+.sort-min { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; color: var(--fg-1); font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sort-min:hover { background: var(--bg-3); color: var(--fg-0); }
+.sort-prog { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--bg-1); border: 1px solid var(--line); }
+.sort-prog-t { display: flex; gap: 10px; font-size: 13px; color: var(--fg-1); }
+.sort-prog-t span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sort-prog-t b { color: var(--fg-0); }
+.sort-prog-bar { height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.sort-prog-bar i { display: block; height: 100%; border-radius: 3px; background: var(--cue); transition: width .4s ease; }
+.sort-prog small { color: var(--fg-3); font-size: 11.5px; }
 .tb-sort b { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn); color: #1a1204; font-size: 10.5px; line-height: 16px; text-align: center; }
 
 .sort { width: min(760px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; border-radius: 16px; background: var(--bg-2); color: var(--fg-0); box-shadow: var(--shadow-pop); overflow: hidden; }

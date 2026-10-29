@@ -175,6 +175,8 @@ export async function imageSize(url: string): Promise<{ w: number; h: number }> 
 export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // lesson:// 对 studio:// 页面是跨域；不带 crossOrigin 画进 canvas 后 toDataURL 会报 Tainted canvases
+    img.crossOrigin = 'anonymous';
     img.onload = () => img.naturalWidth ? resolve(img) : reject(new Error('图片为空。'));
     img.onerror = () => reject(new Error('图片无法读取；文件可能已移动、损坏或格式不支持。'));
     img.src = url;

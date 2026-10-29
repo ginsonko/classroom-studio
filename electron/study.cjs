@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const { atomicJSON, readJSON, cleanTemps } = require('./core.cjs');
 const { normal } = require('./files.cjs');
 
-const LISTS = ['questions', 'attempts', 'lessons', 'homework', 'notes', 'preps', 'sorts'];
+const LISTS = ['questions', 'attempts', 'lessons', 'homework', 'notes', 'preps', 'sorts', 'files'];
 const KINDS = { homework: '作业', paper: '试卷', wrongbook: '错题本', lesson: '课后总结', courseware: 'AI课件', prep: '备课' };
 // 资料整理索引、AI 自动处理的设置和记录：各存一个 JSON，和学情库放在一起
 // assistant：AI 助教的人设、记忆和设置；triggers：助教的提醒和定时任务
@@ -29,12 +29,31 @@ class Study {
     this.exportDoc = exportDoc; this.log = log; this.queue = Promise.resolve();
     fs.mkdirSync(this.img, { recursive: true });
   }
-  async load() { cleanTemps(this.file); return normalize(await readJSON(this.file, null)); }
+  async load() { cleanTemps(this.file); const v = normalize(await readJSON(this.file, null)); this.mark(); return v; }
   save(data) {
     const v = normalize(data);
-    const job = this.queue.catch(() => {}).then(() => atomicJSON(this.file, v));
+    const job = this.queue.catch(() => {}).then(() => atomicJSON(this.file, v)).then(() => this.mark());
     this.queue = job;
     return job.then(() => ({ questions: v.questions.length, attempts: v.attempts.length }));
+  }
+  /** 记下软件自己最后一次读写时 study.json 的样子，监听时据此分辨是不是别人改的 */
+  mark() { try { const s = fs.statSync(this.file); this.seen = `${s.mtimeMs}:${s.size}`; } catch { this.seen = 'none'; } }
+  /** study.json 被软件以外的程序改了（助教直接改文件、网盘同步）就回调；自己写的不算 */
+  watch(onChange) {
+    let timer;
+    const check = () => this.queue.catch(() => {}).then(() => {
+      let now = 'none';
+      try { const s = fs.statSync(this.file); now = `${s.mtimeMs}:${s.size}`; } catch {}
+      if (this.seen === undefined || now === this.seen || now === 'none') return;
+      this.seen = now; this.log?.info('学情库在软件外被改过'); onChange();
+    });
+    try {
+      this.watcher = fs.watch(this.dir, (_, name) => {
+        if (name && name !== 'study.json') return;
+        clearTimeout(timer); timer = setTimeout(() => void check(), 800);
+      });
+      this.watcher.on('error', (e) => this.log?.warn('学情库监听出错', e.message));
+    } catch (e) { this.log?.warn('学情库监听失败', e.message); }
   }
   /** 题图（data URL）→ study/img/<uuid>.png，返回正斜杠绝对路径 */
   async image(dataUrl) {
@@ -92,6 +111,19 @@ class Study {
     const file = path.join(this.dir, STORES[name]);
     const job = this.queue.catch(() => {}).then(() => atomicJSON(file, value));
     this.queue = job; await job; return true;
+  }
+  /** 清空课堂前把板书（渲染端排好的 A4 JPEG）存成 study/板书/<学生>/<标题>-<时间>.pdf */
+  async board({ student, title, pdf }) {
+    if (!Array.isArray(pdf) || !pdf.length || pdf.length > 300) throw Error('板书页数不对');
+    let total = 0;
+    for (const p of pdf) { if (typeof p !== 'string' || !p.startsWith('data:image/jpeg;base64,') || p.length > 30 * 1024 * 1024) throw Error('板书页面数据无效'); total += p.length; }
+    if (total > 500 * 1024 * 1024) throw Error('板书太大');
+    const folder = path.join(this.dir, '板书', safeName(student));
+    await fs.promises.mkdir(folder, { recursive: true });
+    const file = path.join(folder, `${safeName(title)}-${stamp()}-${crypto.randomUUID().slice(0, 4)}.pdf`);
+    await fs.promises.writeFile(file, require('./jpegPdf.cjs').jpegsToPdf(pdf.map((p) => Buffer.from(p.slice(23), 'base64')), safeName(title)));
+    this.log?.info('板书存到学生名下', pdf.length, file);
+    return normal(file);
   }
   folder(kind) { const f = kind && KINDS[kind] ? path.join(this.dir, KINDS[kind]) : this.dir; fs.mkdirSync(f, { recursive: true }); return f; }
 }

@@ -130,9 +130,10 @@
 .as-op-h { display: flex; align-items: center; gap: 6px; }
 .as-op-h svg { color: var(--ok); flex: none; }
 .as-op.warn .as-op-h svg { color: var(--warn); }
-.as-op p { margin: 0; color: var(--fg-1); padding-left: 19px; }
+.as-op p, .as-op-l { margin: 0; color: var(--fg-1); padding-left: 19px; }
+.as-files img { width: 26px; height: 26px; object-fit: cover; border-radius: 5px; }
 .as-op-f { display: flex; flex-wrap: wrap; gap: 5px; padding-left: 19px; margin-top: 3px; }
-.as-op-f button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 10px; font-size: 11.5px; color: var(--cue); background: var(--cue-soft); }
+.as-op-f > button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 10px; font-size: 11.5px; color: var(--cue); background: var(--cue-soft); }
 .as-op.cmd { box-shadow: inset 3px 0 0 var(--fg-3); }
 .as-op.cmd .as-op-h { cursor: pointer; }
 .as-op.cmd .as-op-h svg { color: var(--fg-2); }
@@ -192,6 +193,17 @@
 .as-personas button, .as-radio button { text-align: left; padding: 8px 10px; border-radius: var(--r-md); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 2px; }
 .as-personas button.on, .as-radio button.on { box-shadow: inset 0 0 0 1.5px var(--cue); background: var(--cue-soft); }
 .as-personas b, .as-radio b { font-size: 13px; color: var(--fg-0); }
+.as-radio em { font-style: normal; font-size: 10.5px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--cue); color: #071318; }
+.as-acc-w { position: relative; }
+.as-acc { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 12px; font-size: 11.5px; color: var(--fg-2); background: var(--bg-2); }
+.as-acc:hover { color: var(--fg-0); }
+.as-acc.full { color: var(--warn); background: rgba(255, 181, 71, .12); }
+.as-acc-pop { position: absolute; left: 0; bottom: 30px; z-index: 5; width: 280px; padding: 6px; border-radius: var(--r-md); background: var(--bg-1); box-shadow: 0 10px 30px -10px rgba(0, 0, 0, .6), inset 0 0 0 1px var(--line); display: flex; flex-direction: column; gap: 4px; }
+.as-acc-pop button { text-align: left; padding: 6px 8px; border-radius: var(--r-sm); display: flex; flex-direction: column; gap: 2px; }
+.as-acc-pop button:hover { background: var(--bg-2); }
+.as-acc-pop button.on { background: var(--cue-soft); }
+.as-acc-pop b { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--fg-0); }
+.as-acc-pop span { font-size: 11px; color: var(--fg-2); line-height: 1.45; }
 .as-personas em { font-style: normal; font-size: 10.5px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--cue); color: #071318; }
 .as-personas span, .as-radio span { font-size: 11.5px; color: var(--fg-2); }
 .as-hint { margin: 0; font-size: 12px; color: var(--fg-2); line-height: 1.55; }

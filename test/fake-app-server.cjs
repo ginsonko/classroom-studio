@@ -1,7 +1,7 @@
 'use strict';
 // 假的 `codex app-server`：按老师说的话走固定剧本，用来测 AI 助教的整条链路（不联网、不花钱）。
 //   含「加学生」→ 调 add_student；「删课 <id>」→ 调 delete_lesson；「运行命令」→ 请求命令审批；
-//   「慢慢说」→ 一直输出直到 turn/interrupt；其它 → 流式回一句话。
+//   「慢慢说」→ 一直输出直到 turn/interrupt；「给我文件」→ 回复里带 FAKE_FILE 的路径；其它 → 流式回一句话。
 // 收到的每个请求记到 FAKE_LOG（一行一条 JSON），测试据此断言工具清单、上下文等。
 const fs = require('node:fs');
 if (!process.argv.includes('app-server')) { process.stdout.write('codex-cli 0.0.0-fake\n'); process.exit(0); }
@@ -47,6 +47,10 @@ async function play(threadId, turnId, text) {
   if (text.includes('运行命令')) {
     const r = await ask('item/commandExecution/requestApproval', { threadId, turnId, itemId: id('cmd'), command: 'dir C:\\Users', reason: '看看文件夹里有什么', cwd: 'C:\\' });
     await say(threadId, turnId, 'decision=' + r.decision);
+    return done(threadId, turnId);
+  }
+  if (text.includes('给我文件')) {
+    await say(threadId, turnId, '教案做好了，在这里：' + (process.env.FAKE_FILE || 'C:/tmp/教案.docx') + ' ，你看看。');
     return done(threadId, turnId);
   }
   if (text.includes('慢慢说')) {

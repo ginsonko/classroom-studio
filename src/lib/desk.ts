@@ -35,13 +35,19 @@ export function syncDesk(desk: DeskWin[] | undefined, pgmMat: Material, pgm: Vie
 
 const simOf = (sim: unknown, id: string) => (sim && typeof sim === 'object' && (sim as { matId?: string }).matId === id ? sim : undefined);
 
-/** 超过上限时关掉最久没用的（黑板和 keep 不关）。limit <= 0 不限。 */
+/** 超过上限时关掉最久没用的课件。黑板（普通 / 长黑板）都不自动关：关了板书就找不到入口了。limit <= 0 不限。 */
 export function trimDesk(desk: DeskWin[], keep: string, limit: number): DeskWin[] {
   if (!(limit > 0)) return desk;
-  const extra = desk.filter((w) => w.id !== BASE).length - limit;
+  const docs = desk.filter((w) => w.mat.kind !== 'board');
+  const extra = docs.length - limit;
   if (extra <= 0) return desk;
-  const drop = new Set(desk.filter((w) => w.id !== BASE && w.id !== keep).sort((a, b) => a.at - b.at).slice(0, extra).map((w) => w.id));
+  const drop = new Set(docs.filter((w) => w.id !== keep).sort((a, b) => a.at - b.at).slice(0, extra).map((w) => w.id));
   return desk.filter((w) => !drop.has(w.id));
+}
+
+/** 最近用过的那块黑板（long = 长黑板 / 普通黑板），没有返回 undefined */
+export function latestBoard(desk: DeskWin[], long: boolean): DeskWin | undefined {
+  return desk.filter((w) => w.mat.kind === 'board' && isLong(w.mat) === long).sort((a, b) => b.at - a.at)[0];
 }
 
 /**

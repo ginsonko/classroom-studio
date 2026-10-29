@@ -1,7 +1,7 @@
 // 学生画面上的三样小控件：左边「打开的课件」切换栏、右边页面缩略图、右下角翻页和放大。
 // 都可以收起成一枚小标签，展开状态只记在本机。
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, GalleryVertical, Layers, Plus, Presentation, Scan, ScrollText, X, ZoomIn, ZoomOut, Atom, Globe, Image as ImageIcon, FileText, PanelTop } from 'lucide-react';
+import { AppWindow, Eraser, ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Columns2, GalleryVertical, Layers, Plus, Presentation, Scan, ScrollText, X, ZoomIn, ZoomOut, Atom, Globe, Image as ImageIcon, FileText, PanelTop } from 'lucide-react';
 import { ROLE, defaultView, stepView, useStore } from '../lib/store';
 import { BASE, deskOrder, pageLabel, panRegion, zoomRegion } from '../lib/desk';
 import type { DeskWin, Material } from '../lib/types';
@@ -11,6 +11,7 @@ import { curStageAspect } from './Desk';
 import { isLong } from '../lib/longBoard';
 import { longWheel, seekLastInk, seekLong } from './longNav';
 import { StepToggle } from './StepToggle';
+import { clearClass } from '../lib/classReset';
 
 function useOpen(key: string, init: boolean) {
   const [open, setOpen] = useState(() => { const v = localStorage.getItem(key); return v === null ? init : v === '1'; });
@@ -78,8 +79,9 @@ export function DeskRail({ canArrange }: { canArrange: boolean }) {
       {canArrange && (
         <footer>
           {ROLE !== 'student' && <button onClick={() => st().newBoard()} data-tip="再开一块空白黑板"><Plus size={13} />新黑板</button>}
-          {ROLE !== 'student' && <button onClick={() => st().newLongBoard()} data-tip="长黑板：一整条往下写，滚轮 / 翻页键往下滚，写到底自动加长"><ScrollText size={13} />长黑板</button>}
+          {ROLE !== 'student' && <button onClick={() => st().toBoard(true)} data-tip="长黑板：回到上次那块（板书都还在），没有就新开一块；已经在长黑板上再点一次是新开一块"><ScrollText size={13} />长黑板</button>}
           <button disabled={docs < 2} onClick={() => st().tileWins()} data-tip={docs < 2 ? '打开两个以上课件后可以并排' : '当前课件和最近用过的课件并排摆开（最多 4 个）'}><Columns2 size={13} />并排</button>
+          {ROLE === 'teacher' && <button onClick={() => { const s = st(); void clearClass({ archiveTo: s.classOf || s.studentId }); }} data-tip="换下一位学生前用：关掉所有课件和多开的黑板，黑板擦干净；写过的板书先存成 PDF 放到学生名下。可以撤销"><Eraser size={13} />清空</button>}
           {pgmMat.id !== BASE && <button onClick={() => st().setWin(pgmMat.id, { mode: (desk.find((w) => w.id === pgmMat.id)?.mode === 'normal' ? 'max' : 'normal') })} data-tip="当前课件在「占满画面」和「浮动窗口」之间切换"><AppWindow size={13} />{desk.find((w) => w.id === pgmMat.id)?.mode === 'normal' ? '占满' : '窗口'}</button>}
         </footer>
       )}
