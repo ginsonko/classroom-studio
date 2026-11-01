@@ -1,7 +1,7 @@
 const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,atomicWrite,workspaceJSON,readJSON,within,cleanTemps}=require('./core.cjs');
-const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');
+const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');const {Asr}=require('./asr.cjs');const {AsrSetup}=require('./asrSetup.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
 const DATA=(()=>{const want=path.resolve(process.env.CS_DATA_DIR||path.join(path.parse(ROOT).root,'ClassroomStudioData'));if(process.env.CS_DATA_DIR)return want;try{fs.mkdirSync(want,{recursive:true});const probe=path.join(want,'.write-probe');fs.writeFileSync(probe,'');fs.unlinkSync(probe);return want;}catch{return path.join(app.getPath('appData'),'ClassroomStudioData');}})();
@@ -26,7 +26,7 @@ app.on('web-contents-created',(_e,wc)=>{
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{scheme:'studio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'lesson',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'plugin',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
 const files=new Files(path.join(DATA,'cache'));
-const windows=new Map(),roles=new Map();let plugins,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater;
+const windows=new Map(),roles=new Map();let plugins,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater,asr,asrSetup;
 const send=(win,ch,data)=>{if(win&&!win.isDestroyed()&&!win.webContents.isCrashed())win.webContents.send(ch,data);};
 const notify=(type,value={})=>{if(value.error)log.warn('提示',type,value.message);for(const [role,w]of windows)if(role==='teacher')send(w,'cs:event',{type,...value});};
 const busy=()=>['starting','recording','stopping'].includes(recording?.status.phase);
@@ -303,6 +303,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(role==='recorder'){
   if(method==='recordReady')return recording.ready(value);
   if(method==='recordChunk')return recording.chunk(value);
+  if(method==='recordVoice')return recording.voice(value);
   if(method==='recordStopped')return recording.stopped(value);
   if(method==='recordError'&&value.recordId===recording.current?.id)return recording.fail(value.error);
   if(method==='recordMeter'&&value.recordId===recording.current?.id){recording.update({micLevel:Number(value.micLevel)||0,systemLevel:Number(value.systemLevel)||0});return;}
@@ -331,6 +332,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(typeof method==='string'&&method.startsWith('study.'))return studyCall(method,value);
  if(typeof method==='string'&&method.startsWith('notify.'))return notifier.handle(method,value);
  if(typeof method==='string'&&method.startsWith('manim.'))return manim.handle(method,value);
+ if(typeof method==='string'&&method.startsWith('asr.'))return asr.handle(method,value);
  if(typeof method==='string'&&method.startsWith('motion.'))return motionCall(method,value);
  if(typeof method==='string'&&method.startsWith('update.'))return updateCall(method,value);
  if(typeof method==='string'&&method.startsWith('plugins.'))return pluginCall(method,value,e);
@@ -359,31 +361,38 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'reveal':{const actual=path.resolve(value);if(!within(DATA,actual))files.allowed(actual);shell.showItemInFolder(actual);return;}
  case 'settings':return {...settings,recording:recording.status,displays:screen.getAllDisplays().length};
  case 'setSettings':{
-  const rec=['microphone','systemAudio','autoRecord','bitrate'].some(k=>value[k]!==undefined);
+  const rec=['microphone','systemAudio','autoRecord','bitrate','voiceTrack'].some(k=>value[k]!==undefined);
   if(rec&&busy())throw Error('请在下课保存后修改录音设置');
-  for(const k of ['microphone','systemAudio','autoRecord'])if(typeof value[k]==='boolean')settings[k]=value[k];if([1500000,3000000,5000000].includes(value.bitrate))settings.bitrate=value.bitrate;
+  for(const k of ['microphone','systemAudio','autoRecord','voiceTrack'])if(typeof value[k]==='boolean')settings[k]=value[k];if([1500000,3000000,5000000].includes(value.bitrate))settings.bitrate=value.bitrate;
   if(typeof value.captureGuard==='boolean'){settings.captureGuard=value.captureGuard;const t=windows.get('teacher');if(t&&!t.isDestroyed())t.setContentProtection(value.captureGuard);dockManager.protect();log.info('防截屏',value.captureGuard?'开启':'关闭');}
   if([0,5,10,15,30].includes(value.remindMinutes))settings.remindMinutes=value.remindMinutes;
   if(typeof value.answerOff==='boolean')settings.answerOff=value.answerOff;
   if(typeof value.autoClear==='boolean')settings.autoClear=value.autoClear;
   if(typeof value.autoMap==='boolean')settings.autoMap=value.autoMap;
   if(typeof value.autoAnalyze==='boolean')settings.autoAnalyze=value.autoAnalyze;
+  if([0.5,1,2,3,5,10].includes(value.analysisCap))settings.analysisCap=value.analysisCap;
   if(typeof value.splitWeChat==='boolean')settings.splitWeChat=value.splitWeChat;
+  for(const k of ['afterSummary','afterBoard','afterBoardLong'])if(typeof value[k]==='boolean')settings[k]=value[k];
+  if(typeof value.transcribe==='boolean'){settings.transcribe=value.transcribe;if(value.transcribe)void asr.resumeRecent().catch(()=>{});asr.changed();}
+  if(value.autoRec&&typeof value.autoRec==='object')settings.autoRec=cleanAutoRec({...settings.autoRec,...value.autoRec});
   if(typeof value.autostart==='boolean'){settings.autostart=value.autostart;if(app.isPackaged)app.setLoginItemSettings({openAtLogin:value.autostart});}
   scheduleSave();return settings;}
  case 'pickRecordings':{if(busy()||recording.jobs.length)throw Error('录像保存、回放生成完以后再修改目录');const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择录像保存目录',properties:['openDirectory','createDirectory']});if(!r.canceled)await changeRecordings(r.filePaths[0]);return settings.recordings;}
- case 'startLesson':{await makeWindow('student');if(busy())return recording.status;await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&value?.synthetic===true);}
+ case 'startLesson':{await makeWindow('student');if(busy())return recording.status;await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
  case 'stopLesson':return recording.stop();
  case 'recordChapter':return recording.chapter(value);
  case 'recordFrames':return recording.frames(String(value?.id||''),value?.times);
+ case 'osNotify':return osNotify(value);
  case 'splitRecording':return recording.splitQueued(String(value||''));
+ // 回放页里直接播放（跟着字幕跳转）：只放行这一段录像所在的文件夹
+ case 'recordMedia':{const item=(await recording.list()).find(x=>x.id===value);if(!item||item.phase!=='complete'||!fs.existsSync(item.mp4))throw Error('回放 MP4 还没生成');files.authorize(item.mp4);return files.url(item.mp4);}
  case 'recordPatch':return recording.patchMeta(String(value?.id||''),value?.patch);
  case 'recordStatus':return recording.status;
  case 'recordings':return recording.list();
  case 'recoverRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');if(item.phase==='converting')return null;return recording.enqueue(item.folder,{id:item.id,title:item.title,studentId:item.studentId});}
- case 'deleteRecording':{const folder=await recording.remove(value);if(TEST)await fs.promises.rm(folder,{recursive:true,force:true});else await shell.trashItem(folder);log.info('删除录像',folder);return true;}
+ case 'deleteRecording':{asr.drop(value);const folder=await recording.remove(value);if(TEST)await fs.promises.rm(folder,{recursive:true,force:true});else await shell.trashItem(folder);log.info('删除录像',folder);return true;}
  case 'recordingsInfo':{const rows=await recording.list();const disk=await recording.disk(settings.recordings);return {dir:normal(settings.recordings),free:disk.free,total:disk.total,used:rows.reduce((a,r)=>a+(r.bytes||0),0),count:rows.length,systemDrive:onSystemDrive(settings.recordings)};}
- case 'nextLesson':{if(!busy())throw Error('现在没有在录课');await recording.stop();if(!(await recording.settle(60000)))throw Error('上一节还没收尾，请稍后再点');await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&value?.synthetic===true);}
+ case 'nextLesson':{if(!busy())throw Error('现在没有在录课');await recording.stop();if(!(await recording.settle(60000)))throw Error('上一节还没收尾，请稍后再点');await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
  case 'shortcut.create':return createShortcuts(true);
  case 'shortcut.state':return shortcutState();
  case 'openRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');const err=await shell.openPath(item.phase==='complete'?item.mp4:item.raw);if(err)throw Error(err);return;}
@@ -562,6 +571,7 @@ async function studyCall(method,value){
  case 'study.imageData':return study.imageData(value);
  case 'study.document':return study.document(value||{});
  case 'study.board':return study.board(value||{});
+ case 'study.boardPng':return study.boardPng(value||{});
  case 'study.open':{const err=await shell.openPath(inside(value));if(err)throw Error('打不开：'+err);return;}
  case 'study.reveal':shell.showItemInFolder(inside(value));return;
  case 'study.folder':{const f=study.folder(value);if(!TEST)await shell.openPath(f);return normal(f);}
@@ -580,6 +590,19 @@ async function studyCall(method,value){
  }
 }
 const shown=new Set();
+/** 录像自动开关的设置（和 src/lib/autoRecord.ts 的 cleanAutoRecord 同一套规则） */
+function cleanAutoRec(o){
+ const d={start:true,lead:5,stopAfter:15,idle:true,idleMinutes:20,adhoc:false,sound:false},b=k=>typeof o?.[k]==='boolean'?o[k]:d[k],stop=Number(o?.stopAfter);
+ return {start:b('start'),lead:[0,2,5,10].includes(Number(o?.lead))?Number(o.lead):d.lead,stopAfter:Number.isInteger(stop)&&(stop===0||stop>=5&&stop<=240)?stop:d.stopAfter,idle:b('idle'),idleMinutes:[10,20,30,45].includes(Number(o?.idleMinutes))?Number(o.idleMinutes):d.idleMinutes,adhoc:b('adhoc'),sound:b('sound')};
+}
+/** 录像自动开关的系统通知：教师窗口最小化、被会议挡住时也能看到；点一下回到教师窗口 */
+function osNotify({title,body}={}){
+ if(TEST||!Notification.isSupported())return false;
+ const n=new Notification({title:String(title||'最强网课教辅系统').slice(0,80),body:String(body||'').slice(0,200),silent:true});
+ shown.add(n);n.on('close',()=>shown.delete(n));setTimeout(()=>shown.delete(n),5*60000);
+ n.on('click',()=>{const t=windows.get('teacher');if(t&&!t.isDestroyed()){if(t.isMinimized())t.restore();t.show();t.focus();}});
+ n.show();return true;
+}
 function remindLesson(item){
  const hm=item.at.toTimeString().slice(0,5),title=`${item.minutes} 分钟后上课：${item.studentName}`,body=`${hm} 开始${item.slot.topic?' · '+item.slot.topic:''}。点这里打开导播台。`;
  log.info('课前提醒',title);
@@ -593,7 +616,8 @@ function remindLesson(item){
 }
 async function start(){
  await fs.promises.mkdir(files.cache,{recursive:true});cleanTemps(path.join(DATA,'workspace.json'));saved=await readJSON(path.join(DATA,'workspace.json'),{});
- settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,splitWeChat:false,...saved.settings};
+ settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,analysisCap:2,splitWeChat:false,afterSummary:false,afterBoard:false,afterBoardLong:false,voiceTrack:true,transcribe:true,...saved.settings};
+ settings.autoRec=cleanAutoRec(settings.autoRec);
  // 0.4.0：防截屏改为默认关闭（开启时部分会议软件全屏共享会显示黑块）
  if(!saved.migrated040){saved.migrated040=true;settings.captureGuard=false;}
  ledger=new Ledger(DATA);
@@ -630,11 +654,14 @@ async function start(){
  if(settings.answerOff===undefined)settings.answerOff=saved.shared.answerGuard===false;
  saved.shared.answerGuard=!settings.answerOff;
  publicData=projection(saved.shared);if(publicData.sim)publicData.sim.playing=false;
- recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});},
+ recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});void asr?.offer({id:r.id}).catch(e=>log.warn('语音转写排队',e.message));},
   split:()=>settings.splitWeChat===true,
   partLimits:TEST&&process.env.CS_PART_LIMITS?JSON.parse(process.env.CS_PART_LIMITS):undefined,
   label:m=>(saved.local?.students??[]).find(x=>x.id===m.studentId)?.name,
   onSplit:r=>{if(r.error)log.warn('微信分段失败',r.error);else log.info('微信分段',r.dir,r.parts.length);notify('recordSplit',{record:{id:r.id,title:r.title,studentId:r.studentId},dir:r.dir,parts:r.parts.map(p=>p.file),error:r.error??null});}});
+ // 课后语音转写：组件随安装包放在 bin/asr，开发版没有时下载到数据目录 tools/asr；只在没在录课、没在生成回放时跑
+ asrSetup=new AsrSetup({dir:path.join(DATA,'tools','asr'),bundled:path.join(ROOT,'bin','asr'),fetch:(u,o)=>net.fetch(u,o),log,emit:state=>{notify('asrSetup',{state});if(state.phase==='done')void asr.resumeRecent().catch(()=>{});},verify:p=>asr.check(p),...(TEST&&process.env.CS_ASR_SETUP?JSON.parse(process.env.CS_ASR_SETUP):{})});
+ asr=new Asr({setup:asrSetup,recording,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),log,emit:m=>notify(m.type,m),enabled:()=>settings.transcribe!==false,busy:()=>busy()||recording.jobs.length>0});
  // 自动更新：清单地址和公钥可以用环境变量换成测试服务器（两个都给才生效）
  const feed=process.env.CS_UPDATE_FEED,pub=process.env.CS_UPDATE_PUBKEY;
  updater=new Updater({appRoot:ROOT,version:VERSION,dataDir:DATA,fetch:(u,o)=>net.fetch(u,o),log,emit:s=>notify('update',{update:s}),packaged:app.isPackaged,...(feed&&pub?{feeds:[feed],publicKey:pub}:{})});
@@ -643,9 +670,9 @@ async function start(){
  Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu',label:'最强网课教辅系统'},{role:'editMenu',label:'编辑'},{role:'windowMenu',label:'窗口'}]):null);await makeWindow('teacher');await makeWindow('student');if(!TEST)await dockManager.ensure();
  for(const ev of ['display-added','display-removed','display-metrics-changed'])screen.on(ev,refitAll);
  if(lastUpdate)setTimeout(()=>notify('update',{update:{phase:lastUpdate.ok?'done':'failed',result:lastUpdate}}),2500);
- if(!TEST){void recording.resume();repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
+ if(!TEST){void recording.resume();setTimeout(()=>void asr.resumeRecent().catch(e=>log.warn('语音转写',e.message)),90000);repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
  if(!TEST){const auto=()=>{if(settings.updateCheck!==false)void updater.check();};setTimeout(auto,20000);setInterval(auto,12*3600000).unref?.();}
- if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},remindLesson,exportDoc,offerLink:l=>offerLink(l)};
+ if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get asr(){return asr;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},remindLesson,exportDoc,offerLink:l=>offerLink(l)};
 }
 // 一键导入（yinzi-import/1）：网站打开 classroom-studio:// 链接或双击 .yzimport 文件。没开着就带着参数启动，开着就交给已有的实例
 let startLink=TEST?'':linkFromArgv(process.argv);

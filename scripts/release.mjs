@@ -93,6 +93,25 @@ function gunzipTo(gz, file, mode = 0o755) {
   return file;
 }
 
+// 课后语音转写组件（sherpa-onnx + SenseVoice 模型，约 240 MB）随安装包带上，老师不用另外下载。
+// 版本和哈希跟软件里的下载清单（electron/asrSetup.cjs）是同一份
+async function stageAsr(key, dest) {
+  const { JS, NATIVE, MODELS, VERSION } = require('../electron/asrSetup.cjs');
+  const mods = path.join(dest, 'node_modules'), models = path.join(dest, 'models');
+  fs.rmSync(dest, { recursive: true, force: true }); fs.mkdirSync(mods, { recursive: true }); fs.mkdirSync(models, { recursive: true });
+  for (const p of [JS, NATIVE[key]]) {
+    const tgz = await download(`https://registry.npmmirror.com/${p.name}/-/${p.name}-${VERSION}.tgz`, path.join(CACHE, `${p.name}-${VERSION}.tgz`), { shasum: p.sha256 });
+    const out = path.join(STAGE, 'x-' + p.name);
+    fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
+    spawnSync(tar, ['-xzf', tgz, '-C', out], { stdio: 'ignore' });
+    if (!fs.existsSync(path.join(out, 'package/package.json'))) throw new Error(p.name + ' 解压失败');
+    fs.cpSync(path.join(out, 'package'), path.join(mods, p.name), { recursive: true });
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  for (const m of MODELS) fs.copyFileSync(await download(m.urls[0], path.join(CACHE, 'asr-' + m.file), { shasum: m.sha256 }), path.join(models, m.file));
+  log(key, '语音组件就位');
+}
+
 // ── Windows ──
 async function buildWin() {
   const root = path.join(STAGE, 'win32-x64', NAME);
@@ -107,7 +126,9 @@ async function buildWin() {
     'version-string': { ProductName: NAME, FileDescription: NAME + '：一对一网课上课、录课、备课一体化', CompanyName: 'yinziapi.top', LegalCopyright: '开放源代码；个人老师免费，单位使用需授权' },
   });
   const appDir = path.join(root, 'resources/app');
-  for (const n of ['dist', 'electron', 'bin']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: keep });
+  // 开发机的 bin/ 里可能有手动放的 asr 目录：不用它，统一按清单重新组装
+  for (const n of ['dist', 'electron', 'bin']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: (src) => keep(src) && !/[\\/]bin[\\/]asr([\\/]|$)/.test(src) });
+  await stageAsr('win32-x64', path.join(appDir, 'bin/asr'));
   writeAppMeta(appDir);
   log('win32-x64 组装完成');
   const topLevel = fs.readdirSync(root).filter((n) => n !== 'resources');
@@ -115,6 +136,7 @@ async function buildWin() {
     { name: 'app', paths: ['resources/app/dist', 'resources/app/electron', 'resources/app/package.json', 'resources/app/LICENSE.txt', 'resources/app/build.json'], hashOver: ['resources/app/dist', 'resources/app/electron', 'resources/app/package.json', 'resources/app/LICENSE.txt'] },
     { name: 'codex', paths: ['resources/app/bin/codex'] },
     { name: 'ffmpeg', paths: ['resources/app/bin/ffmpeg.exe', 'resources/app/bin/FFmpeg-README.txt'] },
+    { name: 'asr', paths: ['resources/app/bin/asr'] },
     { name: 'runtime', paths: [...topLevel, ...(fs.existsSync(path.join(root, 'resources/default_app.asar')) ? ['resources/default_app.asar'] : [])] },
   ];
   return finishPlatform('win32-x64', root, defs, { zipRoot: NAME, extra: [{ name: NAME + '/许可协议.txt', file: path.join(appRoot, 'LICENSE') }] });
@@ -158,15 +180,17 @@ async function buildMac(arch) {
   await stageCodex({ version: CODEX_VER, out: codexOut, tgz: fs.existsSync(codexTgz) ? codexTgz : '', platform: 'darwin', arch, onProgress: (m) => log('codex:', m) });
   fs.cpSync(codexOut, path.join(appDir, 'bin/codex'), { recursive: true });
   gunzipTo(path.join(CACHE, `ffmpeg-${key}.gz`), path.join(appDir, 'bin/ffmpeg'));
+  await stageAsr(key, path.join(appDir, 'bin/asr'));
   writeAppMeta(appDir);
   log(key, '组装完成');
   // 继承自 Electron 官方包的文件用原来的 unix 权限；新增的命令行工具给执行位
   const origKey = (rel) => 'Electron.app/' + rel.replace(/^Contents\/MacOS\/ClassroomStudio$/, 'Contents/MacOS/Electron');
-  const execNew = (rel) => /^Contents\/Resources\/app\/bin\/(codex\/(bin\/[^.]+|codex-path\/[^.]+)|ffmpeg)$/.test(rel);
+  const execNew = (rel) => /^Contents\/Resources\/app\/bin\/(codex\/(bin\/[^.]+|codex-path\/[^.]+)|ffmpeg|asr\/node_modules\/[^/]+\/[^/]+\.(node|dylib))$/.test(rel);
   const defs = [
     { name: 'app', paths: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt', 'Contents/Resources/app/build.json'], hashOver: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt'] },
     { name: 'codex', paths: ['Contents/Resources/app/bin/codex'] },
     { name: 'ffmpeg', paths: ['Contents/Resources/app/bin/ffmpeg', 'Contents/Resources/app/bin/FFmpeg-README.txt'] },
+    { name: 'asr', paths: ['Contents/Resources/app/bin/asr'] },
     {
       name: 'runtime', paths: fs.readdirSync(path.join(app, 'Contents')).flatMap((n) =>
         n === 'Resources' ? fs.readdirSync(path.join(app, 'Contents/Resources')).filter((x) => x !== 'app').map((x) => 'Contents/Resources/' + x) : ['Contents/' + n]),
@@ -320,10 +344,16 @@ async function main() {
 }
 
 const NOTES = [
+  '按课表自动录课（新）：课表上的课开始前 5 分钟出 10 秒倒计时，不点就自动开始上课、录像用课名；下课 15 分钟后还在录会先提醒再自动下课，连堂、同一个学生连着两节都照顾到；设置里能关',
+  '课后语音转写（新）：录课时另外存一条老师、学生分开的声音，下课后在这台电脑上把整节课的话转成文字，分清谁说的；不联网、不花钱。语音组件随软件自带，不用另外下载（这次更新会多下约 240 MB，只需一次）',
+  '回放加了「课堂原话」：字幕跟着回放走，可以搜这节课或全部课的原话，点一句跳到那个时刻',
+  '课后学情精析（新）：有课堂原话时，AI 逐题判断学生是自己做的、提示下做的还是老师讲的，给出几成把握和原话证据；拿不准的放进回放页「待确认」，单节课花费默认最多 2 元',
+  '精析结果用起来：按几成把握排间隔复习，备课自动带上该复习的知识点和上节课说过「下节课再练」的事，课前横幅提醒一句；课后总结和小羽也能查课堂原话',
+  '下课后流程看得见：顶栏胶囊显示保存回放、语音转写、学情精析、写课后总结、存板书每一步做到哪了，没做成的可以单独重跑；可以设成下课后自动写课后总结、自动把板书存成 PDF（默认关）',
   '写字更跟手：黑板写满之后不再越写越卡。笔动一下只重画正在写的那一笔，不再把整块黑板重算一遍（600 笔的黑板上每帧从约 50 毫秒降到 1 毫秒以内）',
   '停笔后不再顿一下：自动存盘只存改动过的页面，课堂存档很大（几十 MB）时也不会让下一笔断开或跳一下',
   '按电脑性能自动调画质：显卡不能用、或者写字时经常画不过来，自动降低画布清晰度、关掉粉笔光晕；旧电脑也可以在钢笔菜单里手动勾「流畅优先」',
-  '多个窗口（学生画面、监看、浮窗）同时开着时，一处写字不再让所有画布都跟着重画；橡皮擦大片区域也更快',
+  '多个窗口（学生画面、监看、浮窗）同时开着时，一处写字不再让所有画布都跟着重画；橡皮擦大片区域也更快；黑板没有变化时画布不再每帧空转，开着软件上腾讯会议更省 CPU',
   '回放能切成微信能发的分段：微信发不了超过 1 小时的视频，可以在设置里打开「回放生成后自动切成每段不到 1 小时的几段」（默认关），或者在「回放」页对某一段点「切成微信分段」；不重新压缩，几十秒切好',
 ];
 

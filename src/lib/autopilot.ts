@@ -2,19 +2,25 @@
 // 在教师窗口里每 5 分钟看一次；每天用 AI 的任务数有上限，后台 Agent 另有单任务花费上限。
 // 设置和记录存在 DATA/study/autopilot.json。家长反馈只写草稿，发送仍由老师确认。
 import { create } from 'zustand';
+import { lastFineNote, practiceTodos, reviewDue, todoText } from './reviewLogic';
 import { host } from './host';
 import { useStore } from './store';
 import { useLib } from './useLib';
 import { useStudy, ensureStudy, addQuestion, sid, nowIso } from './studyStore';
 import { aiConfig, buildLessonNote, dayKey, exportHomework, homeworkTitle, lessonDocument, saveLesson } from './studyActions';
 import { draftQuestions, online, outlineByAi } from './studyAi';
-import { guessPoints, guessType, mastery, outlineMarkdown, pickHomework, type Prep, type StudentNote } from './studyLogic';
+import { guessPoints, guessType, isMiss, mastery, outlineMarkdown, pickHomework, type Prep, type StudentNote } from './studyLogic';
+import { recordedLessons, rowsOfLesson, shouldWait } from './afterClassLogic';
+import { patchAfter, setSummaryBusy, stepsFor, type AfterSettings } from './afterClass';
+import { quietRecords, useRecordAnalysis } from './recordAnalysis';
+import type { RecordRow } from './recording';
+import type { DueLesson } from './autopilotLogic';
 import { packOf, studentSubject } from './subjects';
 import { ai } from './ai';
 import { ensureCatalog, findLocal, organizeByAi, organizeByRules, putEntries } from './catalog';
 import { cleanSettings, dueLessons, jobsToday, parsePrep, prepByRules, prepMarkdown, prepPrompt, upcoming, type AutoSettings, type PrepInput } from './autopilotLogic';
 import type { Student } from './types';
-import { isDefaultTopic } from './groups';
+import { isDefaultTopic, isGroup, membersOf } from './groups';
 import { linkFiles } from './studentFiles';
 
 export interface LogItem { id: string; at: string; kind: 'lesson' | 'homework' | 'prep' | 'catalog' | 'note' | 'error'; text: string; studentId?: string; files?: string[]; ai?: boolean }
@@ -60,7 +66,7 @@ export function addNote(n: Omit<StudentNote, 'id' | 'at'>) {
 export function removeNote(id: string) { useStudy.getState().update((d) => ({ ...d, notes: (d.notes ?? []).filter((n) => n.id !== id) })); }
 
 // ── 课后 ─────────────────────────────────────────────
-async function afterLesson(l: { studentId: string; date: string; topic: string; minutes?: number; key: string; groupId?: string }, s: AutoSettings, cfgOnline: boolean) {
+async function afterLesson(l: DueLesson, s: AutoSettings, cfgOnline: boolean, rows: RecordRow[] = []) {
   const st = studentOf(l.studentId);
   if (!st) { markDone(l.key); return; }
   const subject = studentSubject(st), data = useStudy.getState().data, files: string[] = [];
@@ -68,7 +74,7 @@ async function afterLesson(l: { studentId: string; date: string; topic: string; 
   if (s.homework) {
     const todays = data.attempts.filter((a) => a.studentId === st.id && dayKey(a.at) === l.date);
     const qs = new Map(data.questions.map((q) => [q.id, q]));
-    const bad = [...new Set(todays.filter((a) => a.result !== 'right').flatMap((a) => qs.get(a.questionId)?.points ?? []))];
+    const bad = [...new Set(todays.filter(isMiss).flatMap((a) => qs.get(a.questionId)?.points ?? []))];
     const points = bad.length ? bad.slice(0, 4) : guessPoints(l.topic || '', subject).slice(0, 3);
     const r = pickHomework({ studentId: st.id, points, count: s.hwCount, minD: 1, maxD: 4, redo: 2, avoidDays: 14, subject }, data);
     let picked = r.picked;
@@ -96,9 +102,35 @@ async function afterLesson(l: { studentId: string; date: string; topic: string; 
     const out = await lessonDocument(note, st.name, ['png', 'pdf']);
     files.push(...out.out);
     log({ kind: 'lesson', text: `${st.name}：写好 ${l.date} 的课后总结和家长反馈草稿（${note.via === 'ai' ? 'AI' : '模板'}）。到「学情 → 课后总结」确认后再发给家长。${warning ? ' ' + warning : ''}`, studentId: st.id, files: out.out, ai: note.via === 'ai' });
+    for (const r of rowsOfLesson(rows, l)) await patchAfter(r.id, { summary: { at: nowIso(), lessons: 1, via: note.via === 'ai' ? 'ai' : 'rules' } });
   }
   markDone(l.key);
 }
+
+/** 课后总结开没开：「设置 → 下课后」里单独开了，或者 AI 自动处理开着且勾了课后总结（两处是同一件事） */
+export const summaryOn = (s: AutoSettings, main: AfterSettings | null) => main?.afterSummary === true || (s.on && s.lesson);
+const mainSettings = () => host.call<AfterSettings>('settings').catch(() => null);
+
+/** 课后总结要不要再等等：这节课的录像还在转写 / 分析，而且离下课不到一个半小时 */
+function waiting(l: DueLesson, rows: RecordRow[], main: AfterSettings | null, s: AutoSettings, aiOnline: boolean) {
+  const mine = rowsOfLesson(rows, l);
+  return shouldWait(mine.map((row) => ({ row, steps: stepsFor(row, { settings: main ?? {}, summaryOn: summaryOn(s, main), aiOnline }) })), Date.now());
+}
+
+/** 在下课后胶囊里点「现在写」：这段录像的课后总结马上写（不等分析、不占自动任务数，也不组作业） */
+export async function summarizeRecord(id: string): Promise<void> {
+  await ensureAuto(); ensureStudy();
+  const rows = await host.call<RecordRow[]>('recordings'), row = rows.find((r) => r.id === id);
+  if (!row?.startedAt) throw Error('找不到这段录像');
+  const st = useStore.getState(), due = recordedLessons([{ ...row, endedAt: row.endedAt ?? row.startedAt }], st.students, useStudy.getState().data, new Set(), row.endedAt ?? Date.now(), new Set());
+  if (!due.length) throw Error(durationOfRow(row) < 600 ? '录像不到 10 分钟，不写课后总结' : '这节课的总结已经写过了');
+  const s = useAuto.getState().settings, cfgOnline = online(await aiConfig());
+  setSummaryBusy(id, true);
+  try { for (const l of due) await afterLesson(l, { ...s, lesson: true, homework: false }, cfgOnline, rows); }
+  catch (e) { await patchAfter(id, { summary: { at: nowIso(), lessons: 0, error: (e as Error).message.slice(0, 120) } }); throw e; }
+  finally { setSummaryBusy(id, false); }
+}
+const durationOfRow = (r: RecordRow) => (r.startedAt && r.endedAt ? (r.endedAt - r.startedAt) / 1000 : 0);
 
 // ── 课前备课 ───────────────────────────────────────────
 export async function makePrep(o: { studentId: string; topic: string; date: string; start?: number; minutes: number; slotId?: string; auto?: boolean; settings?: AutoSettings }, onStep?: (t: string) => void): Promise<Prep> {
@@ -114,9 +146,14 @@ export async function makePrep(o: { studentId: string; topic: string; date: stri
   const materials = findLocal({ text: o.topic, subject, points, shelf: 'courseware' }, 6).map((x) => x.e);
   const files = findLocal({ text: o.topic, subject, points, shelf: 'questions' }, 4).map((x) => x.e);
   const questions = pickHomework({ studentId: st.id, points, count: 6, minD: 1, maxD: 5, redo: 2, avoidDays: 7, subject }, data).picked;
-  const notes = (data.notes ?? []).filter((n) => n.studentId === st.id);
+  // 课后精析写的档案单独给（不当家长沟通）
+  const mine = (data.notes ?? []).filter((n) => n.studentId === st.id), notes = mine.filter((n) => !(n.source ?? '').startsWith('录像分析'));
+  // 班组课的精析和待办记在每位成员名下
+  const ids = [st.id, ...(isGroup(st) ? membersOf(st, useStore.getState().students).map((m) => m.id) : [])];
+  const todos = [...new Set(practiceTodos(data.notes ?? [], ids).map(todoText))].slice(0, 4), fineNote = lastFineNote(data.notes ?? [], ids);
+  const review = reviewDue(mastery(st.id, data, subject));
   const lastLessons = data.lessons.filter((l) => l.studentId === st.id).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 2).map((l) => ({ date: l.date, topic: l.topic, summary: l.summary, next: l.next }));
-  const input: PrepInput = { student: st, subject, topic: o.topic, minutes: o.minutes, points, weak, materials, files, questions, notes, lastLessons };
+  const input: PrepInput = { student: st, subject, topic: o.topic, minutes: o.minutes, points, weak, materials, files, questions, notes, lastLessons, review, todos, ...(fineNote ? { lastFine: fineNote.text } : {}) };
   let plan = prepByRules(input), via: Prep['via'] = 'rules';
   if (on) {
     onStep?.('AI 写备课建议…');
@@ -168,17 +205,40 @@ export async function makePrep(o: { studentId: string; topic: string; date: stri
 }
 
 // ── 调度 ─────────────────────────────────────────────
+/** 课后这一轮：课表上下了课的、录了像的课，录像分析完（或等够了）就写总结；homework 时顺带组作业 */
+async function lessonsRound(s: AutoSettings, main: AfterSettings | null, cfgOnline: boolean, o: { homework: boolean }) {
+  const st = useStore.getState(), now = new Date(), done = new Set(useAuto.getState().done), data = useStudy.getState().data;
+  const rows = host.electron ? await host.call<RecordRow[]>('recordings').catch(() => [] as RecordRow[]) : [];
+  const due = [...dueLessons(now, st.slots, st.students, data, done)];
+  for (const l of recordedLessons(rows, st.students, data, done, now.getTime(), quietRecords)) if (!due.some((x) => x.key === l.key)) due.push(l);
+  const run: AutoSettings = { ...s, lesson: summaryOn(s, main), homework: o.homework, original: o.homework && s.original };
+  for (const l of due) {
+    if (waiting(l, rows, main, s, cfgOnline)) continue;
+    if (budgetLeft() <= 0) { log({ kind: 'error', text: '今天的自动任务数到上限了，剩下的课明天再处理（可以在设置里调高）。' }); break; }
+    useAuto.setState({ running: `${studentOf(l.studentId)?.name ?? ''} 课后处理…` });
+    const mine = rowsOfLesson(rows, l);
+    for (const r of mine) setSummaryBusy(r.id, true);
+    try { await afterLesson(l, run, cfgOnline, rows); }
+    catch (e) {
+      log({ kind: 'error', text: `${studentOf(l.studentId)?.name ?? ''} 课后处理失败：${(e as Error).message}`, studentId: l.studentId }); markDone(l.key);
+      for (const r of mine) await patchAfter(r.id, { summary: { at: nowIso(), lessons: 0, error: (e as Error).message.slice(0, 120) } });
+    } finally { for (const r of mine) setSummaryBusy(r.id, false); }
+  }
+}
+
 let busy = false;
 /** 跑一轮。force：老师点「现在运行一次」，即使总开关关着也只做免费的规则整理 */
 export async function tick(force = false): Promise<void> {
   if (busy) return;
   await ensureAuto(); ensureStudy(); await ensureCatalog();
-  const s = useAuto.getState().settings;
-  if (!s.on && !force) return;
+  const s = useAuto.getState().settings, main = await mainSettings(), sum = summaryOn(s, main);
+  if (!s.on && !force && !sum) return;
   if (!useStudy.getState().loaded) return;
   busy = true; useAuto.setState({ running: '检查中…' });
   try {
     const cfgOnline = online(await aiConfig());
+    // 只开了「下课后写课后总结」：不整理资料、不组作业、不备课
+    if (!s.on && sum && !force) { await lessonsRound(s, main, cfgOnline, { homework: false }); return; }
     const st = useStore.getState(), now = new Date(), done = new Set(useAuto.getState().done);
     if (s.catalog || force) {
       const lib = useLib.getState().lib;
@@ -190,15 +250,8 @@ export async function tick(force = false): Promise<void> {
         if (k) log({ kind: 'catalog', text: `AI 整理了 ${k} 个名字看不出类别的文件。`, ai: true });
       }
     }
-    if (!s.on) return;
-    if (s.lesson || s.homework) {
-      for (const l of dueLessons(now, st.slots, st.students, useStudy.getState().data, done)) {
-        if (budgetLeft() <= 0) { log({ kind: 'error', text: '今天的自动任务数到上限了，剩下的课明天再处理（可以在设置里调高）。' }); break; }
-        useAuto.setState({ running: `${studentOf(l.studentId)?.name ?? ''} 课后处理…` });
-        try { await afterLesson(l, s, cfgOnline); }
-        catch (e) { log({ kind: 'error', text: `${studentOf(l.studentId)?.name ?? ''} 课后处理失败：${(e as Error).message}`, studentId: l.studentId }); markDone(l.key); }
-      }
-    }
+    if (!s.on) { if (sum) await lessonsRound(s, main, cfgOnline, { homework: false }); return; }
+    if (sum || s.homework) await lessonsRound(s, main, cfgOnline, { homework: s.homework });
     if (s.prep) {
       for (const u of upcoming(now, st.slots, st.students, s.prepHours, useStudy.getState().data.preps ?? [], done).slice(0, 4)) {
         if (budgetLeft() <= 0) break;
@@ -223,5 +276,7 @@ export function startAutopilot() {
   const every = window.setInterval(() => void tick(), 5 * 60_000);
   // 下课保存录像后 1 分钟看一次（课后总结要等录像时长）
   const off = host.onEvent((e) => { if (e?.type === 'recording' && e.status?.phase === 'complete') window.setTimeout(() => void tick(), 60_000); });
-  window.addEventListener('pagehide', () => { clearTimeout(first); clearInterval(every); off(); });
+  // 录像分析做完了，等着它的课后总结可以写了
+  const offA = useRecordAnalysis.subscribe((s, prev) => { if (Object.keys(prev.busy).some((id) => !(id in s.busy))) window.setTimeout(() => void tick(), 5_000); });
+  window.addEventListener('pagehide', () => { clearTimeout(first); clearInterval(every); off(); offA(); });
 }

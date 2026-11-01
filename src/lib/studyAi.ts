@@ -2,10 +2,11 @@
 // 都有不用模型的规则版兜底；模型的回复一律当不可信输入，逐字段校验。
 import { ai, type AiConfig } from './ai';
 import {
-  answersMatch, guessDifficulty, guessPoints, guessType, looseJSON, parseOutline, pointLabel, pointList, qtypesOf, validPoints,
+  answersMatch, guessDifficulty, guessPoints, guessType, levelText, looseJSON, parseOutline, pointLabel, pointList, qtypesOf, validPoints,
   type LessonInput, type LessonNote, type Outline, type Profile, type Question,
 } from './studyLogic';
 import { packOf, subjectOfKey, type SubjectId } from './subjects';
+import { MODE_NAME } from './fineLogic';
 
 const sys = (subject?: SubjectId) => packOf(subject).prompt.persona;
 /** 知识点决定学科：出题、课件按所选知识点的学科写提示词 */
@@ -47,14 +48,18 @@ export async function readQuestion(cfg: AiConfig | null, o: { text?: string; ima
 
 type LessonText = Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent'>;
 export async function lessonByAi(i: LessonInput): Promise<LessonText & { model: string }> {
-  const lines = i.attempts.map(({ q, a }, n) => `${n + 1}. [${a.result === 'right' ? '对' : a.result === 'half' ? '半对' : '错'}] ${q.points.map(pointLabel).join('、') || '未标注'}｜${(q.stem || '看图题').slice(0, 160)}${a.note ? '｜备注：' + a.note : ''}`);
+  const lines = i.attempts.map(({ q, a }, n) => {
+    const how = [typeof a.level === 'number' ? levelText(a.level) : '', a.mode ? MODE_NAME[a.mode] : '', a.misconception ? '误区：' + a.misconception : ''].filter(Boolean).join('，');
+    const said = a.evidence?.find((e) => e.who === 'student')?.text;
+    return `${n + 1}. [${a.result === 'right' ? '对' : a.result === 'half' ? '半对' : '错'}${how ? '，' + how : ''}] ${q.points.map(pointLabel).join('、') || '未标注'}｜${(q.stem || '看图题').slice(0, 160)}${a.note && !a.note.startsWith('课后精析') ? '｜备注：' + a.note : ''}${said ? `｜学生原话：“${said}”` : ''}`;
+  });
   const prompt = [
     `学生：${i.student}。本节课主题：${i.topic || '未填写'}${i.minutes ? `，时长 ${i.minutes} 分钟` : ''}。`,
     lines.length ? '课堂作答记录：\n' + lines.join('\n') : '本节课没有记录作答。',
     i.notes.trim() ? '老师的课堂笔记：\n' + i.notes.trim().slice(0, 2000) : '',
     i.homework ? '布置的作业：' + i.homework : '',
     i.roots?.length ? '知识网络提示（错题对应知识点的前置掌握不好，可能是出错的根源）：\n' + i.roots.join('\n') + '\n如果和本节课的问题相关，在需要加强或下一步里点出来；不相关就不提。' : '',
-    '请写课后总结。要求：具体、基于上面的记录，不编造没发生的内容；给家长的话 120~200 字，语气礼貌、专业、有温度，不用"您的孩子"这种生硬称呼，直接用学生名字；不知道学生性别，不要用"他/她"，需要指代时重复名字或省略主语。"下一步"每条一句话，不要把题目答案写进去。',
+    '请写课后总结。要求：具体、基于上面的记录，不编造没发生的内容；记录里有学生原话的，给家长的话里可以引用一句（加引号），让家长知道孩子课上具体的表现，不要引用老师的话；给家长的话 120~200 字，语气礼貌、专业、有温度，不用"您的孩子"这种生硬称呼，直接用学生名字；不知道学生性别，不要用"他/她"，需要指代时重复名字或省略主语。"下一步"每条一句话，不要把题目答案写进去。',
     '输出 JSON：{"summary":"本节课总结 2~4 句","strengths":["做得好的点"],"problems":["需要加强的点"],"next":["下一步建议"],"parent":"给家长的话"}',
   ].filter(Boolean).join('\n\n');
   const r = await ai.chat([{ role: 'system', content: sys(i.subject) }, { role: 'user', content: prompt }], { json: true, maxTokens: 1500, temperature: 0.4, feature: '课后总结' });

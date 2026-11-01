@@ -1,0 +1,18 @@
+.arc { position: fixed; top: 56px; right: 20px; z-index: 430; width: min(400px, calc(100vw - 40px)); display: flex; gap: 12px; padding: 14px 16px; border-radius: 14px; color: var(--fg-0); background: linear-gradient(135deg, var(--bg-2), var(--bg-1)); box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--cue); animation: arc-in .3s var(--ease-spring); }
+.arc.warn { box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--warn); }
+.arc-ico { flex: none; margin-top: 1px; color: var(--cue); }
+.arc-ico.rec { color: var(--live); animation: arc-pulse 1.2s ease-in-out infinite; }
+.arc.warn .arc-ico { color: var(--warn); }
+.arc-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.arc-main b { font-size: 14px; line-height: 1.45; }
+.arc-main b .num { color: var(--cue); margin-right: 2px; }
+.arc.warn .arc-main b .num { color: var(--warn); }
+.arc-main > span { font-size: 12px; line-height: 1.6; color: var(--fg-2); }
+.arc-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.arc-acts button { padding: 6px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--fg-1); background: var(--bg-3); }
+.arc-acts button.go { color: #04161a; background: var(--cue); }
+.arc.warn .arc-acts button.go { background: var(--warn); }
+@keyframes arc-in { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes arc-pulse { 50% { opacity: .35; } }
+.autorec-stop { display: inline-flex; align-items: center; gap: 6px; }
+.autorec-min { width: 64px; padding: 7px; background: var(--bg-3); color: var(--fg-1); border: 1px solid var(--line); border-radius: 7px; }

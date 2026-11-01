@@ -39,5 +39,7 @@ import * as mapUpdate from './mapUpdate';
 import * as recordAnalysis from './recordAnalysis';
 import * as classReset from './classReset';
 import * as studentFiles from './studentFiles';
+import * as autoRecord from './autoRecordRun';
+import * as afterClass from './afterClass';
 const aiMods=async()=>({ai:await import('./ai'),manim:await import('./manim'),formula:await import('./formulaAi'),s3d:await import('../scene3d/material')});
-if(host.test)Object.assign(window,{__studioQA:{useStore,flushStore,publicState,inkKey,host,fileEntry,prepareMaterial,openMaterial,bus,useStudy,flushStudy,studyStore,studyAi,studyLogic,useRun,useSkills,demos,aiMods,autopilot,catalog,useLib,refreshLibrary,importPaths,removeLoose,useRecording,paste,useToast,objects,withObject,qimport,paperLogic,plugins,schedule,attach,boardExport,longBoard,longNav,sort,sortLogic,guide,guideSteps,guideHits,assistant,assistantData,assistantTools,mapUpdate,recordAnalysis,classReset,studentFiles,toolbar:{useToolbar,setToolbar,applyPreset}}});
+if(host.test)Object.assign(window,{__studioQA:{useStore,flushStore,publicState,inkKey,host,fileEntry,prepareMaterial,openMaterial,bus,useStudy,flushStudy,studyStore,studyAi,studyLogic,useRun,useSkills,demos,aiMods,autopilot,catalog,useLib,refreshLibrary,importPaths,removeLoose,useRecording,paste,useToast,objects,withObject,qimport,paperLogic,plugins,schedule,attach,boardExport,longBoard,longNav,sort,sortLogic,guide,guideSteps,guideHits,assistant,assistantData,assistantTools,mapUpdate,recordAnalysis,classReset,studentFiles,autoRecord,afterClass,toolbar:{useToolbar,setToolbar,applyPreset}}});

@@ -6,7 +6,7 @@ import { useStore, type Page } from '../lib/store';
 import type { ChapterState, LessonSlot, Student } from '../lib/types';
 import { useStudy, addQuestion, patchQuestion, recordAttempt, removeQuestions, nowIso, sid } from '../lib/studyStore';
 import { buildLessonNote, captureFromScreen, dayKey, exportHomework, homeworkTitle, lessonDocument, saveLesson } from '../lib/studyActions';
-import { DIFF_NAME, findDuplicate, guessPoints, mastery, pickHomework, pointLabel, pointsOf, profile, questionSubject, RESULT_NAME, similarity, validPoints, wrongBook, type LessonNote, type Question, type Result, type SendRecord, type StudyData } from '../lib/studyLogic';
+import { DIFF_NAME, findDuplicate, guessPoints, levelText, mastery, pickHomework, pointLabel, pointsOf, profile, questionSubject, RESULT_NAME, similarity, validPoints, wrongBook, type LessonNote, type Question, type Result, type SendRecord, type StudyData } from '../lib/studyLogic';
 import { SUBJECTS, byLevel, levelOfGrade, mapKey, packOf, pointKey, studentSubject, type SubjectId } from '../lib/subjects';
 import { fullGrid, planMap, STATE_NAME } from '../lib/mapLogic';
 import { changeText, setMapStates } from '../lib/mapUpdate';
@@ -23,6 +23,8 @@ import { filesOf, linkFiles } from '../lib/studentFiles';
 import { fmtT } from '../lib/timeline';
 import type { RecordRow } from '../lib/recording';
 import { analyzeRecording } from '../lib/recordAnalysis';
+import { asrApi } from '../lib/asr';
+import { MODE_NAME } from '../lib/fineLogic';
 import { dateKey } from '../doc/scheduleModel';
 import { checkClash, day, lessonFrom, lessonText, occurrences, pickPeople, pickStudent, putIn, schema, signature, squash, WEEK, type Box, type Change, type Kind, type Param } from './toolsLogic';
 import { findGroupFor, GROUP_KINDS, groupsOf, individuals, isGroup, kindName, makeGroup, membersOf, peopleOf, whoText } from '../lib/groups';
@@ -274,16 +276,56 @@ const DEFS: Def[] = [
       return { text: { total: rows.length, recordings: rows.slice(0, int(a.limit, 1, 30, 8)).map((r) => ({
         id: r.id, at: r.createdAt.slice(0, 16).replace('T', ' '), title: r.title ?? '', student: who(r.studentId ?? ''), minutes: r.startedAt && r.endedAt ? Math.round((r.endedAt - r.startedAt) / 60000) : null, phase: r.phase,
         ...(a.timeline === true && r.chapters?.length ? { timeline: r.chapters.slice(0, 120).map((c) => `${fmtT(c.t)} ${c.title}`) } : {}),
-        analysis: r.analysis ? (r.analysis.error ? { error: r.analysis.error } : { questions: r.analysis.questions, attempts: r.analysis.attempts, map: r.analysis.map, summary: clip(r.analysis.summary, 400), weak: r.analysis.weak.map(pointLabel) }) : null,
+        analysis: r.analysis ? (r.analysis.error ? { error: r.analysis.error } : { questions: r.analysis.questions, attempts: r.analysis.attempts, map: r.analysis.map, summary: clip(r.analysis.summary, 400), weak: r.analysis.weak.map(pointLabel), ...(r.analysis.voice ? { heard_lines: r.analysis.voice, pending: r.analysis.pending ?? 0 } : {}), ...(r.analysis.fineSkip ? { no_voice: r.analysis.fineSkip } : {}) }) : null,
+        transcript: r.transcript?.phase === 'done' ? `${r.transcript.count ?? 0} 句` : r.transcript?.phase ?? null,
       })) } };
     },
   },
   {
-    name: 'analyze_recording', description: '让看图模型看一遍某段课堂录像（按时间线截十来张画面）：认出的题进收件箱，看得出批改的记作答，学习地图往前推，课堂小结记进档案。回放生成后软件默认会自动做；老师要求重新分析或补分析时用。会花 AI 用量', write: true,
+    name: 'analyze_recording', description: '让 AI 看一遍某段课堂录像（按时间线截十来张画面），有课堂原话时再听一遍逐题判断几成把握：认出的题进收件箱，把握大的记作答，拿不准的进「待确认」，学习地图往前推，课堂精析记进档案。回放生成后软件默认会自动做；老师要求重新分析或补分析时用。会花 AI 用量', write: true,
     params: { id: P('string', '录像 id（list_recordings 里的）') }, required: ['id'],
     async run(a) {
       const rec = await analyzeRecording(str(a.id, 80));
       return rec ? { text: { ok: true, lines: rec.lines, undo: '老师可以在「课堂回放」里整批撤销' }, card: { title: '分析了课堂录像', lines: rec.lines } } : { text: { ok: true, lines: ['没看到能记下来的题目或小结'] } };
+    },
+  },
+  {
+    name: 'search_transcript', description: '搜课堂原话（下课后本地语音转写的文字）：按关键词、学生、谁说的、最近几天找。老师问「小王上周哪里没听懂」「我讲过 xx 没有」时用；返回日期、录像、第几分钟、谁说的和原话',
+    params: {
+      q: P('string', '关键词，几个词用空格隔开（都出现才算）'), student: P('string', '只看这位学生的课（姓名或 id）'),
+      who: P('string', 'student=学生说的，teacher=老师说的，all=都要（默认）', { enum: ['student', 'teacher', 'all'] }),
+      days: P('integer', '最近几天，默认 30', { minimum: 1, maximum: 365 }), limit: P('integer', '最多几句，默认 30', { minimum: 1, maximum: 100 }),
+    }, required: ['q'],
+    async run(a) {
+      const s = has(a.student) ? studentOf(a.student) : undefined, q = str(a.q, 100);
+      if (!q) throw Error('要给关键词 q');
+      const since = Date.now() - int(a.days, 1, 365, 30) * 864e5, side = a.who === 'student' || a.who === 'teacher' ? a.who : null;
+      const hits = (await asrApi.search(q, s?.id)).filter((h) => Date.parse(h.createdAt) >= since && (!side || h.who === side));
+      const n = int(a.limit, 1, 100, 30);
+      return { text: { total: hits.length, ...(hits.length ? {} : { hint: '转写过的课里没有这句话。只有开了「课后语音转写」以后录的课才有原话' }), lines: hits.slice(0, n).map((h) => ({
+        date: h.createdAt.slice(0, 10), recording: h.id, title: h.title ?? '', student: h.studentId ? who(h.studentId) : '', at: fmtT(h.t0), who: h.who === 'teacher' ? '老师' : h.who === 'student' ? '学生' : '', text: h.text,
+      })) } };
+    },
+  },
+  {
+    name: 'lesson_evidence', description: '某个知识点在这位学生的历次课上的表现：课后精析记下的每次作答（几成把握、自己做 / 提示下做、误区、学生原话和录像时间）和还在「待确认」的判断。老师问「他追及问题掌握得怎么样、哪节课卡住的」时用',
+    params: { student: P('string', '学生（姓名或 id）'), point: P('string', '知识点名称或 key'), limit: P('integer', '最多几条，默认 12', { minimum: 1, maximum: 40 }) }, required: ['student', 'point'],
+    run(a) {
+      const s = studentOf(a.student), subject = studentSubject(s), keys = pointsFrom([a.point], subject);
+      if (!keys.length) throw Error('没找到这个知识点：' + str(a.point, 40) + '。可以先用 list_points 查');
+      const d = D(), qs = new Map(d.questions.map((q) => [q.id, q])), ids = new Set([s.id, ...(isGroup(s) ? membersOf(s, S().students).map((m) => m.id) : [])]);
+      const onPoint = (qid: string) => !!qs.get(qid)?.points.some((k) => keys.includes(k));
+      const rows = d.attempts.filter((x) => ids.has(x.studentId) && onPoint(x.questionId)).sort((x, y) => y.at.localeCompare(x.at)).slice(0, int(a.limit, 1, 40, 12)).map((x) => ({
+        date: x.at.slice(0, 16).replace('T', ' '), student: who(x.studentId), result: RESULT_NAME[x.result], ...(typeof x.level === 'number' ? { level: levelText(x.level) } : {}),
+        ...(x.mode ? { how: MODE_NAME[x.mode] } : {}), ...(x.hints ? { hints: x.hints } : {}), ...(x.misconception ? { misconception: x.misconception } : {}),
+        question: clip(qs.get(x.questionId)?.stem, 80), ...(x.evidence?.length ? { evidence: x.evidence.map((e) => `${fmtT(e.t)} ${e.who === 'teacher' ? '老师' : e.who === 'student' ? '学生' : ''}：${e.text}`) } : {}),
+        ...(x.recordId ? { recording: x.recordId } : {}), via: x.via === 'replay' ? 'AI 听录像记的' : '老师记的',
+      }));
+      const pending = (d.sorts ?? []).filter((r) => !r.undone && r.recordId).flatMap((r) => r.unsure.filter((u) => ids.has(u.studentId) && onPoint(u.questionId)).map((u) => ({
+        recording: r.recordId, question: clip(qs.get(u.questionId)?.stem, 80), ai: `${u.result ? RESULT_NAME[u.result] : ''}${typeof u.level === 'number' ? ' · ' + levelText(u.level) : ''}`, why: u.why ?? '', evidence: (u.evidence ?? []).map((e) => `${fmtT(e.t)} ${e.text}`),
+      })));
+      const m = mastery(s.id, d, subject);
+      return { text: { student: s.name, points: keys.map((k) => ({ point: pointLabel(k), ...(m.get(k) ? { now: levelText(m.get(k)!.level), attempts: m.get(k)!.n } : { now: '还没有作答' }) })), history: rows, ...(pending.length ? { pending, pending_hint: '这几条 AI 拿不准，老师在「课堂回放」里确认后才算数' } : {}) } };
     },
   },
   {

@@ -85,8 +85,9 @@ export function deleteWithUndo(ids: string[], what = '') {
   toast(`已删除${what || ` ${r.questions.length} 道题`}${r.attempts.length ? `（含 ${r.attempts.length} 条作答记录）` : ''}`, { ms: 10000, action: { label: '撤销', run: () => restoreQuestions(r) } });
   return r;
 }
-export function recordAttempt(studentId: string, questionId: string, result: Result, note?: string): Attempt {
-  const a: Attempt = { id: sid(), studentId, questionId, result, at: nowIso(), ...(note ? { note } : {}) };
+/** extra：课后精析带的几成把握、证据、来源录像，at 可以改成录像里那一刻 */
+export function recordAttempt(studentId: string, questionId: string, result: Result, note?: string, extra?: Partial<Omit<Attempt, 'id' | 'studentId' | 'questionId' | 'result'>>): Attempt {
+  const a: Attempt = { id: sid(), studentId, questionId, result, at: nowIso(), ...(note ? { note } : {}), ...extra };
   useStudy.getState().update((d) => ({ ...d, attempts: [...d.attempts, a] }));
   return a;
 }

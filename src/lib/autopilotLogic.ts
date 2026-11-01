@@ -1,6 +1,7 @@
 // AI 自动处理的纯逻辑：哪些课该写课后总结、哪些课该备课、备课提示词和备课文档。
 // 不碰窗口和主进程，Node 里可以直接测试。
 import { dateKey, localDate, onDate } from '../doc/scheduleModel';
+import { reviewText, type ReviewItem } from './reviewLogic';
 import type { LessonSlot, Student } from './types';
 import { DIFF_NAME, looseJSON, pointLabel, themeLine, type Prep, type Question, type StudentNote, type StudyData } from './studyLogic';
 import { packOf, type SubjectId } from './subjects';
@@ -92,6 +93,8 @@ export interface PrepInput {
   student: Pick<Student, 'name' | 'grade' | 'textbook' | 'tags'>; subject: SubjectId; topic: string; minutes: number;
   points: string[]; weak: string[]; materials: CatEntry[]; files: CatEntry[]; questions: { q: Question; why: string }[];
   notes: StudentNote[]; lastLessons: { date: string; topic: string; summary: string; next: string[] }[];
+  /** 1.6：该复习的知识点、上节课老师说「下节课再练」的事、最近一次课堂精析 */
+  review?: ReviewItem[]; todos?: string[]; lastFine?: string;
 }
 export interface PrepPlan { goals: string[]; flow: { min: number; step: string }[]; focus: string[]; materials: number[]; questions: number[]; parent: string; gaps: string }
 
@@ -112,6 +115,9 @@ export function prepPrompt(i: PrepInput): string {
     `为一对一${pack.stage}课备课。学生：${i.student.name}，${i.student.grade || '年级未填'}，教材 ${i.student.textbook || pack.textbook}${i.student.tags.length ? '，标签：' + i.student.tags.join('、') : ''}。本节课主题：${i.topic || '未填写（按学情定）'}，${i.minutes} 分钟。`,
     i.points.length ? '相关知识点：' + i.points.map(pointLabel).join('、') : '',
     i.weak.length ? '学情里的薄弱点（正确率低于 60%）：' + i.weak.map(pointLabel).join('、') : '',
+    i.lastFine ? '上节课的课堂精析（AI 听了课堂录像）：\n' + i.lastFine.slice(0, 1200) : '',
+    i.todos?.length ? '上节课老师说下节课要做的事（要安排进流程）：\n' + i.todos.map((t) => '- ' + t).join('\n') : '',
+    i.review?.length ? '该复习的知识点（几成把握、多久没练了）：' + i.review.map(reviewText).join('、') : '',
     i.lastLessons.length ? '最近的课后总结：\n' + i.lastLessons.map((l) => `${l.date} ${l.topic}：${l.summary.slice(0, 200)}${l.next.length ? '；下一步：' + l.next.join('；') : ''}`).join('\n') : '',
     i.notes.length ? '家长沟通 / 要求（只作参考，不要照抄隐私内容）：\n' + notesText(i.notes) : '',
     i.materials.length ? '本地课件库里找到的课件（优先用这些）：\n' + i.materials.map((m, k) => `${k + 1}. ${m.title}${m.topic && m.topic !== m.title ? `（${m.topic}）` : ''}`).join('\n') : '本地课件库里没有找到对应课件。',
@@ -134,10 +140,10 @@ export function parsePrep(raw: string, i: PrepInput): PrepPlan | null {
 /** 没配 AI：按学情和找到的资料搭一个备课框架 */
 export function prepByRules(i: PrepInput): PrepPlan {
   const ask = [...i.notes].filter((n) => n.kind !== 'teacher').sort((a, b) => (a.kind === b.kind ? b.at.localeCompare(a.at) : a.kind === 'requirement' ? -1 : 1))[0];
-  const m = i.minutes, focus = [...i.weak.slice(0, 2).map((k) => '薄弱点：' + pointLabel(k)), ...(ask ? [`家长${ask.kind === 'requirement' ? '要求' : '聊天'}（${ask.at.slice(0, 10)}）：${ask.text.replace(/\s+/g, ' ').slice(0, 80)}${ask.text.length > 80 ? '…' : ''}`] : [])];
+  const m = i.minutes, focus = [...(i.todos ?? []).slice(0, 2).map((t) => '上节课说要再练：' + t), ...(i.review ?? []).slice(0, 2).map((r) => '复习：' + reviewText(r)), ...i.weak.slice(0, 2).map((k) => '薄弱点：' + pointLabel(k)), ...(ask ? [`家长${ask.kind === 'requirement' ? '要求' : '聊天'}（${ask.at.slice(0, 10)}）：${ask.text.replace(/\s+/g, ' ').slice(0, 80)}${ask.text.length > 80 ? '…' : ''}`] : [])];
   return {
     goals: i.points.length ? i.points.slice(0, 3).map((k) => '理解并会用：' + pointLabel(k)) : [`完成「${i.topic || '本节课'}」的学习`],
-    flow: [{ min: Math.round(m * 0.1), step: '回顾上节课和作业错题' }, { min: Math.round(m * 0.4), step: '讲新知识 / 专题方法' }, { min: Math.round(m * 0.35), step: '例题讲练，学生先做再讲' }, { min: Math.round(m * 0.15), step: '小结，布置作业' }],
+    flow: [{ min: Math.round(m * 0.1), step: i.todos?.length || i.review?.length ? '回顾上节课：先做上节课说要再练的、该复习的' : '回顾上节课和作业错题' }, { min: Math.round(m * 0.4), step: '讲新知识 / 专题方法' }, { min: Math.round(m * 0.35), step: '例题讲练，学生先做再讲' }, { min: Math.round(m * 0.15), step: '小结，布置作业' }],
     focus, materials: i.materials.slice(0, 2).map((_, k) => k), questions: i.questions.slice(0, 5).map((_, k) => k), parent: '', gaps: i.materials.length ? '' : '本地课件库里没有找到对应课件',
   };
 }

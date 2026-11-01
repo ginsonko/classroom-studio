@@ -48,7 +48,7 @@ function HomeTab() {
   const turnOn = async () => { setErr(''); const why = await canEnable(); if (why) { setErr(why); setAsk(false); return; } setAuto({ on: true }); setAsk(false); void tick(); };
   const items = [...log].reverse().slice(0, 80);
   const check = (k: 'lesson' | 'homework' | 'original' | 'prep' | 'courseware' | 'agent' | 'catalog', label: string, tip?: string) =>
-    <label className="sd-check"><input type="checkbox" checked={s[k]} onChange={(e) => setAuto({ [k]: e.target.checked })} /><span className="ap-check-t">{label}{tip && <i className="sd-note">{tip}</i>}</span></label>;
+    <label className="sd-check"><input type="checkbox" checked={s[k]} onChange={(e) => { setAuto({ [k]: e.target.checked }); if (k === 'lesson' && !e.target.checked) void host.call('setSettings', { afterSummary: false }).catch(() => {}); }} /><span className="ap-check-t">{label}{tip && <i className="sd-note">{tip}</i>}</span></label>;
   return <div className="sd-pane sd-two">
     <section className="sd-form">
       <div className={'ap-switch' + (s.on ? ' on' : '')}>
@@ -57,7 +57,7 @@ function HomeTab() {
       </div>
       {err && <p className="sd-err">{err}</p>}
       <h4>课后</h4>
-      {check('lesson', '下课后写课后总结 + 家长反馈草稿 + 分享长图', '（不会自动发给家长）')}
+      {check('lesson', '下课后写课后总结 + 家长反馈草稿 + 分享长图', '（不会自动发给家长；有录像时等 AI 分析完再写。和「设置 → 下课后」里的是同一个开关，那边单独开了，总开关关着也会写）')}
       {check('homework', '按当天错题和薄弱点从题库组作业')}
       {check('original', '题库不够时 AI 原创补齐（每道独立再解一遍自检）')}
       <label>作业题数<input type="number" min={3} max={20} value={s.hwCount} onChange={(e) => setAuto({ hwCount: Number(e.target.value) })} /></label>

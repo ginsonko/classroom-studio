@@ -8,7 +8,8 @@ import {
   actionText, defaultTake, estimateTokens, findStudentIn, inputKindOf, matchStudent, parseImageReply, parseTextReply, subjectByName, textByRules,
   type Analysis, type SortInput, type StudentLite,
 } from './sortLogic';
-import { guessDifficulty, guessPoints, guessType, looseJSON, type Question, type SortRecord, type StudentNote } from './studyLogic';
+import { guessDifficulty, guessPoints, guessType, looseJSON, type Attempt, type Question, type Result, type SortRecord, type StudentNote, type UnsureItem } from './studyLogic';
+import { unsureExtra } from './fineLogic';
 import { aiConfig } from './studyActions';
 import { online } from './studyAi';
 import { addQuestion, nowIso, recordAttempt, removeQuestions, sid, useStudy } from './studyStore';
@@ -304,9 +305,11 @@ export function undoSort(id: string) {
   const r = (useStudy.getState().data.sorts ?? []).find((x) => x.id === id);
   if (!r || r.undone) return;
   removeQuestions(r.questions);
-  const att = new Set(r.attempts), notes = new Set(r.notes);
+  const att = new Set(r.attempts), notes = new Set(r.notes), enriched = new Set(r.enriched ?? []);
+  // 老师课上点的作答只去掉补上的证据，对错不动
+  const strip = (a: Attempt): Attempt => { if (!enriched.has(a.id) || a.recordId !== r.recordId) return a; const { evidence: _e, recordId: _r, t: _t, ...rest } = a; return rest; };
   useStudy.getState().update((d) => ({
-    ...d, attempts: d.attempts.filter((a) => !att.has(a.id)), notes: d.notes.filter((n) => !notes.has(n.id)),
+    ...d, attempts: d.attempts.filter((a) => !att.has(a.id)).map(strip), notes: d.notes.filter((n) => !notes.has(n.id)),
     sorts: (d.sorts ?? []).map((x) => x.id === id ? { ...x, undone: nowIso() } : x),
   }));
   let cells = 0;
@@ -323,20 +326,31 @@ export function undoSort(id: string) {
   toast(`已撤销${r.recordId ? '这次录像分析' : '这次整理'}：${r.questions.length} 道题、${r.attempts.length} 条作答、${r.notes.length} 条档案记录${cells ? `、${cells} 处学习地图` : ''}`);
 }
 
-/** 批改没认准的题：老师点了对错再记 */
-export function settleUnsure(recordId: string, questionId: string, result: 'right' | 'wrong' | 'half' | null) {
-  const r = (useStudy.getState().data.sorts ?? []).find((x) => x.id === recordId), u = r?.unsure.find((x) => x.questionId === questionId);
+/**
+ * 批改没认准的题 / 课后精析拿不准的题：老师点了对错再记（null = 不记）。
+ * 课后精析的那几道带着 AI 找到的原话证据，和老师选的对错一致时保留几成把握；作答记在录像里那一刻。
+ */
+export function settleUnsure(recordId: string, questionId: string, result: Result | null, studentId?: string) {
+  const r = (useStudy.getState().data.sorts ?? []).find((x) => x.id === recordId), u = r?.unsure.find((x) => x.questionId === questionId && (!studentId || x.studentId === studentId));
   if (!r || !u) return;
-  const a = result ? recordAttempt(u.studentId, questionId, result, 'AI 整理：老师确认') : null;
-  const name = studentName(u.studentId), left = r.unsure.filter((y) => y.studentId === u.studentId).length - 1;
-  const lines = r.lines.map((l) => l.startsWith(name + '：') ? l.replace(/\d+ 道批改没认准，等你点对错/, left > 0 ? `${left} 道批改没认准，等你点对错` : '没认准的已由你补记') : l);
-  useStudy.getState().update((d) => ({ ...d, sorts: (d.sorts ?? []).map((x) => x.id === recordId ? { ...x, lines, unsure: x.unsure.filter((y) => y.questionId !== questionId), attempts: a ? [...x.attempts, a.id] : x.attempts } : x) }));
+  const a = result ? recordAttempt(u.studentId, questionId, result, r.recordId ? '课后精析：老师确认' : 'AI 整理：老师确认', r.recordId ? unsureExtra(u, result) : undefined) : null;
+  const same = (y: UnsureItem) => y.questionId === u.questionId && y.studentId === u.studentId;
+  let lines: string[];
+  if (r.recordId) {
+    const left = r.unsure.length - 1;
+    lines = r.lines.map((l) => l.replace(/\d+ 道拿不准，等你确认/, left > 0 ? `${left} 道拿不准，等你确认` : '拿不准的已由你确认'));
+  } else {
+    const name = studentName(u.studentId), left = r.unsure.filter((y) => y.studentId === u.studentId).length - 1;
+    lines = r.lines.map((l) => l.startsWith(name + '：') ? l.replace(/\d+ 道批改没认准，等你点对错/, left > 0 ? `${left} 道批改没认准，等你点对错` : '没认准的已由你补记') : l);
+  }
+  useStudy.getState().update((d) => ({ ...d, sorts: (d.sorts ?? []).map((x) => x.id === recordId ? { ...x, lines, unsure: x.unsure.filter((y) => !same(y)), attempts: a ? [...x.attempts, a.id] : x.attempts } : x) }));
 }
 
 export function finishTodo(noteId: string) {
   useStudy.getState().update((d) => ({ ...d, notes: d.notes.map((n) => n.id === noteId ? { ...n, done: nowIso() } : n) }));
 }
 
-export const openTodos = (notes: StudentNote[]) => notes.filter((n) => n.todo && !n.done);
+/** 没处理的待办；默认只看家长调课（「下节课再练」在备课时看） */
+export const openTodos = (notes: StudentNote[], kind: NonNullable<StudentNote['todo']> = 'reschedule') => notes.filter((n) => n.todo === kind && !n.done);
 export const describe = (a: Analysis) => (k: Parameters<typeof actionText>[1]) => actionText(a, k, studentName(a.studentId));
 export const subjectText = (id: SubjectId) => `${packOf(id).stage || subjectName(id)}`;

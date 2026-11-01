@@ -47,7 +47,7 @@ class Recording {
   const recordId=id(), stamp=new Date().toISOString().replace(/[:.]/g,'-');
   const folder=path.join(this.directory,stamp+'-'+recordId.slice(0,8));await fsp.mkdir(folder);
   const meta={id:recordId,title:settings.title||'课堂回放',studentId:settings.studentId||null,chapters:[],createdAt:new Date().toISOString(),phase:'starting',raw:path.join(folder,'capture.webm'),mp4:path.join(folder,'课堂回放.mp4'),bytes:0,synthetic,settings:{microphone:settings.microphone,systemAudio:settings.systemAudio,bitrate:settings.bitrate}};
-  this.current={...meta,folder,handle:await fsp.open(meta.raw,'wx'),seq:0}; this.queue=Promise.resolve();
+  this.current={...meta,folder,handle:await fsp.open(meta.raw,'wx'),seq:0,voiceSeq:0,voiceBytes:0}; this.queue=Promise.resolve();this.voiceQueue=Promise.resolve();
   await atomicJSON(path.join(folder,'recording.json'),meta);
   this.update({phase:'starting',id:recordId,studentId:meta.studentId,bytes:0,error:null,warning:null,path:null,folder,micLevel:0,systemLevel:0,startedAt:null});
   this.send({type:'record:start',recordId,settings,synthetic});
@@ -69,7 +69,23 @@ class Recording {
   this.queue=work.catch(async e=>{await this.fail(e.message,true);});
   await work; return {bytes:c.bytes};
  }
- async save(c=this.current){if(!c)return;const {handle,folder,failurePromise,...fields}=c,meta=JSON.parse(JSON.stringify(fields));const task=this.metaQueue.then(()=>atomicJSON(path.join(folder,'recording.json'),meta));this.metaQueue=task.catch(()=>{});await task;}
+ /**
+  * 课后语音转写用的双声道纯音频（左：老师麦克风，右：系统声音）。和录像分开写：这里出错只停语音轨，录像照常。
+  */
+ async voice(data){
+  const c=this.current;if(!c||data.recordId!==c.id||c.failing||c.voiceFailed)return {ok:false};
+  const chunk=Buffer.from(data.bytes);if(chunk.length>8*1024*1024)return {ok:false};
+  const work=this.voiceQueue.then(async()=>{
+   if(c.voiceFailed||this.current!==c)return;
+   if(data.seq!==c.voiceSeq)throw new Error('语音分块顺序中断');
+   if(!c.voiceHandle){c.voice=path.join(c.folder,'voice.webm');c.voiceHandle=await fsp.open(c.voice,'wx');}
+   await c.voiceHandle.writeFile(chunk);c.voiceSeq++;c.voiceBytes+=chunk.length;
+  });
+  this.voiceQueue=work.catch(async e=>{c.voiceFailed=true;c.voiceError=String(e.message||e);try{await c.voiceHandle?.close();}catch{}c.voiceHandle=null;});
+  await this.voiceQueue;return {ok:!c.voiceFailed};
+ }
+ async closeVoice(c){await this.voiceQueue?.catch(()=>{});if(c.voiceHandle){try{await c.voiceHandle.sync();await c.voiceHandle.close();}catch{}c.voiceHandle=null;}}
+ async save(c=this.current){if(!c)return;const {handle,voiceHandle,folder,failurePromise,...fields}=c,meta=JSON.parse(JSON.stringify(fields));const task=this.metaQueue.then(()=>atomicJSON(path.join(folder,'recording.json'),meta));this.metaQueue=task.catch(()=>{});await task;}
  /** 课堂时间线：换课件、翻页、记作答……记下离开始录像多少秒，跟着 recording.json 存（录像分块写入时一起落盘） */
  chapter(v){
   const c=this.current;if(!c||this.status.phase!=='recording'||!c.startedAt)return false;
@@ -100,9 +116,16 @@ class Recording {
  /** 给 recording.json 补字段（下课分析的结果） */
  async patchMeta(rid,patch){
   const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
-  const file=path.join(item.folder,'recording.json'),meta=await readJSON(file,null);if(!meta)throw new Error('找不到这段录像的信息');
-  if(patch&&typeof patch==='object'&&'analysis' in patch)meta.analysis=patch.analysis??null;
-  const task=this.metaQueue.then(()=>atomicJSON(file,meta));this.metaQueue=task.catch(()=>{});await task;return true;
+  if(!patch||typeof patch!=='object')return true;
+  // 渲染进程只能改这两项：录像分析结果、下课后流水线（板书、课后总结）
+  const p={};if('analysis' in patch)p.analysis=patch.analysis??null;if('after' in patch)p.after=patch.after&&typeof patch.after==='object'?patch.after:null;
+  if(Object.keys(p).length)await this.mergeMeta(item.folder,p);return true;
+ }
+ /** 改 recording.json 的几个字段。读和写都排进同一个队列：下课分析、微信分段、语音转写可能同时在写，免得互相覆盖 */
+ async mergeMeta(folder,patch){
+  const file=path.join(folder,'recording.json');
+  const task=this.metaQueue.then(async()=>{const m=await readJSON(file,null);if(!m)throw new Error('找不到这段录像的信息');for(const [k,v] of Object.entries(patch)){if(v===null)delete m[k];else m[k]=v;}await atomicJSON(file,m);});
+  this.metaQueue=task.catch(()=>{});await task;
  }
  async stop(){if(!this.current||!['starting','recording'].includes(this.status.phase))return this.status;clearTimeout(this.startTimeout);this.update({phase:'stopping'});this.send({type:'record:stop',recordId:this.current.id});return this.status;}
  /** 等到这一节真正收尾（原始文件已关闭），最多等 ms */
@@ -110,7 +133,7 @@ class Recording {
  async stopped(data){
   if(!this.current||data.recordId!==this.current.id)return;
   clearTimeout(this.startTimeout);await this.queue;
-  const c=this.current;if(c.handle){await c.handle.close();c.handle=null;}c.phase='recoverable';c.endedAt=Date.now();
+  const c=this.current;if(c.handle){await c.handle.close();c.handle=null;}await this.closeVoice(c);c.phase='recoverable';c.endedAt=Date.now();
   if(!c.bytes){c.phase='cancelled';await this.save(c);this.current=null;this.update({phase:'idle',error:null,bytes:0});return;}
   c.pending=true;await this.save(c);this.current=null;
   this.update({phase:'saved',id:c.id,studentId:c.studentId,folder:c.folder,path:null,error:null});
@@ -143,7 +166,7 @@ class Recording {
   const c=this.current;if(!c)return;if(c.failing)return;
   c.failing=true;clearTimeout(this.startTimeout);this.send({type:'record:abort',recordId:c.id});
   if(!fromWrite)await this.queue.catch(()=>{});
-  c.phase='recoverable';c.error=String(message);try{if(c.handle){await c.handle.sync();await c.handle.close();c.handle=null;}await this.save(c);}catch(e){c.error+='；收尾保存：'+e.message;}
+  c.phase='recoverable';c.error=String(message);await this.closeVoice(c);try{if(c.handle){await c.handle.sync();await c.handle.close();c.handle=null;}await this.save(c);}catch(e){c.error+='；收尾保存：'+e.message;}
   if(this.current===c){this.current=null;this.update({phase:'error',error:c.error});}
  }
  async convert(folder,{seconds=0,progress}={}){
@@ -153,7 +176,8 @@ class Recording {
   const total=seconds||((meta.endedAt&&meta.startedAt)?(meta.endedAt-meta.startedAt)/1000:0);
   const onOutput=total>0&&progress?(s=>{const m=/time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(s);if(m)progress(Math.min(0.99,(+m[1]*3600+ +m[2]*60+ +m[3])/total));}):undefined;
   await runProcess(this.ffmpeg,['-hide_banner','-y','-fflags','+genpts','-i',raw,'-map','0:v:0','-map','0:a:0?','-vf','pad=ceil(iw/2)*2:ceil(ih/2)*2','-c:v','libx264','-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart',temp],{timeout:6*60*60*1000,onOutput,lowPriority:true});
-  await fsp.rename(temp,output);meta.phase='complete';meta.pending=false;meta.mp4=output;meta.error=null;await atomicJSON(path.join(folder,'recording.json'),meta);
+  // 转码要几分钟，这期间下课存板书等可能往 recording.json 里写过东西：只改这几项，别拿开头读的旧内容整个盖回去
+  await fsp.rename(temp,output);await this.mergeMeta(folder,{phase:'complete',pending:false,mp4:output,error:null});
   // MP4 已完整生成，原始 WebM 体积和它差不多，留着只会让磁盘翻倍
   try{if((await fsp.stat(output)).size>0)await fsp.unlink(raw);}catch{}
   progress?.(1);return output;
@@ -227,7 +251,7 @@ class Recording {
   for(const e of await fsp.readdir(this.directory,{withFileTypes:true})){if(!e.isDirectory())continue;const folder=path.join(this.directory,e.name);const m=await readJSON(path.join(folder,'recording.json'),null);if(!m)continue;
     const live=this.current?.id===m.id&&this.live;const job=this.jobs.find(j=>j.id===m.id);
     if(m.phase==='cancelled')continue;const ready=fs.existsSync(path.join(folder,'课堂回放.mp4'));
-    let bytes=0;for(const f of ['capture.webm','课堂回放.mp4'])try{bytes+=(await fsp.stat(path.join(folder,f))).size;}catch{}
+    let bytes=0;for(const f of ['capture.webm','课堂回放.mp4','voice.webm'])try{bytes+=(await fsp.stat(path.join(folder,f))).size;}catch{}
     const parts=[];for(const p of Array.isArray(m.parts)?m.parts:[])try{const s=await fsp.stat(path.join(folder,PARTS_DIR,p.file));bytes+=s.size;parts.push({...p,path:path.join(folder,PARTS_DIR,p.file)});}catch{}
     rows.push({...m,folder,bytes,parts,splitting:this.splitting.has(m.id),mp4:path.join(folder,'课堂回放.mp4'),raw:path.join(folder,'capture.webm'),phase:live?this.status.phase:job?'converting':ready?'complete':'recoverable',progress:job?.progress});
   }return rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));

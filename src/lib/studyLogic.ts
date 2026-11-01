@@ -27,7 +27,18 @@ export interface Question {
   batch?: string;            // 同一次导入 / 同一次 AI 整理带进来的题共用一个批次号，可以整批撤回
   needsAi?: boolean;         // 拍照的卷子没配 AI：先存原图，配好 AI 后再拆题、识题
 }
-export interface Attempt { id: string; studentId: string; questionId: string; result: Result; at: string; note?: string }
+/** 课堂原话证据：录像里第 t 秒谁说的 */
+export interface Evidence { t: number; who: string; text: string }
+export interface Attempt {
+  id: string; studentId: string; questionId: string; result: Result; at: string; note?: string;
+  /** 1.6 起课后精析写的作答带这些；老数据没有，照旧按对 / 错 / 半对算 */
+  level?: number;            // 0–10 成把握
+  conf?: number;             // AI 的把握 0–1
+  via?: 'teacher' | 'replay';
+  recordId?: string; t?: number;
+  mode?: 'student_solo' | 'guided';
+  hints?: number; misconception?: string; evidence?: Evidence[];
+}
 /** 班组 id → 成员。按学生查的函数（掌握度、错题本、画像、组作业）传班组 id 时汇总全部成员 */
 const GROUP = new Map<string, Set<string>>();
 export function indexGroups(list: { id: string; kind?: string; members?: string[] }[]) { GROUP.clear(); for (const s of list) if (s.kind) GROUP.set(s.id, new Set(s.members ?? [])); }
@@ -49,19 +60,31 @@ export interface Portrait { text: string; at: string; via: 'ai' | 'rules' }
 export interface StudentNote {
   id: string; studentId: string; at: string; kind: 'parent' | 'requirement' | 'teacher'; text: string; source?: string;
   /** 需要老师动手的事（家长要调课：只提醒，课表不自动改）；done 是处理掉的时间 */
-  todo?: 'reschedule'; done?: string;
+  todo?: 'reschedule' | 'practice'; done?: string;
 }
 /** 一次 AI 整理写进去的东西，整批撤销用 */
 export interface SortRecord {
   id: string; at: string; title: string; studentIds: string[]; lines: string[];
   questions: string[]; attempts: string[]; notes: string[];
   /** 批改没认准的题：归档后老师点对错 */
-  unsure: { questionId: string; studentId: string }[];
+  unsure: UnsureItem[];
+  /** 课后精析：老师讲的例题（只算讲过，不算学生做过） */
+  taught?: string[];
+  /** 课后精析给老师课上手点的作答补了证据（撤销时去掉证据，不动对错） */
+  enriched?: string[];
   /** 下课分析录像时自动改的学习地图格子（mapKey = 学生@学科），撤销时还是这样的才改回去 */
   map?: { mapKey: string; ci: number; si: number; from: ChapterState; to: ChapterState }[];
   /** 来自哪段录像 */
   recordId?: string;
   undone?: string;
+}
+/** 待确认：AI 给的建议（课后精析），老师点一下确认或改 */
+export interface UnsureItem {
+  questionId: string; studentId: string;
+  result?: Result; level?: number; conf?: number; why?: string;
+  /** 录像里第几秒，和那一刻的时间（确认后作答记在那一刻） */
+  t?: number; at?: string;
+  evidence?: Evidence[]; mode?: Attempt['mode']; misconception?: string; hints?: number; recordId?: string;
 }
 /** 一次备课：给哪节课、用哪些本地课件和题、AI 写的备课建议和导出的文件 */
 export interface Prep {
@@ -170,8 +193,19 @@ export function findDuplicate(stem: string, pool: Question[], skipId?: string): 
 }
 
 // ── 掌握度 ─────────────────────────────────────────────
-export interface Mastery { key: string; score: number; n: number; right: number; wrong: number; half: number; last: string }
+export interface Mastery { key: string; score: number; n: number; right: number; wrong: number; half: number; last: string; /** 0–10 成把握 */ level: number }
 const VALUE: Record<Result, number> = { right: 1, half: 0.5, wrong: 0 };
+/** 一次作答的得分：带了几成把握的按 level / 10，老数据按对 1 / 半对 0.5 / 错 0 */
+export const scoreOf = (a: Pick<Attempt, 'result' | 'level'>) => (typeof a.level === 'number' && Number.isFinite(a.level) ? Math.max(0, Math.min(10, a.level)) / 10 : VALUE[a.result]);
+/** 算不算没做好（进错题本）：做错 / 半对，或者只有四成以下把握 */
+export const isMiss = (a: Pick<Attempt, 'result' | 'level'>) => a.result !== 'right' || (typeof a.level === 'number' && a.level <= 4);
+const CN = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+/** 7 → 七成把握 */
+export const levelText = (level: number) => { const n = Math.max(0, Math.min(10, Math.round(level))); return n === 0 ? '还没把握' : CN[n] + '成把握'; };
+/** 没给 level 的时候按对错推一个 */
+export const levelOfResult = (r: Result) => (r === 'right' ? 8 : r === 'half' ? 5 : 2);
+/** 只给了 level 的时候按 level 定对错 */
+export const resultOfLevel = (level: number): Result => (level >= 8 ? 'right' : level >= 5 ? 'half' : 'wrong');
 /** 每个知识点：最近的作答权重最大（每往前一次 ×0.75），同一道题只算最近一次之前的历史也保留，体现订正过程。 */
 export function mastery(studentId: string, d: Pick<StudyData, 'attempts' | 'questions'>, subject?: SubjectId): Map<string, Mastery> {
   const qs = new Map(d.questions.map((q) => [q.id, q]));
@@ -186,8 +220,9 @@ export function mastery(studentId: string, d: Pick<StudyData, 'attempts' | 'ques
   for (const [key, list] of per) {
     list.sort((a, b) => b.at.localeCompare(a.at));
     let w = 1, sum = 0, total = 0;
-    for (const a of list) { sum += VALUE[a.result] * w; total += w; w *= 0.75; }
-    out.set(key, { key, score: total ? sum / total : 0, n: list.length, right: list.filter((a) => a.result === 'right').length, wrong: list.filter((a) => a.result === 'wrong').length, half: list.filter((a) => a.result === 'half').length, last: list[0].at });
+    for (const a of list) { sum += scoreOf(a) * w; total += w; w *= 0.75; }
+    const score = total ? sum / total : 0;
+    out.set(key, { key, score, level: Math.round(score * 10), n: list.length, right: list.filter((a) => a.result === 'right').length, wrong: list.filter((a) => a.result === 'wrong').length, half: list.filter((a) => a.result === 'half').length, last: list[0].at });
   }
   return out;
 }
@@ -208,11 +243,11 @@ export function wrongBook(studentId: string, d: Pick<StudyData, 'attempts' | 'qu
   const out: WrongItem[] = [];
   for (const [qid, list] of by) {
     list.sort((a, b) => a.at.localeCompare(b.at));
-    const wrongs = list.filter((a) => a.result !== 'right');
+    const wrongs = list.filter(isMiss);
     if (!wrongs.length) continue;
     // 班组：哪位成员最近一次还没做对，这道就还没订正
     const latest = new Map(list.map((a) => [a.studentId, a] as const));
-    out.push({ q: qs.get(qid)!, history: list, status: [...latest.values()].every((a) => a.result === 'right') ? 'fixed' : 'open', wrongCount: wrongs.length, lastWrong: wrongs[wrongs.length - 1].at });
+    out.push({ q: qs.get(qid)!, history: list, status: [...latest.values()].every((a) => !isMiss(a)) ? 'fixed' : 'open', wrongCount: wrongs.length, lastWrong: wrongs[wrongs.length - 1].at });
   }
   return out.sort((a, b) => (a.status === b.status ? b.lastWrong.localeCompare(a.lastWrong) : a.status === 'open' ? -1 : 1));
 }
@@ -228,7 +263,7 @@ export const portraitKey = (studentId: string, subject: SubjectId = 'physics') =
 export function profile(studentId: string, d: StudyData, now = Date.now(), subject?: SubjectId): Profile {
   const qs = subject ? new Map(d.questions.map((q) => [q.id, q])) : null;
   const mine = d.attempts.filter((a) => { if (!belongs(a.studentId, studentId)) return false; if (!qs) return true; const q = qs.get(a.questionId); return !!q && questionSubject(q) === subject; });
-  const acc = (list: Attempt[]) => (list.length ? list.reduce((s, a) => s + VALUE[a.result], 0) / list.length : null);
+  const acc = (list: Attempt[]) => (list.length ? list.reduce((s, a) => s + scoreOf(a), 0) / list.length : null);
   const month = now - 30 * 864e5;
   const m = [...mastery(studentId, d, subject).values()];
   const wb = wrongBook(studentId, d).filter((w) => !subject || questionSubject(w.q) === subject);
@@ -334,7 +369,7 @@ export function answersMatch(a: string, b: string): boolean {
 /** roots：知识网络追溯出的、和本节课错题相关的薄弱前置（已写成一句话） */
 export interface LessonInput { student: string; topic: string; minutes?: number; attempts: { q: Question; a: Attempt }[]; notes: string; homework?: string; roots?: string[]; subject?: SubjectId }
 export function lessonByRules(i: LessonInput): Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent'> {
-  const right = i.attempts.filter((x) => x.a.result === 'right'), bad = i.attempts.filter((x) => x.a.result !== 'right');
+  const right = i.attempts.filter((x) => !isMiss(x.a)), bad = i.attempts.filter((x) => isMiss(x.a));
   const pts = (list: typeof i.attempts) => [...new Set(list.flatMap((x) => x.q.points))].map(pointLabel);
   const strengths = right.length ? [`${pts(right).slice(0, 3).join('、') || '课堂练习'}：${right.length} 题做对`] : [];
   const problems = bad.length ? [`${pts(bad).slice(0, 3).join('、') || '课堂练习'}：${bad.length} 题需要订正`] : [];

@@ -1,6 +1,7 @@
 // 公式轮廓缓存。draw() 是同步的：第一次遇到某个公式时先返回 null（画纯文本兜底），
 // 后台加载 MathJax 编译好后 texTick() 变化，画布据此重画。
 import type { TexShape } from './tex';
+import { wakeInk } from './wake';
 
 type Tex = typeof import('./tex');
 const cache = new Map<string, TexShape | null>();
@@ -14,7 +15,7 @@ export function texShape(tex: string): TexShape | null | undefined {
   if (cache.has(tex)) return cache.get(tex)!;
   if (!pending.has(tex)) {
     pending.add(tex);
-    void loadTex().then((m) => { try { cache.set(tex, m.compileTex(tex)); } catch { cache.set(tex, null); } }, () => cache.set(tex, null)).finally(() => { pending.delete(tex); tick++; });
+    void loadTex().then((m) => { try { cache.set(tex, m.compileTex(tex)); } catch { cache.set(tex, null); } }, () => cache.set(tex, null)).finally(() => { pending.delete(tex); tick++; wakeInk(); });
   }
   return undefined;
 }
@@ -22,7 +23,7 @@ export function texShape(tex: string): TexShape | null | undefined {
 /** 编译并返回宽高比（宽 / 高）；语法错误时抛出 MathJax 的错误消息 */
 export async function texAspect(tex: string): Promise<number> {
   const m = await loadTex(), s = m.compileTex(tex);
-  cache.set(tex, s); tick++;
+  cache.set(tex, s); tick++; wakeInk();
   return s.h > 0 ? s.w / s.h : 1;
 }
 
@@ -33,7 +34,7 @@ export async function texMeasurer(): Promise<(tex: string) => TexShape | null> {
     if (cache.has(tex)) return cache.get(tex)!;
     let s: TexShape | null = null;
     try { s = m.compileTex(tex); if (!(s.w > 0 && s.h > 0)) s = null; } catch { s = null; }
-    cache.set(tex, s); tick++;
+    cache.set(tex, s); tick++; wakeInk();
     return s;
   };
 }

@@ -60,6 +60,11 @@ const stats = (a) => ({ n: a.length, p50: pct(a, 50), p95: pct(a, 95), max: +Mat
   await S(`__studioQA.useStore.getState().setShared({tool:'pen'});return true`);
   await sleep(600);
   await S(`const P=window.__perf;P.frames=[];P.gaps=[];P.lat=[];P.pending=[];return true`);
+  // 老师那边：教师窗口（学生画面监视器）和浮层也在跟着更新，记下它们的长任务和帧间隔
+  await api.dock.ensure().catch(() => {});
+  const side = { teacher, dock: api.dock.window };
+  const sideProbe = `(()=>{const P=window.__side={long:[],gaps:[],last:0};try{new PerformanceObserver((l)=>{for(const e of l.getEntries())P.long.push(e.duration)}).observe({type:'longtask',buffered:false})}catch{};const raf=window.requestAnimationFrame.bind(window);const tick=(t)=>{if(P.last)P.gaps.push(t-P.last);P.last=t;raf(tick)};raf(tick);return true})()`;
+  for (const w of Object.values(side)) if (w && !w.isDestroyed()) await w.webContents.executeJavaScript(sideProbe).catch(() => {});
 
   // 主进程：每 4 ms 发一个鼠标移动（≈ 240 Hz 数位板），记下每次实际发出的时间比计划晚了多少：主进程卡住时笔的输入就是这样被耽误的
   const late = [];
@@ -86,6 +91,8 @@ const stats = (a) => ({ n: a.length, p50: pct(a, 50), p95: pct(a, 95), max: +Mat
   await sleep(1500);
   const r = await S(`const P=window.__perf;return {frames:P.frames,gaps:P.gaps,lat:P.lat}`);
   const strokes1 = await S(`return (__studioQA.useStore.getState().ink['board#0']||[]).length`);
+  const sideStats = {};
+  for (const [n, w] of Object.entries(side)) if (w && !w.isDestroyed()) { const p = await w.webContents.executeJavaScript('window.__side').catch(() => null); if (p) sideStats[n] = { longTasks: p.long.length, longMax: +Math.max(0, ...p.long).toFixed(1), frameGap: stats(p.gaps) }; }
   const savedBytes = fs.statSync(path.join(process.env.CS_DATA_DIR, 'workspace.json')).size;
   const busy = r.frames.filter((x) => x > 0.05);
   const result = {
@@ -93,7 +100,7 @@ const stats = (a) => ({ n: a.length, p50: pct(a, 50), p95: pct(a, 95), max: +Mat
     wrote: strokes1 - strokes0, elapsedMs: Math.round(elapsed),
     paintMsPerFrame: stats(busy), frameGapMs: stats(r.gaps), slowFrames25: r.gaps.filter((g) => g > 25).length,
     inputToPaintMs: stats(r.lat),
-    inputLateMs_continuous: stats(lateA), inputLateMs_afterPause: stats(lateB), inputStalls50: [...lateA, ...lateB].filter((x) => x > 50).length,
+    inputLateMs_continuous: stats(lateA), inputLateMs_afterPause: stats(lateB), inputStalls50: [...lateA, ...lateB].filter((x) => x > 50).length, side: sideStats,
   };
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 1));
   console.log('BOARD PERF', JSON.stringify(result));

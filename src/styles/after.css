@@ -1,0 +1,35 @@
+/* 顶栏「下课后」胶囊和流水线 */
+.ac-wrap { position: relative; }
+.tb-after { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px; border-radius: 14px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--fg-1); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); }
+.tb-after:hover { background: var(--bg-3); }
+.tb-after b { color: var(--cue); font-weight: 700; }
+.tb-after.run { color: var(--cue); box-shadow: inset 0 0 0 1px var(--cue); }
+.tb-after.pending { color: #1a1204; background: var(--warn); box-shadow: none; }
+.tb-after.error { color: var(--live); box-shadow: inset 0 0 0 1px var(--live); }
+.tb-after.done { color: var(--ok); }
+.tb-after .spin, .ac-pop .spin { animation: ac-spin 1s linear infinite; }
+@keyframes ac-spin { to { transform: rotate(360deg); } }
+.ac-pop { top: calc(100% + 6px); left: 0; width: 340px; padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 8px; }
+.ac-pop header { display: flex; flex-direction: column; gap: 2px; padding: 0 2px; }
+.ac-pop header b { font-size: 13px; color: var(--fg-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-pop header small { font-size: 11.5px; color: var(--fg-3); }
+.ac-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ac-s { position: relative; display: grid; grid-template-columns: 20px 64px 1fr auto; align-items: center; gap: 6px; min-height: 30px; padding: 2px 2px; font-size: 12px; }
+/* 步骤之间的竖线：像一条流水线 */
+.ac-s:not(:last-child)::after { content: ''; position: absolute; left: 11px; top: 22px; bottom: -8px; width: 1px; background: var(--line); }
+.ac-s > i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 10px; font-style: normal; color: var(--fg-3); background: var(--bg-3); z-index: 1; }
+.ac-s > b { font-weight: 600; color: var(--fg-1); }
+.ac-s > span { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-s.done > i { color: #04161a; background: var(--ok); }
+.ac-s.run > i { color: #04161a; background: var(--cue); }
+.ac-s.run > span { color: var(--cue); }
+.ac-s.error > i { color: #fff; background: var(--live); }
+.ac-s.error > span { color: var(--live); }
+.ac-s.off > b, .ac-s.skip > b, .ac-s.off > span, .ac-s.skip > span { color: var(--fg-3); }
+.ac-s button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 600; color: var(--cue); background: var(--cue-soft); white-space: nowrap; }
+.ac-s button:disabled { opacity: .5; }
+.ac-pop footer { display: flex; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.ac-pop footer button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--fg-1); background: var(--bg-3); }
+.ac-pop footer button:hover { color: var(--fg-0); }
+.ac-pop footer button.ghost { background: none; color: var(--fg-3); }
+.ac-pop .flex { flex: 1; }

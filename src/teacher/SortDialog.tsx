@@ -5,10 +5,11 @@ import { useStore } from '../lib/store';
 import { useStudy } from '../lib/studyStore';
 import { KIND_NAME, actionsOf, markCount, type Analysis } from '../lib/sortLogic';
 import {
-  addImageData, addPaths, addText, analyze, openSort, archive, closeSort, describe, finishTodo, openTodos, patchAnalysis, removeItem, resetSort, settleUnsure, sortProgress, undoSort, useSort,
+  addImageData, addPaths, addText, analyze, openSort, archive, closeSort, describe, finishTodo, openTodos, patchAnalysis, removeItem, resetSort, sortProgress, undoSort, useSort,
 } from '../lib/sort';
 import { LEVELS, byLevel } from '../lib/subjects';
 import type { SortRecord } from '../lib/studyLogic';
+import { PendingChecks } from './PendingChecks';
 import '../styles/sort.css';
 
 const LEVEL_NAME = { senior: '高中', junior: '初中', primary: '小学' } as const;
@@ -191,26 +192,7 @@ function Done({ record }: { record: SortRecord }) {
   </div>;
 }
 
-function Unsure({ record }: { record: SortRecord }) {
-  const live = useStudy((s) => (s.data.sorts ?? []).find((x) => x.id === record.id)) ?? record;
-  const qs = useStudy((s) => s.data.questions);
-  if (!live.unsure.length || live.undone) return null;
-  return <div className="sort-unsure"><b>这几道批改没认准，点一下对错再记</b>
-    {live.unsure.map((u) => {
-      const q = qs.find((x) => x.id === u.questionId);
-      if (!q) return null;
-      return <div key={u.questionId} className="sort-uq">
-        {q.image ? <img src={host.fileUrl(q.image)} alt="题图" /> : <span>{q.stem.slice(0, 60)}</span>}
-        <div>
-          <button onClick={() => settleUnsure(live.id, u.questionId, 'right')}>对</button>
-          <button onClick={() => settleUnsure(live.id, u.questionId, 'half')}>半对</button>
-          <button onClick={() => settleUnsure(live.id, u.questionId, 'wrong')}>错</button>
-          <button className="ghost" onClick={() => settleUnsure(live.id, u.questionId, null)}>不记</button>
-        </div>
-      </div>;
-    })}
-  </div>;
-}
+const Unsure = ({ record }: { record: SortRecord }) => <PendingChecks recordId={record.id} fallback={record} />;
 
 function Records({ records }: { records: SortRecord[] }) {
   const notes = useStudy((s) => s.data.notes), students = useStore((x) => x.students);

@@ -125,6 +125,21 @@ class Study {
     this.log?.info('板书存到学生名下', pdf.length, file);
     return normal(file);
   }
+  /** 板书长图（PNG，长黑板太长时是几张）放在 PDF 旁边 */
+  async boardPng({ student, title, pngs }) {
+    if (!Array.isArray(pngs) || !pngs.length || pngs.length > 60) throw Error('长图张数不对');
+    for (const p of pngs) if (typeof p !== 'string' || !p.startsWith('data:image/png;base64,') || p.length > 60 * 1024 * 1024) throw Error('长图数据无效');
+    const folder = path.join(this.dir, '板书', safeName(student));
+    await fs.promises.mkdir(folder, { recursive: true });
+    const base = `${safeName(title)}-${stamp()}-${crypto.randomUUID().slice(0, 4)}`, out = [];
+    for (let i = 0; i < pngs.length; i++) {
+      const file = path.join(folder, pngs.length > 1 ? `${base}-${String(i + 1).padStart(2, '0')}.png` : `${base}.png`);
+      await fs.promises.writeFile(file, Buffer.from(pngs[i].slice(22), 'base64'));
+      out.push(normal(file));
+    }
+    this.log?.info('板书长图存到学生名下', pngs.length, folder);
+    return out;
+  }
   folder(kind) { const f = kind && KINDS[kind] ? path.join(this.dir, KINDS[kind]) : this.dir; fs.mkdirSync(f, { recursive: true }); return f; }
 }
 

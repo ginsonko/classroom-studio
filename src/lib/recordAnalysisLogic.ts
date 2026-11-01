@@ -5,6 +5,8 @@ import { localOf, packOf, pointKey, type SubjectId, type SubjectPack } from './s
 import { planMap, type Grid, type MapPlan } from './mapLogic';
 
 export const MAX_FRAMES = 12;
+/** 有课堂原话时多截几张：学生开口答题的时刻也截 */
+export const MAX_FRAMES_VOICE = 18;
 export const BATCH = 6;
 const GAP = 20;
 
@@ -14,10 +16,11 @@ const mmss = (t: number) => { const s = Math.max(0, Math.floor(t)); return `${Ma
  * 挑截帧的时间点：
  * - 记作答 / 收题的那一刻（题就在屏幕上）；
  * - 每段课件 / 每页 / 每块黑板结束前 2 秒（写满了的样子）；
+ * - 学生开口答题的时刻（extra，来自课堂原话）；
  * - 还不够就按时长均匀补。
  * 彼此至少隔 20 秒，最多 max 张，按时间排好。
  */
-export function pickFrames(chapters: Chapter[], duration: number, max = MAX_FRAMES): number[] {
+export function pickFrames(chapters: Chapter[], duration: number, max = MAX_FRAMES, extra: number[] = []): number[] {
   if (!(duration > 1)) return [];
   const end = Math.max(0, duration - 1), list = [...chapters].filter((c) => c.t >= 0 && c.t <= duration).sort((a, b) => a.t - b.t);
   const marks = list.filter((c) => c.kind === 'attempt' || c.kind === 'question').map((c) => Math.max(0, c.t - 1));
@@ -26,6 +29,7 @@ export function pickFrames(chapters: Chapter[], duration: number, max = MAX_FRAM
   const out: number[] = [];
   const take = (t: number) => { if (out.length < max && out.every((x) => Math.abs(x - t) >= Math.min(GAP, duration / (max * 2)))) out.push(t); };
   for (const t of spread(marks, Math.ceil(max / 2))) take(t);
+  for (const t of spread(extra.filter((t) => t >= 0 && t <= end), Math.ceil(max / 3))) take(t);
   for (const t of spread(ends, max)) take(t);
   for (let i = 1; out.length < max && i <= max; i++) take(Math.min(end, (duration * i) / (max + 1)));
   return out.sort((a, b) => a - b).map((t) => Math.round(t * 10) / 10);

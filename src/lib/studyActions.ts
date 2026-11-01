@@ -19,7 +19,9 @@ export async function buildLessonNote(o: { studentId: string; name: string; date
   const bad = [...new Set(todays.filter((x) => x.a.result !== 'right').flatMap((x) => x.q.points))];
   const subject = subjectOfStudent(o.studentId);
   const roots = traceBack(bad, nodeInfo(o.studentId, data, learningOf(o.studentId, subject), subject)).filter((r) => !bad.includes(r.key)).slice(0, 3).map(rootText);
-  const input = { student: o.name, topic: o.topic, minutes: o.minutes, attempts: todays, notes: o.notes ?? '', homework: o.homework ?? '', roots, subject };
+  // 这天的课堂精析（AI 听了课堂录像写进档案的）也给写总结的模型看
+  const fine = (data.notes ?? []).filter((n) => n.studentId === o.studentId && n.kind === 'teacher' && !n.todo && dayKey(n.at) === o.date && /^课堂(精析|录像小结)（/.test(n.text)).map((n) => n.text.slice(0, 1500));
+  const input = { student: o.name, topic: o.topic, minutes: o.minutes, attempts: todays, notes: [o.notes ?? '', ...fine].filter((x) => x.trim()).join('\n\n'), homework: o.homework ?? '', roots, subject };
   const base = { id: o.id ?? sid(), studentId: o.studentId, subject, date: o.date, at: nowIso(), topic: o.topic, minutes: o.minutes, homework: o.homework || undefined, ...(o.groupId ? { groupId: o.groupId } : {}) };
   try {
     const cfg = await aiConfig();

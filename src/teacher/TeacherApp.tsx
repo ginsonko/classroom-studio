@@ -24,12 +24,19 @@ import { openMaterial } from '../doc/actions';
 import { useRecording, toggleRecording, nextLesson, isLive } from '../lib/recording';
 import { startTimeline } from '../lib/timeline';
 import { startRecordAnalysis } from '../lib/recordAnalysis';
+import { startAutoRecord } from '../lib/autoRecordRun';
+import { startAfterClass, useAfter } from '../lib/afterClass';
+import { AfterClassChip } from './AfterClassChip';
+import { AutoRecordCard } from './AutoRecordCard';
 import { ReplayPage } from './ReplayPage';
 import { installPaste } from '../ink/pasteImage';
 import { DesktopPanel } from './DesktopPanel';
 import { AgentStudio } from './AgentStudio';
 import { StudyPage } from './StudyPage';
-import { ensureStudy } from '../lib/studyStore';
+import { ensureStudy, useStudy } from '../lib/studyStore';
+import { mastery } from '../lib/studyLogic';
+import { studentSubject } from '../lib/subjects';
+import { classBrief, practiceTodos, reviewDue } from '../lib/reviewLogic';
 import { useAnswerMarks } from '../doc/answers';
 import { checkFlow, checkSummary, readFlow, useCheck } from '../lib/warmup';
 import { SkillRunner } from './Skills';
@@ -60,7 +67,7 @@ export function TeacherApp() {
   const skinsOpen = useStore((s) => s.skinsOpen);
   useAnswerMarks();
 
-  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); document.title = '最强网课教辅系统 · 教师端'; }, []);
+  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); startAutoRecord(); startAfterClass(); document.title = '最强网课教辅系统 · 教师端'; }, []);
   const autoOn = useAuto((s) => s.settings.on);
   const helpOpen = useHelp((s) => !!s.open), updateDot = useHelp((s) => ['available', 'ready'].includes(s.update.phase) && s.update.info?.latest !== s.skip);
   useEffect(() => {
@@ -131,6 +138,7 @@ export function TeacherApp() {
       {recordPanel && <DesktopPanel />}
       {(recordError||saveError) && <div className="studio-notice" role="alert">{recordError||saveError}<button onClick={()=>useRecording.setState({error:null})}>知道了</button></div>}
       <RemindBanner />
+      <AutoRecordCard />
       <SavedNotice />
       <Toasts />
       <ImportDialog />
@@ -188,6 +196,7 @@ function TopBar() {
   const lv=[status.micLevel??0,status.systemLevel??0];
   const finalizing=status.phase==='stopping';
   const job=status.jobs?.[0];
+  const chipId=useAfter(s=>s.chip);
 
   return (
     <header className="tb">
@@ -198,7 +207,8 @@ function TopBar() {
         {rec.on && <b className="num">{hms}</b>}
       </button>
       {status.phase==='recording' && <button className="tb-next" onClick={()=>void nextLesson()} data-tip="连堂课：这一节保存，马上开始录下一节（学生窗口和会议共享不用动）"><SkipForward size={13}/><span>下一节</span></button>}
-      {job && <button className="tb-job" onClick={()=>set({page:'replay'})} data-tip={`「${job.title||'课堂回放'}」正在后台生成 MP4，不影响上课${(status.jobs?.length??0)>1?`；后面还有 ${status.jobs!.length-1} 段排队`:''}`}><Film size={13}/><span>回放生成中</span><b className="num">{Math.round((job.progress??0)*100)}%</b></button>}
+      <AfterClassChip />
+      {job && job.id!==chipId && <button className="tb-job" onClick={()=>set({page:'replay'})} data-tip={`「${job.title||'课堂回放'}」正在后台生成 MP4，不影响上课${(status.jobs?.length??0)>1?`；后面还有 ${status.jobs!.length-1} 段排队`:''}`}><Film size={13}/><span>回放生成中</span><b className="num">{Math.round((job.progress??0)*100)}%</b></button>}
       {rec.on && (
         <div className="tb-meters" data-tip="录音电平：麦克风 / 系统声音（含腾讯会议里学生的声音）">
           <Meter v={lv[0]} label="麦" /><Meter v={lv[1]} label="系统" />
@@ -389,6 +399,14 @@ function Splitter({ on, onDrag }: { on: boolean; onDrag: (dx: number) => void })
   );
 }
 
+/** 这节课记得做的：该复习的知识点、上节课说要再练的（班组课看全组成员） */
+function briefOf(id?: string) {
+  const all = useStore.getState().students, st = all.find((s) => s.id === id);
+  if (!st) return '';
+  const d = useStudy.getState().data, ids = [st.id, ...(isGroup(st) ? membersOf(st, all).map((m) => m.id) : [])];
+  return classBrief(reviewDue(mastery(st.id, d, studentSubject(st))), practiceTodos(d.notes ?? [], ids));
+}
+
 /** 课前提醒：系统通知之外，导播台里也停一条横幅，点「准备上课」直接切到这个学生 */
 function RemindBanner() {
   const [r, setR] = useState<{ title: string; body: string; studentId?: string } | null>(null);
@@ -401,11 +419,11 @@ function RemindBanner() {
     if (r.studentId && st.students.some((x) => x.id === r.studentId)) st.set({ studentId: r.studentId });
     st.set({ page: 'console', rightOpen: true }); setR(null);
   };
-  const flowIds = readFlow().filter((x) => !x.done).map((x) => x.id), sum = ck.auto ? checkSummary(ck.items, flowIds) : '';
+  const flowIds = readFlow().filter((x) => !x.done).map((x) => x.id), sum = ck.auto ? checkSummary(ck.items, flowIds) : '', brief = briefOf(r.studentId);
   return (
     <div className="remind-banner" role="status">
       <BellRing size={18} />
-      <div><b>{r.title}</b><span>{r.body.replace('点这里打开导播台。', '')}{sum && <em className={'remind-check' + (/有问题/.test(sum) ? ' bad' : '')}>课前检查：{sum}{/有问题|留意/.test(sum) ? '（见右侧本课流程）' : ''}</em>}</span></div>
+      <div><b>{r.title}</b><span>{r.body.replace('点这里打开导播台。', '')}{brief && <em className="remind-brief" data-qa="remind-brief">这节课记得：{brief}</em>}{sum && <em className={'remind-check' + (/有问题/.test(sum) ? ' bad' : '')}>课前检查：{sum}{/有问题|留意/.test(sum) ? '（见右侧本课流程）' : ''}</em>}</span></div>
       <button className="go" onClick={go}>准备上课</button>
       <button onClick={() => setR(null)}>知道了</button>
     </div>
