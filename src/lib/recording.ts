@@ -7,7 +7,9 @@ import {afterClassMap} from './mapUpdate';
 import type {Chapter} from './timeline';
 export interface RecordJob {id:string;title?:string;progress?:number}
 export interface RecordStatus {phase:string;id?:string;studentId?:string|null;folder?:string;startedAt?:number;bytes?:number;micLevel?:number;systemLevel?:number;error?:string;path?:string;warning?:string;audio?:{microphone:boolean;system:boolean};jobs?:RecordJob[]}
-export interface RecordRow {id:string;createdAt:string;phase:string;bytes:number;folder:string;mp4:string;raw:string;title?:string;studentId?:string|null;progress?:number;startedAt?:number;endedAt?:number;error?:string|null;chapters?:Chapter[];analysis?:RecordAnalysis|null}
+export interface RecordRow {id:string;createdAt:string;phase:string;bytes:number;folder:string;mp4:string;raw:string;title?:string;studentId?:string|null;progress?:number;startedAt?:number;endedAt?:number;error?:string|null;chapters?:Chapter[];analysis?:RecordAnalysis|null;parts?:RecordPart[];splitting?:boolean;splitError?:string|null}
+/** 给微信用的分段（每段不到 1 小时），在录像文件夹的「微信分段」里 */
+export interface RecordPart {file:string;path:string;seconds:number;bytes:number}
 /** 下课分析录像的结果（存在 recording.json 里）；sortId 指向可整批撤销的那条整理记录 */
 export interface RecordAnalysis {at:string;frames:number;questions:number;attempts:number;map:number;summary:string;weak:string[];sortId?:string;error?:string}
 export interface RecordsInfo {dir:string;free:number|null;total:number|null;used:number;count:number;systemDrive:boolean}
@@ -18,6 +20,12 @@ export const useRecording=create<{status:RecordStatus;error:string|null;panel:bo
 host.onEvent(e=>{
  if(e.type==='recording')useRecording.setState(s=>({status:e.status,error:e.status.error??null,rev:['saved','complete','recoverable'].includes(e.status.phase)&&e.status.phase!==s.status.phase?s.rev+1:s.rev}));
  if(e.type==='notice')useRecording.setState({error:e.message});
+ if(e.type==='recordSplit'){
+  useRecording.setState(s=>({rev:s.rev+1}));
+  const n=e.parts?.length??0,title=e.record?.title||'课堂回放';
+  if(e.error)toast(`「${title}」没能切成微信分段：${e.error}`,{ms:10000});
+  else if(n)toast(`「${title}」已切成 ${n} 段，每段不到 1 小时，可以直接发微信`,{ms:10000,action:{label:'打开文件夹',run:()=>host.revealInFolder(e.dir+'/'+e.parts[0])}});
+ }
  if(e.type==='recordSaved'){
   useRecording.setState(s=>({rev:s.rev+1}));
   // 不在录课时顶部「录像已保存」卡片会出来；正在上下一节时只给一条轻提示

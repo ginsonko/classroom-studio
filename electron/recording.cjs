@@ -19,12 +19,24 @@ function runProcess(command,args,{timeout=300000,onOutput,lowPriority=false}={})
   });
 }
 const LIVE=['starting','recording','stopping'];
+/** 微信发不了超过 1 小时的视频；每段按 59 分钟算，关键帧对齐后多出几秒也不会到 1 小时 */
+const PART_MAX=59*60,PART_LIMIT=3600,PARTS_DIR='微信分段';
+const safeName=s=>String(s||'').replace(/[\\/:*?"<>|\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60);
+/** 读视频时长（秒）：ffmpeg 只给输入不给输出时会报错退出，时长在它打印的信息里 */
+async function probeSeconds(ffmpeg,file){
+  let text='';try{text=await runProcess(ffmpeg,['-hide_banner','-i',file],{timeout:60000});}catch(e){text=String(e.message||'');}
+  const m=/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);return m?+m[1]*3600+ +m[2]*60+ +m[3]:0;
+}
+/** 切成 n 段时每段的起点（秒，不含 0） */
+function cutTimes(seconds,n){return Array.from({length:n-1},(_,i)=>+(seconds*(i+1)/n).toFixed(2));}
+/** 不超过 max 秒的最少段数（时长不超过 max 不切） */
+const partCount=(seconds,max=PART_MAX)=>seconds>max?Math.ceil(seconds/max):1;
 /**
  * 课堂录制：录制组件把 WebM 分块写进原始文件；下课后在后台排队转成 MP4。
  * 转码不算「忙」：老师可以马上关学生窗口、开始下一节课，顶部显示回放生成进度。
  */
 class Recording {
- constructor({directory,ffmpeg,onChange,send,onSaved}){this.directory=directory;this.ffmpeg=ffmpeg;this.onChange=onChange;this.send=send;this.onSaved=onSaved;this.current=null;this.queue=Promise.resolve();this.metaQueue=Promise.resolve();this.jobs=[];this.jobRun=Promise.resolve();this.status={phase:'idle',bytes:0,micLevel:0,systemLevel:0,jobs:[]};}
+ constructor({directory,ffmpeg,onChange,send,onSaved,split,label,onSplit,partLimits}){this.directory=directory;this.ffmpeg=ffmpeg;this.onChange=onChange;this.send=send;this.onSaved=onSaved;this.split=split;this.label=label;this.onSplit=onSplit;this.splitting=new Set();this.partLimits=partLimits;this.current=null;this.queue=Promise.resolve();this.metaQueue=Promise.resolve();this.jobs=[];this.jobRun=Promise.resolve();this.status={phase:'idle',bytes:0,micLevel:0,systemLevel:0,jobs:[]};}
  async disk(directory=this.directory){let target=directory;while(target){try{const v=await fsp.statfs(target);return {free:Number(v.bavail)*Number(v.bsize),total:Number(v.blocks)*Number(v.bsize)};}catch{const parent=path.dirname(target);if(parent===target)break;target=parent;}}return {free:null,total:null};}
  update(p){this.status={...this.status,...p,jobs:this.jobs.map(j=>({id:j.id,title:j.title,progress:j.progress}))};this.onChange(this.status);}
  get live(){return LIVE.includes(this.status.phase);}
@@ -115,6 +127,8 @@ class Recording {
     this.jobs=this.jobs.filter(j=>j!==job);
     if(this.live||this.status.phase==='saved'&&this.status.id!==job.id)this.update({});else this.update({phase:'complete',id:job.id,studentId:job.studentId,path:out,error:null});
     this.onSaved?.({id:job.id,title:job.title,studentId:job.studentId,path:out});
+    // 分段失败不影响回放本身，原因记在 recording.json 里，回放页可以再点一次
+    if(this.split?.())await this.splitParts(folder,this.partLimits).catch(()=>{});
     return out;
    }catch(e){
     this.jobs=this.jobs.filter(j=>j!==job);
@@ -144,6 +158,59 @@ class Recording {
   try{if((await fsp.stat(output)).size>0)await fsp.unlink(raw);}catch{}
   progress?.(1);return output;
  }
+ /**
+  * 把回放切成几段长度相等、每段不到 1 小时的 MP4，放进「微信分段」文件夹，方便发微信。
+  * 直接拷贝视频流不重新编码：几十秒就切完，画质不变；切点落在关键帧上，各段前后差几秒。
+  */
+ async splitParts(folder,{max=PART_MAX,limit=PART_LIMIT}={}){
+  const file=path.join(folder,'recording.json'),meta=await readJSON(file,null);if(!meta)throw new Error('找不到这段录像的信息');
+  const mp4=path.join(folder,'课堂回放.mp4'),dir=path.join(folder,PARTS_DIR),tmp=path.join(folder,PARTS_DIR+'.tmp');
+  // 下课分析可能同时在往 recording.json 写结果，读和写都放进同一个队列，免得互相覆盖
+  const writeMeta=async patch=>{const task=this.metaQueue.then(async()=>{const m=await readJSON(file,null)||meta;Object.assign(m,patch);await atomicJSON(file,m);});this.metaQueue=task.catch(()=>{});await task;};
+  this.splitting.add(meta.id);
+  try{
+   if(!fs.existsSync(mp4))throw new Error('回放 MP4 还没生成');
+   const seconds=await probeSeconds(this.ffmpeg,mp4)||((meta.endedAt&&meta.startedAt)?(meta.endedAt-meta.startedAt)/1000:0);
+   if(!seconds)throw new Error('读不出回放时长');
+   const old=Array.isArray(meta.parts)?meta.parts:[];
+   if(partCount(seconds,max)<2){for(const p of old)await fsp.unlink(path.join(dir,p.file)).catch(()=>{});await writeMeta({parts:[],splitError:null});return [];}
+   const size=(await fsp.stat(mp4)).size,space=await this.disk(folder);
+   if(space.free!==null&&space.free<size*1.05+128*1024*1024)throw new Error('磁盘空间不够放分段视频，请先腾出 '+Math.ceil(size/1024**2)+' MB 左右');
+   const d=new Date(meta.createdAt||Date.now()),day=`${d.getMonth()+1}月${d.getDate()}日`;
+   const base=safeName([this.label?.(meta),day,meta.title&&meta.title!=='课堂回放'?meta.title:''].filter(Boolean).join(' '))||'课堂回放';
+   let parts=[];
+   // 关键帧隔得很远时某段可能超过 1 小时，多切一段再试
+   for(let n=partCount(seconds,max);n<=partCount(seconds,max)+2;n++){
+    await fsp.rm(tmp,{recursive:true,force:true});await fsp.mkdir(tmp,{recursive:true});
+    await runProcess(this.ffmpeg,['-hide_banner','-y','-i',mp4,'-map','0:v:0','-map','0:a:0?','-c','copy','-f','segment','-segment_times',cutTimes(seconds,n).join(','),'-reset_timestamps','1','-segment_format_options','movflags=+faststart','-segment_start_number','1',path.join(tmp,'part%d.mp4')],{timeout:60*60*1000,lowPriority:true});
+    const made=(await fsp.readdir(tmp)).filter(f=>/^part\d+\.mp4$/.test(f)).sort((a,b)=>parseInt(a.slice(4))-parseInt(b.slice(4)));
+    parts=[];for(const f of made)parts.push({tmpName:f,seconds:Math.round(await probeSeconds(this.ffmpeg,path.join(tmp,f))),bytes:(await fsp.stat(path.join(tmp,f))).size});
+    if(parts.length>1&&parts.every(p=>p.seconds>0&&p.seconds<limit))break;
+    if(n===partCount(seconds,max)+2)throw new Error('切出来的分段还是超过 1 小时（视频关键帧间隔太长）');
+   }
+   for(const p of old)await fsp.unlink(path.join(dir,p.file)).catch(()=>{});
+   await fsp.mkdir(dir,{recursive:true});
+   const out=[];
+   for(const [i,p] of parts.entries()){const name=`${base} 第${i+1}段（共${parts.length}段）.mp4`;await fsp.rm(path.join(dir,name),{force:true});await fsp.rename(path.join(tmp,p.tmpName),path.join(dir,name));out.push({file:name,seconds:p.seconds,bytes:p.bytes});}
+   await fsp.rm(tmp,{recursive:true,force:true});
+   await writeMeta({parts:out,splitError:null});
+   this.onSplit?.({id:meta.id,title:meta.title,studentId:meta.studentId,dir,parts:out});
+   return out;
+  }catch(e){
+   await fsp.rm(tmp,{recursive:true,force:true}).catch(()=>{});
+   await writeMeta({splitError:e.message}).catch(()=>{});
+   this.onSplit?.({id:meta.id,title:meta.title,studentId:meta.studentId,dir,parts:[],error:e.message});
+   throw e;
+  }finally{this.splitting.delete(meta.id);}
+ }
+ /** 回放页手动点「切成微信分段」：和生成回放排在同一个队列里，不会同时跑两个 ffmpeg */
+ splitQueued(rid){
+  return this.list().then(rows=>{
+   const item=rows.find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
+   if(item.phase!=='complete')throw new Error('回放 MP4 生成完以后才能分段');
+   const task=this.jobRun.catch(()=>{}).then(()=>this.splitParts(item.folder,this.partLimits));this.jobRun=task.catch(()=>{});return task;
+  });
+ }
  /** 上次退出时还没生成完的回放：启动后接着排队 */
  async resume(){
   for(const r of await this.list().catch(()=>[]))if(r.pending&&r.phase==='recoverable'&&!r.error&&fs.existsSync(r.raw))this.enqueue(r.folder,{id:r.id,title:r.title,studentId:r.studentId});
@@ -151,6 +218,7 @@ class Recording {
  async remove(rid){
   if(this.current?.id===rid)throw new Error('这节课还在录，下课后再删除');
   if(this.jobs.some(j=>j.id===rid))throw new Error('回放正在生成，完成后再删除');
+  if(this.splitting.has(rid))throw new Error('正在切微信分段，切完再删除');
   const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
   return item.folder;
  }
@@ -160,9 +228,10 @@ class Recording {
     const live=this.current?.id===m.id&&this.live;const job=this.jobs.find(j=>j.id===m.id);
     if(m.phase==='cancelled')continue;const ready=fs.existsSync(path.join(folder,'课堂回放.mp4'));
     let bytes=0;for(const f of ['capture.webm','课堂回放.mp4'])try{bytes+=(await fsp.stat(path.join(folder,f))).size;}catch{}
-    rows.push({...m,folder,bytes,mp4:path.join(folder,'课堂回放.mp4'),raw:path.join(folder,'capture.webm'),phase:live?this.status.phase:job?'converting':ready?'complete':'recoverable',progress:job?.progress});
+    const parts=[];for(const p of Array.isArray(m.parts)?m.parts:[])try{const s=await fsp.stat(path.join(folder,PARTS_DIR,p.file));bytes+=s.size;parts.push({...p,path:path.join(folder,PARTS_DIR,p.file)});}catch{}
+    rows.push({...m,folder,bytes,parts,splitting:this.splitting.has(m.id),mp4:path.join(folder,'课堂回放.mp4'),raw:path.join(folder,'capture.webm'),phase:live?this.status.phase:job?'converting':ready?'complete':'recoverable',progress:job?.progress});
   }return rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
  }
  killAll(){for(const c of children)try{c.kill();}catch{}}
 }
-module.exports={Recording,runProcess};
+module.exports={Recording,runProcess,partCount,cutTimes,PART_MAX};

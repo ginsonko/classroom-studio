@@ -1,6 +1,6 @@
 const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
-const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,readJSON,within,cleanTemps}=require('./core.cjs');
+const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,atomicWrite,workspaceJSON,readJSON,within,cleanTemps}=require('./core.cjs');
 const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
@@ -31,7 +31,7 @@ const send=(win,ch,data)=>{if(win&&!win.isDestroyed()&&!win.webContents.isCrashe
 const notify=(type,value={})=>{if(value.error)log.warn('提示',type,value.message);for(const [role,w]of windows)if(role==='teacher')send(w,'cs:event',{type,...value});};
 const busy=()=>['starting','recording','stopping'].includes(recording?.status.phase);
 function safeRole(e){if(e.senderFrame!==e.sender.mainFrame)throw Error('课件页面没有桌面控制权限');const role=roles.get(e.sender.id);if(!role)throw Error('未知窗口');return role;}
-function saving(){clearTimeout(saveTimer);const work=saveQueue.catch(()=>{}).then(()=>atomicJSON(path.join(DATA,'workspace.json'),{...saved,settings,capabilities:[...files.tokens],urls:[...files.urls],allowedRoots:[...files.roots]}));saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
+function saving(){clearTimeout(saveTimer);const work=saveQueue.catch(()=>{}).then(()=>{const value={...saved,settings,capabilities:[...files.tokens],urls:[...files.urls],allowedRoots:[...files.roots]};return atomicWrite(path.join(DATA,'workspace.json'),()=>workspaceJSON(value));});saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
 function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{void saving().catch(()=>{});},700);}
 function rememberPublic(){
  const full=saved.shared??{},prior=full.ink??{},merged={...prior};
@@ -310,8 +310,13 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  }
  if(method==='exists'){try{canUsePath(role,value);return fs.existsSync(value);}catch{return false;}}
  if(method==='persist'&&role==='teacher'){
-  const ink={...value.shared?.ink};for(const[k,v]of Object.entries(publicData.ink??{}))ink[k]=[...v,...(ink[k]??[]).filter(s=>s.layer==='private')];
-  saved={...saved,...value,shared:{...value.shared,...publicData,ink}};await saving();return;
+  // 教师窗口只发来有改动的页面笔迹和撤销记录，再附上现有页面 / 记录的完整名单；没发来的沿用上次存下的同一份对象
+  const {inkKeys,historyKeys,...rest}=value??{};
+  const keep=(names,sent,prev)=>{const out={};for(const k of names)if(Object.hasOwn(sent,k))out[k]=sent[k];else if(Object.hasOwn(prev,k))out[k]=prev[k];return out;};
+  const sentInk=rest.shared?.ink??{},teacherInk=Array.isArray(inkKeys)?keep(inkKeys,sentInk,saved.shared?.ink??{}):{...sentInk};
+  const ink={...teacherInk};for(const[k,v]of Object.entries(publicData.ink??{}))ink[k]=[...v,...(ink[k]??[]).filter(s=>s.layer==='private')];
+  if(Array.isArray(historyKeys))rest.history=keep(historyKeys,rest.history??{},saved.history??{});
+  saved={...saved,...rest,shared:{...rest.shared,...publicData,ink}};await saving();return;
  }
  if(method==='convert'&&(trusted||(role==='student'&&publicData.drawAuthor==='teacher')))return files.convert(value.path,progress=>send(BrowserWindow.fromWebContents(e.sender),'cs:event',{type:'convert',id:value.id,progress}));
  // 学生窗口里 Ctrl+V / 拖入图片贴到黑板：老师拿着笔，或学生工具开放时都可以
@@ -363,6 +368,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
   if(typeof value.autoClear==='boolean')settings.autoClear=value.autoClear;
   if(typeof value.autoMap==='boolean')settings.autoMap=value.autoMap;
   if(typeof value.autoAnalyze==='boolean')settings.autoAnalyze=value.autoAnalyze;
+  if(typeof value.splitWeChat==='boolean')settings.splitWeChat=value.splitWeChat;
   if(typeof value.autostart==='boolean'){settings.autostart=value.autostart;if(app.isPackaged)app.setLoginItemSettings({openAtLogin:value.autostart});}
   scheduleSave();return settings;}
  case 'pickRecordings':{if(busy()||recording.jobs.length)throw Error('录像保存、回放生成完以后再修改目录');const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择录像保存目录',properties:['openDirectory','createDirectory']});if(!r.canceled)await changeRecordings(r.filePaths[0]);return settings.recordings;}
@@ -370,6 +376,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'stopLesson':return recording.stop();
  case 'recordChapter':return recording.chapter(value);
  case 'recordFrames':return recording.frames(String(value?.id||''),value?.times);
+ case 'splitRecording':return recording.splitQueued(String(value||''));
  case 'recordPatch':return recording.patchMeta(String(value?.id||''),value?.patch);
  case 'recordStatus':return recording.status;
  case 'recordings':return recording.list();
@@ -586,7 +593,7 @@ function remindLesson(item){
 }
 async function start(){
  await fs.promises.mkdir(files.cache,{recursive:true});cleanTemps(path.join(DATA,'workspace.json'));saved=await readJSON(path.join(DATA,'workspace.json'),{});
- settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,...saved.settings};
+ settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,splitWeChat:false,...saved.settings};
  // 0.4.0：防截屏改为默认关闭（开启时部分会议软件全屏共享会显示黑块）
  if(!saved.migrated040){saved.migrated040=true;settings.captureGuard=false;}
  ledger=new Ledger(DATA);
@@ -623,7 +630,11 @@ async function start(){
  if(settings.answerOff===undefined)settings.answerOff=saved.shared.answerGuard===false;
  saved.shared.answerGuard=!settings.answerOff;
  publicData=projection(saved.shared);if(publicData.sim)publicData.sim.playing=false;
- recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});}});
+ recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});},
+  split:()=>settings.splitWeChat===true,
+  partLimits:TEST&&process.env.CS_PART_LIMITS?JSON.parse(process.env.CS_PART_LIMITS):undefined,
+  label:m=>(saved.local?.students??[]).find(x=>x.id===m.studentId)?.name,
+  onSplit:r=>{if(r.error)log.warn('微信分段失败',r.error);else log.info('微信分段',r.dir,r.parts.length);notify('recordSplit',{record:{id:r.id,title:r.title,studentId:r.studentId},dir:r.dir,parts:r.parts.map(p=>p.file),error:r.error??null});}});
  // 自动更新：清单地址和公钥可以用环境变量换成测试服务器（两个都给才生效）
  const feed=process.env.CS_UPDATE_FEED,pub=process.env.CS_UPDATE_PUBKEY;
  updater=new Updater({appRoot:ROOT,version:VERSION,dataDir:DATA,fetch:(u,o)=>net.fetch(u,o),log,emit:s=>notify('update',{update:s}),packaged:app.isPackaged,...(feed&&pub?{feeds:[feed],publicKey:pub}:{})});

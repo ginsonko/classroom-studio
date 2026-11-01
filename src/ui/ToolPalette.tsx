@@ -161,7 +161,8 @@ export function ToolPalette({ tool, color, size, onTool, onColor, onSize, vertic
                         {(['s', 'm', 'l'] as const).map((k) => <button key={k} role="radio" aria-checked={(inkOptions.eraserSize ?? 'm') === k} className={(inkOptions.eraserSize ?? 'm') === k ? 'on' : ''} onClick={() => changeOptions({ eraserSize: k })} aria-label={'橡皮' + { s: '小', m: '中', l: '大' }[k]}><i style={{ width: { s: 8, m: 14, l: 22 }[k], height: { s: 8, m: 14, l: 22 }[k] }} /></button>)}
                       </div>
                     </div>}
-                    {g.id === 'write' && <div className="ink-options"><label><input type="checkbox" checked={inkOptions.shapeSnap} onChange={(e) => changeOptions({ shapeSnap: e.target.checked })} />停笔自动规整图形</label></div>}
+                    {g.id === 'write' && <div className="ink-options"><label><input type="checkbox" checked={inkOptions.shapeSnap} onChange={(e) => changeOptions({ shapeSnap: e.target.checked })} />停笔自动规整图形</label>
+                      {ROLE !== 'student' && !student && <label title="电脑较旧、写字跟不上笔时打开：画布按普通清晰度画，深色黑板不画粉笔光晕"><input type="checkbox" checked={!!inkOptions.fluent} onChange={(e) => changeOptions({ fluent: e.target.checked })} />流畅优先（旧电脑写字跟不上时打开）</label>}</div>}
                     {!student && ROLE !== 'student' && g.id !== 'erase' && <button className="tp-fi tp-customize" onClick={openCustomize}><SlidersHorizontal size={14} /><span>定制工具栏…</span><small>右键工具栏也行</small></button>}
                   </div>
                 )}

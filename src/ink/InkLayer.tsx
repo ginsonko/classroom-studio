@@ -10,6 +10,7 @@ import { useFormula } from './FormulaSheet';
 import { draw, hit, recognize, type DrawCtx } from './draw';
 import { texTick } from './texCache';
 import { imgTick } from './imgCache';
+import { dprCap, glowAllowed, onInkLevel, probeOnce, reportPaint, setFluent } from './quality';
 import { canRotate, duplicateStroke, eraseSegment, freshId, insideLasso, moveStroke, rotateStroke, scaleStroke, selectionBounds, withObject, type Box, type Point } from './geometry';
 import '../styles/objects.css';
 
@@ -31,25 +32,32 @@ const isTap = (s: Stroke) => FREE.includes(s.tool) && Math.hypot(s.pts[s.pts.len
 export const eraserRadius = () => ERASER_R[useStore.getState().inkOptions.eraserSize ?? 'm'] ?? ERASER_R.m;
 const remoteDraft = new Map<string, { key: string; stroke: Stroke; at: number }>();
 const laserTrails = new Map<string, { key: string; pts: number[]; at: number[] }>();
-let remoteTick = 0, focusedCanvas: symbol | null = null;
+let focusedCanvas: symbol | null = null;
+// 别的窗口正在写的笔迹按页面记版本：只让这一页的画布重画实时层，其它页面、浮动窗口、预监里的画布不动
+const remoteVer = new Map<string, number>();
+const bump = (key: unknown) => { if (typeof key === 'string') remoteVer.set(key, (remoteVer.get(key) ?? 0) + 1); };
 // Windows Ink 在笔尖接触板面时会藏起系统光标，抬笔才显示，写字时十字一闪一闪；用笔时改为自己画十字
 let penMode = false;
 const offRemote = bus.on((m) => {
   if (m.t === 'live' && m.from !== WINDOW_ID) {
     const s = m.stroke as Stroke | null;
+    bump(remoteDraft.get(m.from)?.key);
     if (!s || s.layer === 'private') remoteDraft.delete(m.from);
     else if (Array.isArray(s.pts) && s.pts.length <= 60000 && s.pts.every(Number.isFinite)) remoteDraft.set(m.from, { key: m.key, stroke: s, at: performance.now() });
-    remoteTick++;
+    bump(m.key);
   }
-  if (m.t === 'stroke') { for (const [id, draft] of remoteDraft) if (draft.key === m.key && draft.stroke.id === (m.stroke as Stroke)?.id) remoteDraft.delete(id); remoteTick++; }
-  if (m.t === 'edit') { const change = m as unknown as { key: string; remove?: string[]; upsert?: Stroke[] }; const ids = new Set([...(change.remove ?? []), ...(change.upsert ?? []).map((s) => s.id)]); for (const [id, draft] of remoteDraft) if (draft.key === change.key && ids.has(draft.stroke.id)) remoteDraft.delete(id); remoteTick++; }
+  if (m.t === 'stroke') { for (const [id, draft] of remoteDraft) if (draft.key === m.key && draft.stroke.id === (m.stroke as Stroke)?.id) remoteDraft.delete(id); bump(m.key); }
+  if (m.t === 'edit') { const change = m as unknown as { key: string; remove?: string[]; upsert?: Stroke[] }; const ids = new Set([...(change.remove ?? []), ...(change.upsert ?? []).map((s) => s.id)]); for (const [id, draft] of remoteDraft) if (draft.key === change.key && ids.has(draft.stroke.id)) remoteDraft.delete(id); bump(change.key); }
   if (m.t === 'laser' && m.from !== WINDOW_ID) {
     const now = performance.now(), prior = laserTrails.get(m.from), tr = prior?.key === m.key ? prior : { key: m.key, pts: [], at: [] };
     for (let i = 0; i + 1 < Math.min(m.pts.length, 320); i += 2) if (Number.isFinite(m.pts[i]) && Number.isFinite(m.pts[i + 1])) { tr.pts.push(m.pts[i], m.pts[i + 1]); tr.at.push(now); }
     if (tr.at.length > 160) { tr.pts.splice(0, (tr.at.length - 160) * 2); tr.at.splice(0, tr.at.length - 160); }
-    laserTrails.set(m.from, tr); remoteTick++;
+    if (prior && prior !== tr) bump(prior.key);
+    laserTrails.set(m.from, tr); bump(m.key);
   }
 });
+const listIds = new WeakMap<Stroke[], Set<string>>();
+const idsOf = (list: Stroke[]) => { let s = listIds.get(list); if (!s) { s = new Set(list.map((x) => x.id)); listIds.set(list, s); } return s; };
 if (import.meta.hot) import.meta.hot.dispose(offRemote);
 type Gesture =
   | { type: 'draw'; start: Point; pointer: number }
@@ -70,7 +78,8 @@ export function InkLayer(props: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]), [snap, setSnap] = useState<Point | null>(null);
   const token = useRef(Symbol('ink')), draft = useRef<Stroke | null>(null), gesture = useRef<Gesture | null>(null), preview = useRef<Stroke[]>([]);
   const selected = useRef<string[]>([]), lasso = useRef<number[] | null>(null), dirty = useRef(true), still = useRef(0), snapTimer = useRef(0), sendRaf = useRef(0);
-  const myLaser = useRef<{ pts: number[]; at: number[] }>({ pts: [], at: [] }), lastTick = useRef(-1), textOpened = useRef(0), eraserAt = useRef<Point | null>(null);
+  // dirty：已完成笔迹那一层（base）可能变了；liveDirty：只有正在写的那一层（live）要重画
+  const myLaser = useRef<{ pts: number[]; at: number[] }>({ pts: [], at: [] }), liveDirty = useRef(true), baseStale = useRef(true), textOpened = useRef(0), eraserAt = useRef<Point | null>(null);
   const penAt = useRef<Point | null>(null), overlayDirty = useRef(false), [pen, setPen] = useState(penMode);
   const bandTop = props.band?.[0] ?? 0, bandH = props.band?.[1] ?? 0, bandRef = useRef(bandTop), repaint = useRef<(() => void) | null>(null);
   const pointerKind = (e: { pointerType: string }) => {
@@ -96,9 +105,13 @@ export function InkLayer(props: Props) {
   };
   const cancelGesture = () => { clearTimeout(still.current); gesture.current = null; draft.current = null; preview.current = []; lasso.current = null; clearLive(); dirty.current = true; };
 
+  const fluent = useStore((s) => !!s.inkOptions.fluent);
+  useEffect(() => { setFluent(fluent); }, [fluent]);
   useLayoutEffect(() => {
-    const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setPx({ w: r.width, h: r.height, dpr: Math.min(2.5, devicePixelRatio || 1) }); });
-    ro.observe(wrap.current!); return () => ro.disconnect();
+    probeOnce();
+    const measure = () => { const el = wrap.current; if (!el) return; const r = el.getBoundingClientRect(), dpr = Math.min(dprCap(), devicePixelRatio || 1); setPx((o) => o.w === r.width && o.h === r.height && o.dpr === dpr ? o : { w: r.width, h: r.height, dpr }); };
+    const ro = new ResizeObserver(measure), off = onInkLevel(() => { baseStale.current = true; dirty.current = true; measure(); });
+    ro.observe(wrap.current!); return () => { ro.disconnect(); off(); };
   }, []);
   useEffect(() => { dirty.current = true; }, [strokes, px, boardSkin, onPage, showPrivate, tool, selectedIds]);
   useEffect(() => {
@@ -119,27 +132,44 @@ export function InkLayer(props: Props) {
     const cssH = bandH ? bandH * px.w : px.h;
     for (const canvas of [b, c]) { canvas.width = Math.round(px.w * px.dpr); canvas.height = Math.round(cssH * px.dpr); }
     const bc = b.getContext('2d')!, ctx = c.getContext('2d')!; let raf = 0;
-    const setup = (context: CanvasRenderingContext2D) => { context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, c.width, c.height); context.setTransform(px.w * px.dpr, 0, 0, px.w * px.dpr, 0, -bandRef.current * px.w * px.dpr); };
-    const context = (canvas: CanvasRenderingContext2D): DrawCtx => ({ ctx: canvas, scale: px.w, dark, color: (id) => resolveColor(id, boardSkin, onPage) });
+    const place = (context: CanvasRenderingContext2D) => context.setTransform(px.w * px.dpr, 0, 0, px.w * px.dpr, 0, -bandRef.current * px.w * px.dpr);
+    const setup = (context: CanvasRenderingContext2D) => { context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, c.width, c.height); place(context); };
+    const context = (canvas: CanvasRenderingContext2D): DrawCtx => ({ ctx: canvas, scale: px.w, dark, noGlow: !glowAllowed(), color: (id) => resolveColor(id, boardSkin, onPage) });
     // 长黑板只画落在画布这一段里的笔迹
     const inBand = (s: Stroke) => { if (!bandH) return true; const bx = boxOf(s), top = bandRef.current; return bx.y1 >= top - .05 && bx.y0 <= top + bandH + .05; };
+    // base 层上现在画着的内容：哪份笔迹列表、藏起了哪些笔迹。新列表只是在末尾多了几笔时只补画这几笔，不清屏重画整板
+    let drawn: { list: Stroke[]; sig: string } | null = null, lastAssets = -1, lastRemote = -1, lastCandidates = '';
+    baseStale.current = true;
     const loop = () => { raf = requestAnimationFrame(loop); paint(); };
     const paint = () => {
       const now = performance.now();
-      for (const [id, r] of remoteDraft) if (now - r.at > 5000) { remoteDraft.delete(id); remoteTick++; }
+      for (const [id, r] of remoteDraft) if (now - r.at > 5000) { remoteDraft.delete(id); bump(r.key); }
       const lasers = [...laserTrails.values(), myLaser.current].filter((t) => (!('key' in t) || t.key === ikey) && t.at.length);
-      const ticks = remoteTick + texTick() + imgTick();
-      const full = dirty.current || lastTick.current !== ticks;
-      if (!full && !overlayDirty.current && !lasers.length) return;
-      dirty.current = false; overlayDirty.current = false; lastTick.current = ticks; setup(ctx); const ld = context(ctx);
+      const assets = texTick() + imgTick(), rv = remoteVer.get(ikey) ?? 0;
+      if (assets !== lastAssets) { lastAssets = assets; baseStale.current = true; dirty.current = true; }
+      if (rv !== lastRemote) { lastRemote = rv; liveDirty.current = true; }
       const remote = [...remoteDraft.values()].filter((r) => r.key === ikey && r.stroke.layer !== 'private');
-      if (full) {
-        setup(bc); const bd = context(bc);
-        const hidden = new Set([...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id), ...(editingId.current ? [editingId.current] : [])]);
-        const list = gesture.current?.type === 'erase' ? gesture.current.working : all();
-        // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
-        for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
-        for (const s of list) if (s.tool !== 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
+      const candidates = [...preview.current.map((s) => s.id), ...remote.map((r) => r.stroke.id), ...(editingId.current ? [editingId.current] : [])];
+      const candidateSig = candidates.join('|');
+      if (candidateSig !== lastCandidates) { lastCandidates = candidateSig; dirty.current = true; }
+      const baseWork = dirty.current;
+      if (!baseWork && !liveDirty.current && !overlayDirty.current && !lasers.length) return;
+      dirty.current = false; liveDirty.current = false; overlayDirty.current = false; setup(ctx); const ld = context(ctx);
+      if (baseWork) {
+        const list = gesture.current?.type === 'erase' ? gesture.current.working : all(), ids = idsOf(list);
+        const hidden = new Set(candidates.filter((id) => ids.has(id)));
+        const sig = [...hidden].join('|') + '@' + bandRef.current;
+        const prev = baseStale.current ? null : drawn;
+        let from = 0;
+        if (prev && prev.sig === sig && list.length >= prev.list.length && prev.list.every((s, i) => list[i] === s) && !list.slice(prev.list.length).some((s) => s.tool === 'image')) from = prev.list.length;
+        else { setup(bc); from = -1; }
+        if (from !== list.length) {
+          place(bc); const bd = context(bc);
+          // 贴图垫在最下面：先写的字、后贴的图，字也不会被图盖住
+          if (from < 0) for (const s of list) if (s.tool === 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s);
+          for (let i = Math.max(0, from); i < list.length; i++) { const s = list[i]; if (s.tool !== 'image' && visible(s) && !hidden.has(s.id) && inBand(s)) draw(bd, s); }
+        }
+        drawn = { list, sig }; baseStale.current = false;
       }
       for (const r of remote) draw(ld, r.stroke); for (const s of preview.current) draw(ld, s); if (draft.current) draw(ld, draft.current);
       for (const tr of lasers) drawLaser(ctx, tr, now);
@@ -156,6 +186,7 @@ export function InkLayer(props: Props) {
       const selection = preview.current.length ? preview.current : chosen();
       if (selection.length && ['select', 'lasso'].includes(tool)) drawSelection(ctx, selectionBounds(selection), px.w, selection.every(canRotate));
       if (penAt.current && penMode && crossTool) drawCross(ctx, penAt.current, px.w, dark);
+      if (draft.current || remote.length) reportPaint(performance.now() - now);
     };
     repaint.current = () => { dirty.current = true; paint(); };
     dirty.current = true; loop(); return () => { cancelAnimationFrame(raf); repaint.current = null; };
@@ -182,11 +213,14 @@ export function InkLayer(props: Props) {
     const g = gesture.current; if (g?.type !== 'erase') return;
     const radius = eraserRadius(), segment = useStore.getState().inkOptions.eraserMode !== 'stroke';
     const count = Math.max(1, Math.min(128, Math.ceil(Math.hypot(p.x - g.last.x, p.y - g.last.y) / (radius * .5))));
+    let changed = false;
     for (let i = 1; i <= count; i++) { const x = g.last.x + (p.x - g.last.x) * i / count, y = g.last.y + (p.y - g.last.y) * i / count;
       // 橡皮只擦笔迹，不擦贴图（擦图上的字时不能把整张图擦没了）；贴图用选择工具删除
-      g.working = g.working.flatMap((s) => !editable(s) || s.tool === 'image' || !hit(s, x, y, radius) ? [s] : segment && CUTTABLE.includes(s.tool) ? eraseSegment(s, x, y, radius + s.size / 1000) : []);
+      const next = g.working.flatMap((s) => { if (!editable(s) || s.tool === 'image' || !hit(s, x, y, radius)) return [s]; const out = segment && CUTTABLE.includes(s.tool) ? eraseSegment(s, x, y, radius + s.size / 1000) : []; if (out.length !== 1 || out[0] !== s) changed = true; return out; });
+      if (changed) g.working = next;
     }
-    g.last = p; dirty.current = true;
+    // 橡皮划过空白处只重画橡皮圈（live 层），真的擦到了才重画整板
+    g.last = p; liveDirty.current = true; if (changed) dirty.current = true;
   };
   // 聚光灯 / 幕布：幕布往下拖是揭开，拖到最下面就整个收起（不用再跑去别处找关闭按钮）
   const overlay = (p: Point) => { if (layer === 'private' || author !== 'teacher') return; const st = useStore.getState(); if (tool === 'spotlight') st.setShared({ spotlight: { x: p.x, y: p.y / ratio, r: st.spotlight?.r ?? .16 } }); if (tool === 'curtain') { const t = p.y / ratio; st.setShared({ curtain: t > .95 ? null : Math.max(.02, t) }); } };
@@ -250,19 +284,20 @@ export function InkLayer(props: Props) {
     if (!enabled) return; const p = point(e);
     pointerKind(e);
     if (penMode) { penAt.current = p; overlayDirty.current = true; } else if (penAt.current) { penAt.current = null; overlayDirty.current = true; }
-    if (tool === 'eraser' || gesture.current?.type === 'erase') { eraserAt.current = p; dirty.current = true; }
-    if (tool === 'laser') { const tr = myLaser.current; tr.pts.push(p.x, p.y); tr.at.push(performance.now()); if (tr.at.length > 160) { tr.pts.splice(0, 2); tr.at.shift(); } if (layer === 'public') bus.post({ t: 'laser', key: ikey, pts: [p.x, p.y], from: WINDOW_ID }); dirty.current = true; return; }
+    if (tool === 'eraser' || gesture.current?.type === 'erase') { eraserAt.current = p; liveDirty.current = true; }
+    if (tool === 'laser') { const tr = myLaser.current; tr.pts.push(p.x, p.y); tr.at.push(performance.now()); if (tr.at.length > 160) { tr.pts.splice(0, 2); tr.at.shift(); } if (layer === 'public') bus.post({ t: 'laser', key: ikey, pts: [p.x, p.y], from: WINDOW_ID }); liveDirty.current = true; return; }
     if (foreign(e)) return;
     const g = gesture.current!;
     // 按键已经松开却没收到 pointerup（抬笔信号丢了）：按抬笔处理
     if (e.buttons === 0 && !e.pressure && e.pointerType !== 'touch') { finish(); return; }
     if (g.type === 'erase') { eraseAt(p); return; } if (g.type === 'overlay') { overlay(p); return; }
-    if (g.type === 'lasso') { if (tool === 'select') lasso.current = [g.start.x, g.start.y, p.x, g.start.y, p.x, p.y, g.start.x, p.y]; else lasso.current?.push(p.x, p.y); dirty.current = true; return; }
+    if (g.type === 'lasso') { if (tool === 'select') lasso.current = [g.start.x, g.start.y, p.x, g.start.y, p.x, p.y, g.start.x, p.y]; else lasso.current?.push(p.x, p.y); liveDirty.current = true; return; }
     if (g.type === 'move' || g.type === 'scale' || g.type === 'rotate') {
       if (g.type === 'move') { let dx = p.x - g.start.x, dy = p.y - g.start.y; if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; } preview.current = g.before.map((s) => moveStroke(s, dx, dy)); }
       if (g.type === 'scale') { const k = Math.hypot(p.x - g.center.x, p.y - g.center.y) / Math.max(.001, Math.hypot(g.start.x - g.center.x, g.start.y - g.center.y)); preview.current = g.before.map((s) => scaleStroke(s, g.center, k)); }
       if (g.type === 'rotate') { let angle = Math.atan2(p.y - g.center.y, p.x - g.center.x) - Math.atan2(g.start.y - g.center.y, g.start.x - g.center.x); if (e.shiftKey) angle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12); preview.current = g.before.map((s) => rotateStroke(s, g.center, angle)); }
-      if (preview.current.length === 1) sendLive(preview.current[0]); dirty.current = true; return;
+      // 第一次出现预览时被拖动的原笔迹要从 base 层藏起来：paint 发现「藏起的笔迹」变了会自己重画 base
+      if (preview.current.length === 1) sendLive(preview.current[0]); liveDirty.current = true; return;
     }
     const d = draft.current; if (!d) return;
     if (d.obj) { const dx = p.x - g.start.x, dy = p.y - g.start.y; if (Math.hypot(dx, dy) > .01) { const original = createObject(d.obj.kind, 0, 0, d.id), w = Math.max(.008, Math.abs(dx)), h = e.shiftKey || keepsAspect(d.obj) ? Math.max(.008, w * original.h / original.w) : Math.max(.008, Math.abs(dy)); draft.current = withObject(d, updateObject(d.obj, { x: g.start.x + Math.sign(dx || 1) * w / 2, y: g.start.y + Math.sign(dy || 1) * h / 2, w, h })); } }
@@ -271,9 +306,10 @@ export function InkLayer(props: Props) {
       const samples = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
       for (const sample of samples.length ? samples : [e]) { const q = point(sample), n = d.pts.length; if (Math.hypot(q.x - d.pts[n - 3], q.y - d.pts[n - 2]) > .0004) d.pts.push(q.x, q.y, q.p); }
       clearTimeout(still.current);
-      if (d.tool === 'pen' && useStore.getState().inkOptions.shapeSnap) still.current = window.setTimeout(() => { const recognized = draft.current && recognize(draft.current); if (!recognized) return; draft.current = recognized; dirty.current = true; sendLive(); const b = selectionBounds([recognized]); setSnap({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }); clearTimeout(snapTimer.current); snapTimer.current = window.setTimeout(() => setSnap(null), 650); }, 520);
+      if (d.tool === 'pen' && useStore.getState().inkOptions.shapeSnap) still.current = window.setTimeout(() => { const recognized = draft.current && recognize(draft.current); if (!recognized) return; draft.current = recognized; liveDirty.current = true; sendLive(); const b = selectionBounds([recognized]); setSnap({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }); clearTimeout(snapTimer.current); snapTimer.current = window.setTimeout(() => setSnap(null), 650); }, 520);
     }
-    dirty.current = true; sendLive();
+    // 写字过程中只重画 live 层：标成整板重画的话每一帧都要把整板笔迹重算一遍，写满一板就越写越卡
+    liveDirty.current = true; sendLive();
   };
   // macOS 上部分数位板驱动（如高漫）落笔、行笔报成 pen，抬笔却报成 mouse（pointerId 不同），甚至只发 pointercancel /
   // lostpointercapture、不发 pointerup。以前这些情况都当成「取消」把整笔丢掉，看起来就是写完立刻消失。
@@ -333,7 +369,7 @@ export function InkLayer(props: Props) {
   const cursor = !enabled ? 'default' : tool === 'eraser' ? 'none' : tool === 'text' ? 'text' : tool === 'select' || tool === 'lasso' ? 'default' : tool === 'laser' || tool === 'spotlight' ? 'none' : tool === 'curtain' ? 'ns-resize' : pen ? 'none' : 'crosshair';
   return <div ref={wrap} className="ink" tabIndex={enabled ? 0 : -1} aria-label={layer === 'private' ? '教师私有批注画布' : '课堂板书画布'} onFocus={() => { focusedCanvas = token.current; }} style={{ pointerEvents: enabled ? 'auto' : 'none', cursor }}>
     <canvas ref={base} className="ink-c" style={bandStyle} />
-    <canvas ref={live} className="ink-c" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={(e) => { if (!foreign(e)) finish(); }} onLostPointerCapture={(e) => { if (!foreign(e)) finish(); }} onPointerLeave={() => { eraserAt.current = null; penAt.current = null; dirty.current = true; if (tool === 'laser') { myLaser.current = { pts: [], at: [] }; dirty.current = true; } }} style={{ ...bandStyle, touchAction: 'none' }} />
+    <canvas ref={live} className="ink-c" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={(e) => { if (!foreign(e)) finish(); }} onLostPointerCapture={(e) => { if (!foreign(e)) finish(); }} onPointerLeave={() => { eraserAt.current = null; penAt.current = null; liveDirty.current = true; if (tool === 'laser') myLaser.current = { pts: [], at: [] }; }} style={{ ...bandStyle, touchAction: 'none' }} />
     {snap && <div className="snap-flash" style={{ left: snap.x * 100 + '%', top: snap.y / ratio * 100 + '%' }} />}
     {text && <textarea autoFocus className={'ink-text' + (text.edit ? ' editing' : '')} style={{ left: text.x * 100 + '%', top: text.y / ratio * 100 + '%', fontSize: Math.max(16, (text.edit?.size ?? size) * 8) * px.w / 1000, color: resolveColor(text.edit?.color ?? color, boardSkin, onPage) }} value={text.value} placeholder={text.edit ? '修改文字，点空白处完成；清空就删除' : '输入文字，Ctrl+Enter 完成'} rows={Math.max(1, text.value.split('\n').length)}
       ref={(el) => { if (el && document.activeElement !== el && performance.now() - textOpened.current < 400) requestAnimationFrame(() => { if (!el.isConnected) return; el.focus({ preventScroll: true }); if (text.edit) el.setSelectionRange(el.value.length, el.value.length); }); }}

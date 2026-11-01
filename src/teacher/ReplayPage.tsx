@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Clapperboard, FolderOpen, HardDrive, Loader2, Play, RotateCcw, Sparkles, Trash2, FolderInput, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clapperboard, FolderOpen, HardDrive, Loader2, Play, RotateCcw, Sparkles, Trash2, FolderInput, Undo2, Scissors } from 'lucide-react';
 import { fmtT } from '../lib/timeline';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
@@ -23,6 +23,15 @@ function Analysis({ r, busy, reload }: { r: RecordRow; busy?: string; reload: ()
     {!undone && sortId && <button className="rp-an-undo" data-qa="rp-analysis-undo" onClick={() => { undoSort(sortId); reload(); }}><Undo2 size={12} />撤销</button>}
     {a.summary && <small>{a.summary}</small>}
   </div>;
+}
+
+/** 微信分段：切好了几段、正在切、没切成 */
+function Parts({ r }: { r: RecordRow }) {
+  const parts = r.parts ?? [];
+  if (r.splitting) return <p className="rp-parts busy" data-qa="rp-parts"><Loader2 size={12} className="ags-spin" />正在切成微信分段…</p>;
+  if (parts.length) return <p className="rp-parts" data-qa="rp-parts"><Scissors size={12} />微信分段 {parts.length} 段，每段约 {Math.round(parts.reduce((a, p) => a + p.seconds, 0) / parts.length / 60)} 分钟<button className="link-btn" onClick={() => host.revealInFolder(parts[0].path)}>打开文件夹</button></p>;
+  if (r.splitError) return <p className="rp-parts err" data-qa="rp-parts">微信分段没切成：{r.splitError}</p>;
+  return null;
 }
 
 const minutes = (r: RecordRow) => r.startedAt && r.endedAt ? Math.max(1, Math.round((r.endedAt - r.startedAt) / 60000)) : null;
@@ -95,10 +104,12 @@ export function ReplayPage() {
               {(r.chapters?.length ?? 0) > 0 && <button className="rp-tl-t" data-qa="rp-timeline" onClick={() => setOpen(open === r.id ? '' : r.id)}>{open === r.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}课堂时间线 · {r.chapters!.length} 条</button>}
               {open === r.id && <ol className="rp-tl">{r.chapters!.map((c, i) => <li key={i} className={'k-' + c.kind}><span className="num">{fmtT(c.t)}</span>{c.title}</li>)}</ol>}
               <Analysis r={r} busy={analyzing[r.id]} reload={load} />
+              <Parts r={r} />
             </div>
             <div className="rp-acts">
               {r.phase === 'complete' && <button className="sd-btn" onClick={() => void run(r.id, () => host.call('openRecording', r.id))}><Play size={14} />播放</button>}
               {r.phase === 'complete' && !!stu && analyzing[r.id] === undefined && <button className="sd-btn" data-qa="rp-analyze" title="让 AI 看一遍录像：题目进收件箱、批改记作答、学习地图往前推、课堂小结记进档案" disabled={!!busy} onClick={() => void run(r.id, async () => { await analyzeRecording(r.id); await load(); })}><Sparkles size={14} />{r.analysis && !r.analysis.error ? '重新分析' : 'AI 分析'}</button>}
+              {r.phase === 'complete' && !r.splitting && !r.parts?.length && (m === null || m > 59) && <button className="sd-btn" data-qa="rp-split" title="微信发不了超过 1 小时的视频：切成长度相等、每段不到 1 小时的几段，原回放保留" disabled={!!busy} onClick={() => void run(r.id, async () => { const p = host.call('splitRecording', r.id); await new Promise((ok) => setTimeout(ok, 300)); await load(); await p; })}><Scissors size={14} />切成微信分段</button>}
               {!recording && !conv && r.phase !== 'complete' && <button className="sd-btn" disabled={!!busy} onClick={() => void run(r.id, async () => { void host.call('recoverRecording', r.id).catch((e) => setErr(e.message)); await new Promise((ok) => setTimeout(ok, 300)); await load(); })}><RotateCcw size={14} />生成回放</button>}
               <button className="sd-btn" onClick={() => host.revealInFolder(r.folder)}><FolderOpen size={14} /></button>
               <button className="sd-btn danger" disabled={recording || conv || !!busy} onClick={() => void del([r.id])} aria-label="删除"><Trash2 size={14} /></button>

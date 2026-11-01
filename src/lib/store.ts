@@ -22,7 +22,7 @@ export type Page = 'console' | 'schedule' | 'students' | 'study' | 'agents' | 'a
 export interface Shared {
   pgm: View; pgmMat: Material; boardSkin: BoardSkin; pattern: Pattern; eyeCare: number;
   ink: Record<string, Stroke[]>; studentTools: 'open' | 'locked' | 'hidden';
-  inkOptions: { eraserMode:'stroke'|'segment'; eraserSize?:'s'|'m'|'l'; eraserV?:number; shapeSnap:boolean };
+  inkOptions: { eraserMode:'stroke'|'segment'; eraserSize?:'s'|'m'|'l'; eraserV?:number; shapeSnap:boolean; /** 流畅优先：画布按 1 倍分辨率画、不画粉笔光晕 */ fluent?:boolean };
   drawAuthor: 'teacher' | 'student'; selectedInk: {key:string; ids:string[]} | null;
   curtain: number | null; spotlight: {x:number;y:number;r:number} | null; takeAt: number;
   sim: SimSync | null; tool: Tool; color: string; size: number; objKind: string;
@@ -209,10 +209,24 @@ export const useStore=create<State>()((set,get)=>{
  };
 });
 let saveTimer:number|undefined;let persistQueue=Promise.resolve();
+// 主进程手里已经有的每页笔迹 / 每组撤销记录（按对象比较）。存盘只发有改动的那几份，写满几十页后不必每写一笔都把
+// 整份课堂（可达 20 MB）复制给主进程。撤销记录是就地 push / shift / pop 的，用两端的条目和长度判断有没有变。
+const sentInk=new Map<string,Stroke[]>(),sentHist=new Map<string,unknown[]>();
+type Hist=Histories[string];
+const histMark=(h:Hist)=>[h,h.undo,h.undo.length,h.undo[0],h.undo.at(-1),h.redo,h.redo.length,h.redo.at(-1)];
+const sameMark=(a:unknown[]|undefined,b:unknown[])=>!!a&&a.length===b.length&&a.every((x,i)=>x===b[i]);
+if(host.electron&&ROLE==='teacher'){for(const[k,v]of Object.entries(useStore.getState().ink))sentInk.set(k,v);for(const[k,h]of Object.entries(history))sentHist.set(k,histMark(h));}
 export function flushStore(){
  if(ROLE!=='teacher')return Promise.resolve();clearTimeout(saveTimer);const s=useStore.getState();
  const value={shared:Object.fromEntries(SHARED_KEYS.map(k=>[k,s[k]])),local:Object.fromEntries(LOCAL_KEYS.map(k=>[k,s[k]])),history};
- if(host.electron){persistQueue=persistQueue.catch(()=>{}).then(()=>host.persist(value)).catch(e=>{if(!useStore.getState().saveError)useStore.setState({saveError:'保存失败：'+String(e.message)});});return persistQueue;}
+ if(host.electron){
+  const inkNow=Object.entries(s.ink),histNow=Object.entries(history).map(([k,h])=>[k,h,histMark(h)] as const);
+  const ink=Object.fromEntries(inkNow.filter(([k,v])=>sentInk.get(k)!==v)),hist=Object.fromEntries(histNow.filter(([k,,m])=>!sameMark(sentHist.get(k),m)).map(([k,h])=>[k,h]));
+  const delta={...value,shared:{...value.shared,ink},history:hist,inkKeys:inkNow.map(([k])=>k),historyKeys:histNow.map(([k])=>k)};
+  const sent=()=>{const ik=new Set(delta.inkKeys),hk=new Set(delta.historyKeys);
+   for(const k of [...sentInk.keys()])if(!ik.has(k))sentInk.delete(k);for(const k of [...sentHist.keys()])if(!hk.has(k))sentHist.delete(k);
+   for(const[k,v]of inkNow)sentInk.set(k,v);for(const[k,,m]of histNow)if(Object.hasOwn(hist,k))sentHist.set(k,m);};
+  persistQueue=persistQueue.catch(()=>{}).then(()=>host.persist(delta)).then(sent).catch(e=>{if(!useStore.getState().saveError)useStore.setState({saveError:'保存失败：'+String(e.message)});});return persistQueue;}
  try{localStorage.setItem('cs.v2.teacher',JSON.stringify(value));}catch{if(!s.saveError)useStore.setState({saveError:'浏览器存储已满，请使用桌面版保存课堂'});}return Promise.resolve();
 }
 useStore.subscribe(()=>{if(ROLE!=='teacher')return;clearTimeout(saveTimer);saveTimer=window.setTimeout(flushStore,600);});

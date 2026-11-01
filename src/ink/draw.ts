@@ -16,6 +16,7 @@ export interface DrawCtx {
   scale: number;                 // 页面像素宽度
   color: (c: string) => string;  // 语义色 → 实际色
   dark: boolean;                 // 深色黑板
+  noGlow?: boolean;              // 流畅优先：深色黑板上不画粉笔光晕
 }
 
 const U = 1 / 1000;
@@ -33,6 +34,24 @@ function pairs(pts: number[]) {
 }
 function unscale(outline: number[][]) {
   return outline.map(([x, y]) => [x / FK, y / FK]);
+}
+// 整板重画（翻页、撤销、橡皮、对方窗口同步）时，每一笔都重新跑 perfect-freehand 是最大的 JS 开销。
+// 已经写完的笔迹不会再改 pts，按对象缓存轮廓；正在写的那一笔 pts 在变长，长度对不上就重算。
+const outlines = new WeakMap<Stroke, { pts: number[]; n: number; size: number; tool: string; outline: number[][] }>();
+function freehand(s: Stroke, w: number, pressure: boolean) {
+  const hit = outlines.get(s);
+  if (hit && hit.pts === s.pts && hit.n === s.pts.length && hit.size === s.size && hit.tool === s.tool) return hit.outline;
+  const p = s.pts;
+  const outline = unscale(getStroke(pairs(p), {
+    size: w * FK * (pressure ? 2.4 : 3.2),
+    thinning: pressure ? 0.55 : 0.05,
+    smoothing: 0.6,
+    streamline: 0.45,
+    simulatePressure: p.every((v, i) => i % 3 !== 2 || v === 0.5),
+    last: true,
+  }));
+  outlines.set(s, { pts: p, n: p.length, size: s.size, tool: s.tool, outline });
+  return outline;
 }
 
 function polygon(ctx: CanvasRenderingContext2D, outline: number[][]) {
@@ -102,15 +121,8 @@ export function draw(d: DrawCtx, s: Stroke) {
     case 'pen':
     case 'marker': {
       const pressure = s.tool === 'pen';
-      const outline = unscale(getStroke(pairs(p), {
-        size: w * FK * (pressure ? 2.4 : 3.2),
-        thinning: pressure ? 0.55 : 0.05,
-        smoothing: 0.6,
-        streamline: 0.45,
-        simulatePressure: p.every((v, i) => i % 3 !== 2 || v === 0.5),
-        last: true,
-      }));
-      if (d.dark && s.tool === 'pen') { ctx.shadowColor = col; ctx.shadowBlur = w * d.scale * 0.6; }
+      const outline = freehand(s, w, pressure);
+      if (d.dark && s.tool === 'pen' && !d.noGlow) { ctx.shadowColor = col; ctx.shadowBlur = w * d.scale * 0.6; }
       polygon(ctx, outline);
       break;
     }
@@ -359,12 +371,24 @@ export function hit(s: Stroke, x: number, y: number, r: number) {
   }
   const rr = r + (s.size * U) * (s.tool === 'highlighter' ? 4.5 : 1.2);
   if (p.length === 3) return Math.hypot(p[0] - x, p[1] - y) < rr;
+  // 橡皮每移动一下要对整板每一笔做命中测试：先用外框排除，写满一板时省掉绝大部分逐段计算
+  const b = boxOfPts(p);
+  if (x < b.x0 - rr || x > b.x1 + rr || y < b.y0 - rr || y > b.y1 + rr) return false;
   const segs = s.tool === 'pen' || s.tool === 'marker' || s.tool === 'highlighter' || s.tool === 'curve'
     ? p : [p[0], p[1], 0, p[p.length - 3], p[p.length - 2], 0];
   for (let i = 0; i + 5 < segs.length; i += 3) {
     if (segDist(x, y, segs[i], segs[i + 1], segs[i + 3], segs[i + 4]) < rr) return true;
   }
   return false;
+}
+
+const ptsBoxes = new WeakMap<number[], { n: number; box: { x0: number; y0: number; x1: number; y1: number } }>();
+function boxOfPts(p: number[]) {
+  const hit = ptsBoxes.get(p);
+  if (hit && hit.n === p.length) return hit.box;
+  const box = bbox(p);
+  ptsBoxes.set(p, { n: p.length, box });
+  return box;
 }
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
