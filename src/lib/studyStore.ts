@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { host } from './host';
 import { emptyStudy, type Attempt, type Question, type Result, type StudyData } from './studyLogic';
 import { toast } from './toast';
+import { migratePreps } from './prepRecord';
 
 interface StudyState {
   data: StudyData; loaded: boolean; error: string | null; saving: boolean;
@@ -13,7 +14,13 @@ export const useStudy = create<StudyState>()((set, get) => ({
   data: emptyStudy(), loaded: false, error: null, saving: false,
   load: async () => {
     if (!host.electron) { set({ loaded: true }); return; }
-    try { set({ data: { ...emptyStudy(), ...(await host.call<StudyData>('study.load')) }, loaded: true, error: null }); }
+    try {
+      const data = { ...emptyStudy(), ...(await host.call<StudyData>('study.load')) };
+      // 1.7.0 一次性迁移（幂等）：以前小羽归档成「教案 / 备课资料」的文件只进了「文件」页，这里补成备课记录
+      const m = host.role === 'teacher' ? migratePreps(data, { id: () => crypto.randomUUID() }) : { added: 0, preps: data.preps };
+      set({ data: m.added ? { ...data, preps: m.preps } : data, loaded: true, error: null });
+      if (m.added) schedule();
+    }
     catch (e) { set({ loaded: true, error: '学情库读取失败：' + (e as Error).message }); }
   },
   update: (fn) => { set({ data: fn(get().data) }); schedule(); },

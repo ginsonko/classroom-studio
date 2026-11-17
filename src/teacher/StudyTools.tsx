@@ -195,9 +195,12 @@ export function LessonTab() {
     </section>
     <section className="sd-preview">
       {!note ? <div className="lib-empty">填好左边后点「生成」。结果可以直接修改，然后复制家长反馈、导出分享长图或 Word / PDF。</div> : <div className="sd-note-edit">
+        <label>一句话（课前卡片、下节备课里看）<input data-qa="lesson-oneline" value={note.oneLine ?? ''} onChange={(e) => setNote({ ...note, oneLine: e.target.value })} placeholder="例如：讲了 5 道连接体题，受力分析更熟练了" /></label>
         <label>本节课总结<textarea rows={4} value={note.summary} onChange={(e) => setNote({ ...note, summary: e.target.value })} /></label>
         <div className="sd-grid3"><label>做得好的（一行一条）<textarea rows={4} value={lines(note.strengths)} onChange={(e) => setNote({ ...note, strengths: split(e.target.value) })} /></label><label>需要加强<textarea rows={4} value={lines(note.problems)} onChange={(e) => setNote({ ...note, problems: split(e.target.value) })} /></label><label>下一步<textarea rows={4} value={lines(note.next)} onChange={(e) => setNote({ ...note, next: split(e.target.value) })} /></label></div>
         <label>给家长的话<textarea rows={5} value={note.parent} onChange={(e) => setNote({ ...note, parent: e.target.value })} /></label>
+        {!!note.pending?.length && <div className="sd-pending" data-qa="lesson-pending"><b>待确认（只有你看得到，不会发给家长）</b>{note.pending.map((p, i) => <p key={i}>{p}</p>)}</div>}
+        {!!note.covered?.length && <p className="sd-note">家长版「本节内容」会列出课上讲到的 {note.covered.length} 道题。导出和发送的都是家长版：只有本节内容、表现亮点、需要加强、课后建议、作业和老师的话。</p>}
         {err && <p className="sd-err">{err}</p>}
         <div className="ags-row">
           <button className="sd-btn" onClick={() => { save(note); setErr(''); }}>保存</button>

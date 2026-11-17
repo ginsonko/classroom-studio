@@ -1,0 +1,13 @@
+.ai-trouble { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn, #f5a524) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warn, #f5a524) 35%, transparent); color: var(--fg-0); font-size: 13px; line-height: 1.55; }
+.ai-trouble.compact { padding: 8px 10px; font-size: 12px; }
+.ai-trouble-h { display: flex; gap: 8px; align-items: flex-start; }
+.ai-trouble-h svg { flex: none; margin-top: 3px; color: var(--warn, #f5a524); }
+.ai-trouble-b { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 0 22px; }
+.ai-trouble-b button { padding: 4px 12px; border-radius: 8px; background: var(--bg-3, #2a2d33); color: inherit; font-size: 12px; }
+.ai-trouble-b button.pri { background: var(--cue, #3dd6e8); color: #04141a; font-weight: 600; }
+.ai-trouble-raw { margin: 6px 0 0 22px; color: var(--fg-3, #8b919a); font-size: 11.5px; }
+.ai-trouble-raw summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 3px; }
+.ai-trouble-raw[open] summary svg { transform: rotate(90deg); }
+.ai-trouble-raw pre { max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 4px 0 0; font-size: 11px; user-select: text; }
+.ags-ev-raw summary { cursor: pointer; color: var(--fg-2, #b8bdc6); }
+.ags-ev-raw pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; color: var(--fg-3, #8b919a); margin: 4px 0 0; max-height: 120px; overflow: auto; }

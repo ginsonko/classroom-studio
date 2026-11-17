@@ -1,0 +1,27 @@
+{
+  "id": "html",
+  "skill": "courseware-html",
+  "label": "互动课件",
+  "one": "学生在微信里点开就能玩的单文件网页课件，手画曲线电梯跟着跑，做题当场判对错。",
+  "highlights": [
+    "在 a–t 图上直接手画任意加速度曲线或点选预设，电梯、弹簧秤示数与受力箭头按真实公式实时联动",
+    "内置离线 KaTeX 数学公式与单击分步推导，没网也能高清显示，不糊不乱码",
+    "自带 3 道随堂点选小测，即点即出对错与易错解析，电脑横屏投屏、手机竖屏滑动自动适配"
+  ],
+  "when": ["新课情境引入", "重难点动态突破", "发微信群让学生课后自己动手试"],
+  "formats": "单文件离线 HTML",
+  "cost": "约 6 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+  "preview": {
+    "type": "video",
+    "src": "courseware-html/_showcase/preview.webm",
+    "poster": "courseware-html/_showcase/poster.webp"
+  },
+  "full": [
+    {
+      "label": "超重与失重 互动课件",
+      "file": "courseware-html/_showcase/超重与失重.html",
+      "kind": "html"
+    }
+  ],
+  "styleRef": ["courseware-html/超重与失重.html"]
+}

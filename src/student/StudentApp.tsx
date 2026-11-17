@@ -6,6 +6,7 @@ import { DeskRail, PagePanel, ZoomBar, deskWheel, resetZoom, zoomBy } from '../s
 import { pageLabel } from '../lib/desk';
 import { useToolKeys } from '../ui/ToolPalette';
 import { StudentBar } from './StudentBar';
+import { ClassCorner } from './ClassCorner';
 import { warm } from '../doc/webKeep';
 import { dropToBoard, droppedImages, installPaste } from '../ink/pasteImage';
 
@@ -104,6 +105,7 @@ export function StudentApp() {
         {studentTools === 'hidden' && <b className="num">{pageLabel(mat, pgm)}</b>}
       </div>}
       {studentTools !== 'hidden' && <ZoomBar canPage={canDrive} />}
+      <ClassCorner />
       {over && <div className="sw-drop">松手把图片贴到黑板</div>}
       {msg && <div className="sw-msg" role="status">{msg}</div>}
     </div>

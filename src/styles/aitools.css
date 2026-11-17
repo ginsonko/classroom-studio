@@ -1,0 +1,52 @@
+/* 1.7.0 AI 工具：确认卡片、AI 浏览器面板、键鼠状态条 */
+
+/* 确认卡片：右下角，比小羽抽屉更上层（浏览器网页是原生视图，面板放在左边，不会盖住卡片） */
+.aitc-stack { position: fixed; z-index: 300; right: 14px; bottom: 14px; width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 10px; }
+.aitc-card { padding: 12px 14px 10px; border-radius: var(--r-lg); background: var(--bg-1); color: var(--fg-0); box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong), inset 4px 0 0 var(--warn); animation: aitc-in .22s var(--ease-out); }
+.aitc-card.k-desk { box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong), inset 4px 0 0 var(--live); }
+@keyframes aitc-in { from { opacity: 0; transform: translateY(8px); } }
+.aitc-h { display: flex; align-items: center; gap: 7px; font-size: 14px; }
+.aitc-h b { flex: 1; }
+.aitc-h i { font-style: normal; font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.aitc-who { margin: 4px 0 0; font-size: 12px; color: var(--fg-2); }
+.aitc-d { margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--fg-1); white-space: pre-wrap; max-height: 160px; overflow: auto; }
+.aitc-b { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; flex-wrap: wrap; }
+.aitc-b button { padding: 6px 12px; border-radius: var(--r-sm); border: 0; background: var(--bg-3); color: var(--fg-0); font: inherit; font-size: 12.5px; cursor: pointer; }
+.aitc-b button.yes { background: var(--cue); color: #fff; }
+.aitc-b button.no { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.aitc-hint { margin: 6px 0 0; font-size: 11px; color: var(--fg-3); text-align: right; }
+
+/* 键鼠状态条：顶栏正中 */
+.aitd-bar { position: fixed; z-index: 310; top: 6px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-radius: 999px; background: var(--live); color: #fff; font-size: 12.5px; box-shadow: var(--shadow-pop); max-width: calc(100vw - 40px); }
+.aitd-bar.paused { background: var(--warn); color: #1b1300; }
+.aitd-bar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aitd-bar button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; border: 0; background: rgba(0, 0, 0, .22); color: inherit; font: inherit; cursor: pointer; }
+.aitd-bar button.yes { background: #fff; color: #1b1300; }
+
+/* AI 浏览器面板：靠左放，给右边的小羽抽屉留出位置（网页是盖在 .aitb-body 上的原生视图） */
+.aitb-pane { position: fixed; z-index: 140; top: calc(var(--bar) + 8px); bottom: 8px; left: calc(var(--rail) + 8px); width: min(880px, calc(100vw - var(--rail) - 470px)); min-width: 420px; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--bg-1); color: var(--fg-0); box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+.aitb-head { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.aitb-head .flex { flex: 1; }
+.aitb-who { color: var(--fg-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.aitb-head select { background: var(--bg-2); color: var(--fg-0); border: 0; border-radius: var(--r-sm); padding: 3px 6px; font: inherit; font-size: 12px; max-width: 200px; }
+.aitb-head button, .aitb-bar button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: var(--r-sm); border: 0; background: transparent; color: var(--fg-1); font: inherit; font-size: 12px; cursor: pointer; }
+.aitb-head button:hover, .aitb-bar button:hover:not(:disabled) { background: var(--bg-3); }
+.aitb-bar button:disabled { opacity: .35; cursor: default; }
+.aitb-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.aitb-bar form { flex: 1; min-width: 0; }
+.aitb-bar input { width: 100%; box-sizing: border-box; padding: 5px 9px; border-radius: 999px; border: 0; background: var(--bg-2); color: var(--fg-0); font: inherit; font-size: 12px; }
+.aitb-bar button.yes { background: var(--cue); color: #fff; }
+.aitb-tabs { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.aitb-tabs button { flex: none; max-width: 180px; padding: 3px 9px; border-radius: var(--r-sm); border: 0; background: var(--bg-2); color: var(--fg-2); font: inherit; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.aitb-tabs button.on { background: var(--bg-4); color: var(--fg-0); }
+.aitb-note { display: flex; align-items: center; gap: 7px; padding: 6px 12px; font-size: 12px; color: var(--fg-1); background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.aitb-note.handoff { background: var(--cue-soft); color: var(--fg-0); font-weight: 600; }
+.aitb-note.paused { background: color-mix(in srgb, var(--warn) 22%, var(--bg-2)); }
+.aitb-body { flex: 1; min-height: 120px; background: #fff; position: relative; }
+.aitb-body p { position: absolute; inset: 0; margin: auto; height: 1.5em; text-align: center; color: #888; font-size: 13px; }
+.aitb-foot { margin: 0; padding: 5px 12px; font-size: 11px; color: var(--fg-3); border-top: 1px solid var(--line); }
+
+.aitb-chip { position: fixed; z-index: 145; left: calc(var(--rail) + 12px); bottom: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 0; background: var(--bg-1); color: var(--fg-0); font: inherit; font-size: 12.5px; box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--line-strong); cursor: pointer; }
+.aitb-chip.live { box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--cue); }
+.aitb-chip.wait { background: var(--warn); color: #1b1300; animation: aitb-pulse 1.6s ease-in-out infinite; }
+@keyframes aitb-pulse { 50% { transform: translateY(-2px); } }

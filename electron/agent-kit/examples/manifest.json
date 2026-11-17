@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "topic": "高一物理 · 超重与失重（人教版必修一）",
+  "items": [
+    {
+      "id": "html",
+      "skill": "courseware-html",
+      "label": "互动课件",
+      "one": "学生在微信里点开就能玩的单文件网页课件，手画曲线电梯跟着跑，做题当场判对错。",
+      "highlights": [
+        "在 a–t 图上直接手画任意加速度曲线或点选预设，电梯、弹簧秤示数与受力箭头按真实公式实时联动",
+        "内置离线 KaTeX 数学公式与单击分步推导，没网也能高清显示，不糊不乱码",
+        "自带 3 道随堂点选小测，即点即出对错与易错解析，电脑横屏投屏、手机竖屏滑动自动适配"
+      ],
+      "when": [
+        "新课情境引入",
+        "重难点动态突破",
+        "发微信群让学生课后自己动手试"
+      ],
+      "formats": "单文件离线 HTML",
+      "cost": "约 6 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+      "preview": {
+        "type": "video",
+        "src": "courseware-html/_showcase/preview.webm",
+        "poster": "courseware-html/_showcase/poster.webp"
+      },
+      "full": [
+        {
+          "label": "超重与失重 互动课件",
+          "file": "courseware-html/_showcase/超重与失重.html",
+          "kind": "html"
+        }
+      ],
+      "styleRef": [
+        "courseware-html/超重与失重.html"
+      ]
+    },
+    {
+      "id": "ppt",
+      "skill": "lecture-slides",
+      "label": "讲课 PPT",
+      "one": "16:9 可编辑讲课幻灯片，六种版式搭配情境配图，例题和推导鼠标点一下出一步。",
+      "highlights": [
+        "封面、生活情境、双栏对比、受力图解、分步例题、总结卡六种版式穿插，告别一页页纯文字列表",
+        "文字框在 PowerPoint 和 WPS 里能直接改字，公式单独成高清图并在说明里保留原始 LaTeX",
+        "推导与例题自带单击淡入分步动画，在导播台里点一下出一步，完全贴合老师边问边讲的节奏"
+      ],
+      "when": [
+        "新课主讲",
+        "公开课展示",
+        "考前专题串讲"
+      ],
+      "formats": "可编辑 PPTX + PDF",
+      "cost": "约 5 分钟 · 约 ¥0.6 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "lecture-slides/_showcase/shot-1.webp",
+          "lecture-slides/_showcase/shot-2.webp",
+          "lecture-slides/_showcase/shot-3.webp",
+          "lecture-slides/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "超重与失重 讲课课件（可编辑 PPTX）",
+          "file": "lecture-slides/_showcase/超重与失重-课件.pptx",
+          "kind": "pptx"
+        },
+        {
+          "label": "超重与失重 讲课课件（PDF 讲义版）",
+          "file": "lecture-slides/_showcase/超重与失重-课件.pdf",
+          "kind": "pdf"
+        }
+      ],
+      "styleRef": [
+        "lecture-slides/超重与失重-课件.md"
+      ]
+    },
+    {
+      "id": "quiz",
+      "skill": "practice-set",
+      "label": "练习题",
+      "one": "基础、提高、拓展三层共 10 题，真题逐题标出处，解析专讲易错点，学生版、答案版、手机长图一次出齐。",
+      "highlights": [
+        "三层梯度一套卷：基础题保底、提高题练受力分析、拓展题挖接触条件，课后按学生水平直接圈题",
+        "真题出处可点开原卷核对，拿不准的一律标「原创」，家长和教研问起来经得住查",
+        "每题解析末尾一句「易错」，正好对着学生最常犯的「看速度判超重」「漏算反作用力」讲"
+      ],
+      "when": [
+        "新课后分层巩固",
+        "周末一对一布置",
+        "单元复习查漏"
+      ],
+      "formats": "Word + PDF（学生版 / 教师答案版）+ 手机长图 + 题库",
+      "cost": "约 8 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "practice-set/_showcase/shot-1.webp",
+          "practice-set/_showcase/shot-2.webp",
+          "practice-set/_showcase/shot-3.webp",
+          "practice-set/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "分层练习 学生版（PDF）",
+          "file": "practice-set/_showcase/超重与失重-练习.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "答案与解析 教师版（PDF）",
+          "file": "practice-set/_showcase/超重与失重-答案.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "学生手机长图",
+          "file": "practice-set/_showcase/超重与失重-学生长图.png",
+          "kind": "png"
+        },
+        {
+          "label": "分层练习 学生版（Word 可改）",
+          "file": "practice-set/_showcase/超重与失重-练习.docx",
+          "kind": "docx"
+        },
+        {
+          "label": "答案与解析 教师版（Word 可改）",
+          "file": "practice-set/_showcase/超重与失重-答案.docx",
+          "kind": "docx"
+        }
+      ],
+      "styleRef": [
+        "practice-set/超重与失重-练习.md",
+        "practice-set/超重与失重-答案.md",
+        "practice-set/超重与失重-学生长图.md",
+        "practice-set/超重与失重-题库.json"
+      ]
+    },
+    {
+      "id": "homework",
+      "skill": "homework",
+      "label": "分层作业",
+      "one": "必做 30 分钟保底 + 选做拔高，卷首带一段家长看得懂的配合说明，附老师 30 秒快速批改卡。",
+      "highlights": [
+        "必做题逐题精确控时共 30 分钟，选做题给学有余力的孩子加餐，再也不怕布置多了写不完",
+        "卷首自带零术语「给家长的一段话」，交代做多久、怎么交、怎么提醒写公式，发群不用另敲一段解释",
+        "教师版开头就是一张 10 分制快速批改要点卡，步骤分、高频错因、下节课前 5 分钟怎么跟进一目了然"
+      ],
+      "when": [
+        "下课当场发微信布置",
+        "周末分层巩固",
+        "需要家长配合督促时"
+      ],
+      "formats": "Word + PDF（作业单 / 批改要点版）+ 手机长图 + 题库",
+      "cost": "约 6 分钟 · 约 ¥0.6 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "homework/_showcase/shot-1.webp",
+          "homework/_showcase/shot-2.webp",
+          "homework/_showcase/shot-3.webp",
+          "homework/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "课后分层作业 学生单（PDF）",
+          "file": "homework/_showcase/超重与失重-作业.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "快速批改要点与答案 教师版（PDF）",
+          "file": "homework/_showcase/超重与失重-作业答案.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "微信手机长图（含家长说明）",
+          "file": "homework/_showcase/超重与失重-学生长图.png",
+          "kind": "png"
+        },
+        {
+          "label": "课后分层作业 学生单（Word 可改）",
+          "file": "homework/_showcase/超重与失重-作业.docx",
+          "kind": "docx"
+        },
+        {
+          "label": "快速批改要点与答案（Word 可改）",
+          "file": "homework/_showcase/超重与失重-作业答案.docx",
+          "kind": "docx"
+        }
+      ],
+      "styleRef": [
+        "homework/超重与失重-作业.md",
+        "homework/超重与失重-作业答案.md",
+        "homework/超重与失重-学生长图.md",
+        "homework/超重与失重-题库.json"
+      ]
+    },
+    {
+      "id": "test",
+      "skill": "quiz-paper",
+      "label": "测验卷",
+      "one": "像重点学校正式印发的 40 分钟 100 分 A4 测验卷，密封线、登分栏、分步评分细则和双向细目表一应俱全。",
+      "highlights": [
+        "卷头填写栏、密封线提示、大题登分表、解答题按分值留白齐全，打印出来直接能当周测或入学摸底卷发",
+        "解答题拆到每一步给几分（如「写出位移差得 2 分」）、列明常见错法怎么扣分，谁批改都是同一把尺子",
+        "自带完整命题双向细目表（知识点 × 能力层次 × 6:3:1 难度配比 × 题号分值），教研备课与考后复盘直接能用"
+      ],
+      "when": [
+        "阶段小测验收",
+        "新学生入学摸底",
+        "考前限时模拟"
+      ],
+      "formats": "A4 Word + PDF（正式试卷 / 评分细则与双向细目表）+ 题库",
+      "cost": "约 8 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "quiz-paper/_showcase/shot-1.webp",
+          "quiz-paper/_showcase/shot-2.webp",
+          "quiz-paper/_showcase/shot-3.webp",
+          "quiz-paper/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "40 分钟正式测验卷（A4 PDF）",
+          "file": "quiz-paper/_showcase/超重与失重-测验.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "评分细则与双向细目表（PDF）",
+          "file": "quiz-paper/_showcase/超重与失重-测验答案.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "40 分钟正式测验卷（Word 可改）",
+          "file": "quiz-paper/_showcase/超重与失重-测验.docx",
+          "kind": "docx"
+        },
+        {
+          "label": "评分细则与双向细目表（Word 可改）",
+          "file": "quiz-paper/_showcase/超重与失重-测验答案.docx",
+          "kind": "docx"
+        }
+      ],
+      "styleRef": [
+        "quiz-paper/超重与失重-测验.md",
+        "quiz-paper/超重与失重-测验答案.md",
+        "quiz-paper/超重与失重-题库.json"
+      ]
+    },
+    {
+      "id": "notes",
+      "skill": "lesson-notes",
+      "label": "课堂讲义",
+      "one": "紧凑两页 A4 打印即发的导学案：第 1 页结构图与判据公式卡，第 2 页阶梯例题手写留白与随堂笔记栏。",
+      "highlights": [
+        "严格浓缩在正反两页 A4 内，一张纸双面打印就能发给学生边听课边动笔推导，告别五六页教材原文照搬",
+        "自带树状知识结构图、四态判据公式速查表与「直觉误区 → 正确理解」对照，考前翻开这一页就够复习",
+        "两道阶梯例题预留思维脚手架与带横线的手写推导框，底部专设随堂笔记栏，听课不动手走神的问题迎刃而解"
+      ],
+      "when": [
+        "课前打印发给学生跟课",
+        "一对一屏幕共享导学",
+        "考前两页纸速查复习"
+      ],
+      "formats": "两页 A4 PDF + 可编辑 Word",
+      "cost": "约 4 分钟 · 约 ¥0.4 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "lesson-notes/_showcase/shot-1.webp",
+          "lesson-notes/_showcase/shot-2.webp",
+          "lesson-notes/_showcase/shot-3.webp",
+          "lesson-notes/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "超重与失重 课堂导学讲义（两页 A4 PDF）",
+          "file": "lesson-notes/_showcase/超重与失重-讲义.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "超重与失重 课堂导学讲义（Word 可改）",
+          "file": "lesson-notes/_showcase/超重与失重-讲义.docx",
+          "kind": "docx"
+        }
+      ],
+      "styleRef": [
+        "lesson-notes/超重与失重-讲义.md"
+      ]
+    },
+    {
+      "id": "plan",
+      "skill": "lesson-plan",
+      "label": "教案",
+      "one": "60 分钟一对一网课逐环节实战教案：带比例时间轴、提问与追问原话、导播台切换节点和三栏板书设计图。",
+      "highlights": [
+        "60 分钟拆成 6 个严丝合缝的课堂环节并绘出彩色比例时间轴，告别笼统的「新授 30 分钟」套话",
+        "每一步都写好老师怎么提问、学生直觉会怎么错（如「往上升就超重」）、用哪句话追问点醒、第几分钟切仿真插件",
+        "附结构树与 16:9 课堂黑板三栏板书布局图，外加学得快拔高临界、学得慢保底单体的双套应变预案，拿来就能照着上"
+      ],
+      "when": [
+        "一对一新课备课",
+        "公开课与试听课打磨",
+        "青年教师教研说课"
+      ],
+      "formats": "A4 PDF + 可编辑 Word（含时间轴图与三栏板书布局图）",
+      "cost": "约 5 分钟 · 约 ¥0.5 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "lesson-plan/_showcase/shot-1.webp",
+          "lesson-plan/_showcase/shot-2.webp",
+          "lesson-plan/_showcase/shot-3.webp",
+          "lesson-plan/_showcase/shot-4.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "60 分钟一对一实战教案（PDF）",
+          "file": "lesson-plan/_showcase/超重与失重-教案.pdf",
+          "kind": "pdf"
+        },
+        {
+          "label": "60 分钟一对一实战教案（Word 可改）",
+          "file": "lesson-plan/_showcase/超重与失重-教案.docx",
+          "kind": "docx"
+        }
+      ],
+      "styleRef": [
+        "lesson-plan/超重与失重-教案.md"
+      ]
+    },
+    {
+      "id": "plugin",
+      "skill": "plugin-dev",
+      "label": "做插件",
+      "one": "给导播台长出一个专属小工具：老师在自己面板拖滑块切阶段，学生大屏同步看干净的实验演示。",
+      "highlights": [
+        "师生双屏分离：老师端小面板调质量、加速度与运动阶段，学生共享窗口只显示干净漂亮的三栏实验台",
+        "双针弹簧秤表盘 + 隔离体受力箭头 + 支持力实时波形同屏联动，还能一键把当前读数写上黑板",
+        "独立安全沙箱运行，一次做好装进导播台，以后每届讲这节课随手点开就能用"
+      ],
+      "when": [
+        "每届都要讲的经典实验",
+        "课堂随手调参演示",
+        "专属教学小工具沉淀"
+      ],
+      "formats": "导播台插件（可一键安装 / 导出分享）",
+      "cost": "约 5 分钟 · 约 ¥0.7 · 质量优先档，仅估算",
+      "preview": {
+        "type": "video",
+        "src": "plugin-dev/_showcase/preview.webm",
+        "poster": "plugin-dev/_showcase/poster.webp"
+      },
+      "full": [
+        {
+          "label": "电梯体重秤 导播台插件",
+          "file": "plugin-dev/_showcase/elevator-scale",
+          "kind": "plugin"
+        }
+      ],
+      "styleRef": [
+        "plugin-dev/elevator-scale/plugin.json",
+        "plugin-dev/elevator-scale/index.html",
+        "plugin-dev/elevator-scale/screen.html"
+      ]
+    },
+    {
+      "id": "free",
+      "skill": "custom",
+      "label": "自定义",
+      "one": "不止上面八种固定模板：考后错题诊断长图、经典模型速查网、物理闯关小游戏，直接说想法就能做。",
+      "highlights": [
+        "学情诊断信息长图：五维能力雷达 + 失分归因环 + 三周提分路线，排版精致，发给家长一眼看懂",
+        "学科模型速查网页：12 个高一力学必考模型配离线公式、受力图解、分类搜索与「遮住公式自测」",
+        "知识点闯关小游戏：太空电梯三关特训（状态快判、推力控重、软着陆驾驶），把易错点变成学生抢着玩的实验"
+      ],
+      "when": [
+        "月考后一对一学情诊断发家长",
+        "章节公式模型速查整理",
+        "公开课互动闯关与课后拓展"
+      ],
+      "formats": "高清长图 PNG / 单文件互动 HTML / 可玩小游戏",
+      "cost": "约 5～8 分钟 · 约 ¥0.6～1.2 · 质量优先档，仅估算",
+      "preview": {
+        "type": "slides",
+        "images": [
+          "custom/_showcase/shot-1.webp",
+          "custom/_showcase/shot-2.webp",
+          "custom/_showcase/shot-3.webp"
+        ]
+      },
+      "full": [
+        {
+          "label": "月考错题归因与提分路线分析长图",
+          "file": "custom/_showcase/月考错题归因与提分路线分析长图.png",
+          "kind": "png"
+        },
+        {
+          "label": "高一力学经典模型速查网页",
+          "file": "custom/_showcase/高一力学经典模型速查网页.html",
+          "kind": "html"
+        },
+        {
+          "label": "超重与失重·太空电梯闯关小游戏",
+          "file": "custom/_showcase/超重与失重·太空电梯闯关小游戏.html",
+          "kind": "html"
+        }
+      ],
+      "styleRef": [
+        "custom/月考错题归因与提分路线分析长图.html",
+        "custom/高一力学经典模型速查网页.html",
+        "custom/超重与失重·太空电梯闯关小游戏.html"
+      ]
+    }
+  ]
+}

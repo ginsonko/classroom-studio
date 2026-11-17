@@ -177,8 +177,10 @@ const analysisCalls = () => requests.filter((r) => JSON.stringify(r.messages).in
   };
   const f1 = await makeRec('rec-1', '电磁感应');
   const rec = await T(`const r=await Q.recordAnalysis.analyzeRecording('rec-1');return r&&{id:r.id,q:r.questions,a:r.attempts,n:r.notes,map:r.map,recordId:r.recordId,lines:r.lines}`);
-  assert.equal(analysisCalls().length, 2, '12 张画面分两批');
-  for (const r of analysisCalls()) { assert.equal(r.model, 'fake-vision'); assert.equal(r.messages.at(-1).content.filter((p) => p.type === 'image_url').length, 6); }
+  // 1.7.0：按换页 / 补帧全看，不再固定 12 张；每批最多 6 张
+  const nImg = analysisCalls().reduce((n, r) => n + r.messages.at(-1).content.filter((p) => p.type === 'image_url').length, 0);
+  assert.ok(nImg >= 1 && analysisCalls().length === Math.ceil(nImg / 6), `${nImg} 张画面分 ${analysisCalls().length} 批`);
+  for (const r of analysisCalls()) { assert.equal(r.model, 'fake-vision'); assert.ok(r.messages.at(-1).content.filter((p) => p.type === 'image_url').length <= 6); }
   assert.match(JSON.stringify(analysisCalls()[0].messages), /电磁感应课件/, '时间线一起发给模型');
   assert.equal(rec.recordId, 'rec-1');
   assert.equal(rec.q.length, 1, '两批里同一道题只进一次');
@@ -195,13 +197,13 @@ const analysisCalls = () => requests.filter((r) => JSON.stringify(r.messages).in
   assert.match(note, /楞次定律/); assert.match(note, /可能还没掌握（只是建议，学习地图没改）/);
   assert.equal(await cell(KEYS[2]), 'none', '薄弱只写建议，不改地图');
   const meta = JSON.parse(fs.readFileSync(path.join(f1, 'recording.json'), 'utf8'));
-  assert.equal(meta.analysis.sortId, rec.id); assert.equal(meta.analysis.frames, 12); assert.equal(meta.analysis.questions, 1);
-  assert.ok(fs.readdirSync(path.join(f1, 'frames')).length === 12);
-  assert.ok((await toasts()).some((t) => /AI 看完了「电磁感应」的录像：1 道题进收件箱、记了 1 条作答、学习地图 2 处/.test(t)), JSON.stringify(await toasts()));
+  assert.equal(meta.analysis.sortId, rec.id); assert.equal(meta.analysis.frames, nImg); assert.equal(meta.analysis.questions, 1);
+  assert.ok(fs.readdirSync(path.join(f1, 'frames')).length === nImg);
+  assert.ok((await toasts()).some((t) => /AI 看完了「电磁感应」的录像（看了 \d+ 页画面）：1 道题进收件箱、记了 1 条作答、学习地图 2 处/.test(t)), JSON.stringify(await toasts()));
   // 回放页：显示结果，一键撤销
   await T(`Q.useStore.getState().set({page:'replay'});return true`);
   await until(() => T(`return !!document.querySelector('[data-qa="rp-analysis-undo"]')`), 8000, '回放页显示分析结果');
-  assert.match(await T(`return document.querySelector('[data-qa="rp-analysis"]').innerText`), /AI 看了 12 张画面：1 道题进收件箱、1 条作答、学习地图 2 处/);
+  assert.match(await T(`return document.querySelector('[data-qa="rp-analysis"]').innerText`), /AI 看了 \d+ 张画面：1 道题进收件箱、1 条作答、学习地图 2 处/);
   await shot('v150-7-replay-analysis.png');
   await T(`document.querySelector('[data-qa="rp-analysis-undo"]').click();return true`);
   await until(() => T(`return document.querySelector('[data-qa="rp-analysis"]').innerText.includes('已撤销')`), 5000, '标成已撤销');
@@ -210,14 +212,14 @@ const analysisCalls = () => requests.filter((r) => JSON.stringify(r.messages).in
   assert.equal(await T(`return Q.useStudy.getState().data.notes.some(n=>n.id===${JSON.stringify(rec.n[0])})`), false);
   assert.equal(await cell(KEYS[0]), 'none'); assert.equal(await cell(KEYS[1]), 'none');
   assert.ok(await T(`return !!document.querySelector('[data-qa="rp-analyze"]')`), '撤销后可以重新分析');
-  mark('recording analysis writes questions / attempts / map / note, shows on the replay page, and undoes as a batch', { frames: 12 });
+  mark('recording analysis writes questions / attempts / map / note, shows on the replay page, and undoes as a batch', { frames: nImg });
 
   // 回放生成后自动分析；设置里关了不分析
   await makeRec('rec-2', '自动分析课');
   const before = analysisCalls().length;
   api.recording.onSaved({ id: 'rec-2', title: '自动分析课', studentId: 'stu-a', path: '' });
   await until(() => JSON.parse(fs.readFileSync(path.join(recDir, '2026-01-01-rec-2', 'recording.json'), 'utf8')).analysis?.sortId, 60000, '自动分析完成');
-  assert.equal(analysisCalls().length - before, 2);
+  assert.equal(analysisCalls().length - before, Math.ceil(nImg / 6), '同一条时间线，批数和第一次一样');
   await T(`await Q.host.call('setSettings',{autoAnalyze:false});return true`);
   await makeRec('rec-3', '不分析的课');
   const before3 = analysisCalls().length;

@@ -1,7 +1,8 @@
+import { CheckButton } from './Experience170';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import katex from 'katex';
 import { create } from 'zustand';
-import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, FileText, History, Image as ImageIcon, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, Paperclip, PenTool, Puzzle, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Atom, Bot, Box, Camera, Check, ChevronDown, Clapperboard, Eye, FileText, History, Image as ImageIcon, Inbox, KeyRound, ListOrdered, Loader2, MessageCircle, MonitorUp, Paperclip, PenTool, Puzzle, RotateCcw, Settings2, Shapes, Sparkles, Square, Trash2, Undo2, Wrench, X } from 'lucide-react';
 import { archive } from '../lib/archive';
 import { addFiles, addPaths, attachImages, attachNames, attachPrompt, attachFromDataUrl, ATTACH_MAX, pickAttachments, type Attach } from '../lib/attach';
 import { AiHistory } from './AiHistory';
@@ -9,6 +10,9 @@ import { ai, DemoError, demoByRules, demoEngine, explainToBoard, makeMotion, mak
 import { SHOWCASE } from '../motion/showcase';
 import { MotionView } from './MotionView';
 import { host } from '../lib/host';
+import { setAiToolSettings, startAiTools, useAiTools } from '../lib/aiTools';
+import { agentProbeText } from '../lib/aiErrors';
+import { AiTrouble } from '../ui/AiTrouble';
 import { defaultView, inkKey, useStore } from '../lib/store';
 import type { Material, Stroke } from '../lib/types';
 import { PRESETS } from '../physics/sim/presets';
@@ -24,6 +28,9 @@ import { importLink, showImport, type ImportSummary } from './ImportDialog';
 import { usePlugins } from '../plugins/pluginStore';
 import { guideHit } from '../guide/hits';
 import { ManimBlock, ManimInstall, ManimSteps, ManimView, manimQuality, QualityPick } from './ManimBlock';
+import { isComplaint, openAccount, setTier, USE_NAME, type TierUse } from '../account/account';
+import { TierChip, TierSeg } from '../account/TierPick';
+import { SuggestTip } from '../account/SuggestTip';
 import '../styles/sim.css';
 import '../styles/ai.css';
 
@@ -92,6 +99,8 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   const animBusy = cards.some((c) => c.pending && c.action === 'anim');
   const motionBusy = cards.some((c) => c.pending && c.action === 'motion');
   const signals = useRef(new Map<string, { cancelled: boolean; job: string }>());
+  // 「变笨了」提醒：连着两次说不对 / 低评级线路 / 偏弱的模型，这次打开面板只提醒一次
+  const tierTip = useRef({ complaints: 0, shown: false });
   const online = !!cfg?.hasKey && !!cfg.model;
   // 学科默认跟着当前学生，老师可以临时切换（物理课上用数学工具）；换学生时回到学生的学科
   const studentSubj = useStore((s) => studentSubject(s.students.find((x) => x.id === s.studentId)));
@@ -110,7 +119,15 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
     // 一键导入写入了新配置：重新读，设置表单也重新挂载以显示新地址和模型
     const reload = () => { void ai.config().then((c) => { setCfg(c); setCfgGen((g) => g + 1); }); };
     addEventListener('cs-ai-config', reload);
-    return () => removeEventListener('cs-ai-config', reload);
+    // 出错提示里的「去 AI 设置」
+    const open = () => setShowCfg(true);
+    addEventListener('cs-ai-settings', open);
+    const offRetry = host.onEvent((e) => {
+      if (e?.type === 'aiRetry' && e.reqId && e.message) {
+        setCards((all) => all.map((c) => (c.id === e.reqId ? { ...c, steps: [...(c.steps ?? []), String(e.message)] } : c)));
+      }
+    });
+    return () => { offRetry(); removeEventListener('cs-ai-config', reload); removeEventListener('cs-ai-settings', open); };
   }, []);
   useEffect(() => { localStorage.setItem('cs.ai.screen', useScreen ? '1' : '0'); }, [useScreen]);
 
@@ -193,8 +210,15 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
         archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: withAtt({ ...ex.meta, image }), subject });
         return;
       }
-      const { out, meta } = await runAction(action, ask, { cfg: online ? cfg : null, image, images, attach: attachText, history, onStep, subject, engine: opts.engine ?? engine });
+      const res = await runAction(action, ask, { cfg: online ? cfg : null, image, images, attach: attachText, history, onStep, subject, engine: opts.engine ?? engine, reqId: id });
+      const { out } = res;
+      let meta = res.meta;
       if (out.kind === 'draw') putStrokes(out.mat, out.strokes);
+      const tt = tierTip.current;
+      tt.complaints = action === 'ask' && isComplaint(ask) ? tt.complaints + 1 : 0;
+      const weak = meta.weak || (tt.complaints >= 2 && cfg?.tierSite ? '你连着两次说做得不对' : '');
+      meta = { ...meta, weak: weak && !tt.shown ? weak : undefined };
+      if (meta.weak) tt.shown = true;
       patch(id, { pending: false, out, meta: withAtt(meta) });
       guideHit('ai');
       archive.save({ id: id + uid(), action, ask: ask.trim(), at: Date.now(), out, meta: withAtt(meta), subject });
@@ -205,6 +229,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
   const cancelAnim = (id: string) => {
     const s = signals.current.get(id);
     if (s) { s.cancelled = true; if (s.job) void manimApi.cancel(s.job).catch(() => {}); }
+    void ai.cancel(id).catch(() => {});
     patch(id, { pending: false, error: '已取消' });
   };
 
@@ -292,6 +317,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
             <button className={'ai-chip' + (engine === 's3d' ? ' on' : '')} onClick={() => { const e: DemoEngine = engine === 's3d' ? 'classic' : 's3d'; setDemoEngine(e); setEngine(e); }} data-tip="「做成演示」用的引擎。立体：three.js 三维动画，全学科通用，默认；经典：物理引擎（物理课）/ 学科演示库（数学、化学）。没配模型时都用规则识别。">
               <Box size={12} />{engine === 's3d' ? '立体演示' : '经典演示'}
             </button>
+            <TierChip use="chat" note="课堂 AI 和小羽以后用「{档位}」" />
             <span className="flex" />
             {(text || atts.length > 0) && <button className="ai-chip" onClick={() => { setText(''); setAtts([]); setAttErr(''); }}>清空</button>}
           </div>
@@ -340,7 +366,7 @@ export function AiPanel({ onClose }: { onClose: () => void }) {
               {host.electron && <p>每次的结果都会自动存档，右上角 <History size={11} /> 可以找回以前的内容。</p>}
             </div>
           )}
-          {cards.map((c) => <ResultCard key={c.id} c={c} onCancel={() => cancelAnim(c.id)} onRetry={() => void run(c.action, c.ask, { attach: c.attach })} onClassic={() => void run('demo', c.ask, { engine: 'classic', screen: !!c.meta?.image, attach: c.attach })} onDemo={(p) => void run('demo', p, { screen: false })} onOverlay={overlay} onUnOverlay={unOverlay} onRemove={() => setCards((all) => all.filter((x) => x.id !== c.id))} onAlt={(preset) => {
+          {cards.map((c) => <ResultCard key={c.id} c={c} onQuality={async () => { await setTier('chat', 'quality'); void run(c.action, c.ask, { attach: c.attach }); }} onCancel={() => cancelAnim(c.id)} onRetry={() => void run(c.action, c.ask, { attach: c.attach })} onClassic={() => void run('demo', c.ask, { engine: 'classic', screen: !!c.meta?.image, attach: c.attach })} onDemo={(p) => void run('demo', p, { screen: false })} onOverlay={overlay} onUnOverlay={unOverlay} onRemove={() => setCards((all) => all.filter((x) => x.id !== c.id))} onAlt={(preset) => {
             const src = c.out?.kind === 'demo' ? c.out.src : c.guess?.src;
             const r = src ? demoByRules(src, preset) : null;
             if (r) setCards((all) => [{ id: uid(), action: 'demo', ask: c.ask, out: r, at: Date.now() }, ...all]);
@@ -419,8 +445,8 @@ function StepLog({ steps }: { steps: string[] }) {
   </div>;
 }
 
-function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onRemove, onAlt, onCancel }: {
-  c: Card; onRetry: () => void; onClassic: () => void; onDemo: (problem: string) => void; onOverlay: (c: Card, s: Stroke[]) => void; onUnOverlay: (c: Card) => void; onRemove: () => void; onAlt: (preset: string) => void; onCancel: () => void;
+function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onRemove, onAlt, onCancel, onQuality }: {
+  c: Card; onQuality: () => Promise<void>; onRetry: () => void; onClassic: () => void; onDemo: (problem: string) => void; onOverlay: (c: Card, s: Stroke[]) => void; onUnOverlay: (c: Card) => void; onRemove: () => void; onAlt: (preset: string) => void; onCancel: () => void;
 }) {
   const A = ACTIONS.find((a) => a.id === c.action)!;
   const [board, setBoard] = useState<Material | null>(null);
@@ -453,7 +479,7 @@ function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onR
   }
   else if (LONG(c.action) && c.error) body = <div className="ai-manim error">
     {steps.length > 0 && <ManimSteps steps={steps} />}
-    <div className="ai-err"><AlertTriangle size={14} /><div><p>动画没做成：{c.error.split('\n')[0]}</p>{c.error.includes('\n') && <pre>{c.error.split('\n').slice(1).join('\n').trim()}</pre>}<div className="ai-err-b"><button onClick={onRetry}>重试</button></div></div></div>
+    <div className="ai-err"><AlertTriangle size={14} /><div><p>动画没做成：{c.error.split('\n')[0]}</p>{c.error.includes('\n') && <pre>{c.error.split('\n').slice(1).join('\n').trim()}</pre>}<div className="ai-err-b"><button onClick={onRetry}>重试</button><CheckButton small /></div></div></div>
   </div>;
   else if (c.out?.kind === 'anim') {
     const { data: e, video } = c.out;
@@ -471,10 +497,11 @@ function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onR
       {showEx && <ol className="ai-steps">{e.steps.map((s, i) => <li key={i}><span>{s.t}</span><b dangerouslySetInnerHTML={tex(s.tex || s.plain)} /></li>)}</ol>}
     </>;
   } else if (c.pending) body = steps.length
-    ? <div className="ai-prog">{steps.slice(-5).map((t, i, a) => <div key={steps.length - a.length + i} className={i === a.length - 1 ? 'now' : 'done'}>{i === a.length - 1 ? <Loader2 size={11} className="spin" /> : <Check size={11} />}<span>{t}</span></div>)}</div>
+    ? <div className="ai-prog">{steps.slice(-5).map((t, i, a) => <div key={steps.length - a.length + i} className={i === a.length - 1 ? 'now' : 'done'}>{i === a.length - 1 ? <Loader2 size={11} className="spin" /> : <Check size={11} />}<span>{t}</span></div>)}
+      {host.electron && <div className="ai-manim-row"><span className="flex" /><button onClick={onCancel}><Square size={11} />取消</button></div>}</div>
     : <div className="ai-think"><i /><i /><i /><span>{c.action === 'demo' && c.subject && !packOf(c.subject).demos ? '正在读题、挑选演示、填写参数…' : WAIT[c.action]}</span></div>;
   else if (c.error) body = <>
-    <div className="ai-err"><AlertTriangle size={14} /><div><p>{c.error}</p><div className="ai-err-b"><button onClick={onRetry}>重试</button>
+    <div className="ai-err"><AlertTriangle size={14} /><div><p>{c.error}</p><div className="ai-err-b"><button onClick={onRetry}>重试</button><CheckButton small />
       {c.guess && <button onClick={() => onAlt(c.guess!.preset)} data-tip="规则识别只看关键词，请核对是不是这道题">用规则模板「{c.guess.title}」试试</button>}</div></div></div>
     {steps.length > 0 && <StepLog steps={steps} />}
   </>;
@@ -537,6 +564,7 @@ function ResultCard({ c, onRetry, onClassic, onDemo, onOverlay, onUnOverlay, onR
         {(() => { const names = c.attach?.map((a) => a.name) ?? c.meta?.attach ?? []; return names.length ? <span className="ai-q-att" data-tip={'这次一起发给 AI 的附件：' + names.join('、')}><Paperclip size={10} />{names.join('、')}</span> : null; })()}
       </div>}
       {body}
+      {c.meta?.weak && !c.pending && <SuggestTip why={c.meta.weak} model={c.meta.model} onRetry={onQuality} qa="ai-suggest" />}
     </div>
   );
 }
@@ -572,7 +600,7 @@ function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; on
   const [key, setKey] = useState('');
   const [model, setModel] = useState(cfg?.model ?? '');
   const [vision, setVision] = useState(cfg?.visionModel ?? '');
-  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(err ? { ok: false, t: err } : null);
+  const [msg, setMsg] = useState<{ ok: boolean; t: string; raw?: string } | null>(err ? { ok: false, t: err } : null);
   const [busy, setBusy] = useState('');
   const [listKey, setListKey] = useState(0);
   const first = useRef(true);
@@ -592,10 +620,13 @@ function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; on
   return (
     <div className="ai-cfg">
       <div className="ai-cfg-h"><KeyRound size={13} /><b>连接模型</b><span>兼容 OpenAI 接口的服务都可以</span></div>
+      {cfg?.account
+        ? <div className="ai-acc on" data-qa="ai-acc"><span>已登录{cfg.account.kind === 'linglong' ? '玲珑账号' : `${cfg.account.name} 账号`}「{cfg.account.username}」，连接由账号管着（专用 Key 不显示，也不用你管）。</span><div className="ai-imp-alt"><button onClick={() => openAccount()}>账号：余额、充值、档位</button><button onClick={() => openAccount('signin')}>切换账号</button></div></div>
+        : <div className="ai-acc" data-qa="ai-acc"><span>最省事：登录玲珑账号（软件里就能注册）或银子 API 等合作站的账号，AI 自动配好。</span><div className="ai-imp-alt"><button className="pri" onClick={() => openAccount('signin')}>登录 / 切换账号</button></div></div>}
       <QuickImport />
-      
+
       <label>接口地址<input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://api.yinziapi.top/v1" spellCheck={false} /></label>
-      <label>API Key<input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={cfg?.hasKey ? `已保存（尾号 ${cfg.keyHint}），留空不修改` : 'sk-…'} autoComplete="off" spellCheck={false} /></label>
+      <label>API Key<input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={cfg?.account ? '由账号管理，留空不修改（填了就改用你自己的 Key）' : cfg?.hasKey ? `已保存（尾号 ${cfg.keyHint}），留空不修改` : 'sk-…'} autoComplete="off" spellCheck={false} /></label>
       <label>模型<div className="ai-cfg-row" key={listKey}>
         <ModelPicker value={model} placeholder="选一个模型（需要支持看图）" title="自动读取这个 Key 能用的模型；可以搜索、收藏，也能直接输入模型名"
           onChange={(m) => { setModel(m); void act('save', async () => { await save({ model: m }); setMsg({ ok: true, t: m ? `已切换到 ${m}` : '已清空模型' }); }); }} />
@@ -604,11 +635,40 @@ function Settings({ cfg, err, onSaved }: { cfg: AiConfig | null; err: string; on
         <ModelPicker value={vision} placeholder="同上" onChange={(m) => { setVision(m); void act('save', async () => { await save({ visionModel: m }); }); }} />
       </div></label>
       <div className="ai-cfg-b">
+        <CheckButton />
         <button disabled={!!busy} onClick={() => void act('save', async () => { const c = await save({}, true); setMsg({ ok: true, t: c.hasKey ? '已保存' : '已保存，但还没有 API Key' }); })}>保存</button>
-        <button className="pri" disabled={!!busy} onClick={() => void act('test', async () => { await save(); const r = await ai.test(); setMsg({ ok: true, t: `连接正常：${r.model}，${(r.ms / 1000).toFixed(1)} 秒，回复「${r.reply}」` }); })}>{busy === 'test' ? <Loader2 size={12} className="spin" /> : '保存并测试'}</button>
+        <button className="pri" disabled={!!busy} onClick={() => void act('test', async () => { await save(); const r = await ai.test(); const bad = agentProbeText(r.agent); setMsg({ ok: !bad, t: `聊天正常：${r.model}，${(r.ms / 1000).toFixed(1)} 秒，回复「${r.reply}」` + (bad ? '。' + bad : r.agent?.ok ? `；小羽和 AI 工坊也能用（${r.agent.model}）` : ''), raw: r.agent && !r.agent.ok ? r.agent.message : '' }); })}>{busy === 'test' ? <Loader2 size={12} className="spin" /> : '保存并测试'}</button>
       </div>
       {msg && <div className={'ai-cfg-msg ' + (msg.ok ? 'ok' : 'bad')}>{msg.t}</div>}
-      <div className="ai-cfg-foot">{cfg?.encrypted || !cfg?.hasKey ? 'Key 用 Windows 系统加密保存在本机数据目录，不会进入课件、录像或学生窗口。' : '注意：这台电脑不支持系统加密，Key 以编码形式保存在本机数据目录。'}</div>
+      {msg && !msg.ok && <AiTrouble compact raw={msg.raw || msg.t} />}
+      <AgentToolsCfg />
+      {cfg?.tierSite && <div className="ai-tiers" data-qa="ai-tiers">
+        <div className="ai-cfg-h"><b>档位</b><span>走哪一级线路：质量优先效果最稳，价格高一些</span></div>
+        {(['chat', 'workshop', 'background'] as TierUse[]).map((u) => <div key={u} className="ai-tier-row"><span>{USE_NAME[u]}</span><TierSeg use={u} /></div>)}
+      </div>}
+      <div className="ai-cfg-foot">{cfg?.encrypted || !cfg?.hasKey ? `Key 用${/Mac/i.test(navigator.userAgent) ? ' macOS 钥匙串' : ' Windows 系统'}加密保存在本机数据目录，不会进入课件、录像或学生窗口。` : '注意：这台电脑不支持系统加密，Key 以编码形式保存在本机数据目录。'}</div>
     </div>
   );
+}
+
+/** 1.7.0 小羽和 AI 工坊能用的工具：联网搜索、内置浏览器、键鼠控制（截图自检一直开着） */
+function AgentToolsCfg() {
+  const st = useAiTools((s) => s.settings), desk = useAiTools((s) => s.desk);
+  useEffect(() => startAiTools(), []);
+  const [err, setErr] = useState('');
+  const flip = (k: 'search' | 'browser' | 'desk', v: boolean) => { setErr(''); setAiToolSettings({ [k]: v }).catch((e) => setErr((e as Error).message)); };
+  const rows: [('search' | 'browser' | 'desk'), string, string][] = [
+    ['search', '联网搜索', '查资料、找真题：AI 用必应搜索、抓网页正文，网页原文和出处网址存进任务文件夹的「资料/来源」。'],
+    ['browser', '内置浏览器', 'AI 用软件里独立的浏览器打开网页、点按钮、翻页；你在「AI 浏览器」面板里看得到每一步，要登录时请你自己登。'],
+    ['desk', '键鼠控制', '允许 AI 看屏幕、操作电脑上的其他软件。关着时 AI 要用会先弹卡片问你；你一动键鼠它就停；上课录像时一律不能用。'],
+  ];
+  return <div className="ai-tools-cfg" data-qa="ai-tools-cfg">
+    <div className="ai-cfg-h"><Wrench size={13} /><b>AI 能用的工具</b><span>小羽和 AI 工坊共用；「安全模式」下只能截图自检</span></div>
+    {rows.map(([k, name, hint]) => <label key={k} className="ai-tools-row">
+      <input type="checkbox" checked={st[k]} onChange={(e) => flip(k, e.target.checked)} data-qa={'ai-tools-' + k} />
+      <span><b>{name}</b>{k === 'desk' && <em>默认关</em>}<i>{hint}</i></span>
+    </label>)}
+    <p className="ai-tools-note">截图自检一直可用：AI 做完课件、插件会先在看不见的窗口里打开截图，点一遍按钮、拖一遍滑块，把报错修好再交给你。{desk ? ` 现在${desk.who}正在操作键鼠。` : ''}</p>
+    {err && <div className="ai-cfg-msg bad">{err}</div>}
+  </div>;
 }

@@ -133,7 +133,39 @@
 .as-op p, .as-op-l { margin: 0; color: var(--fg-1); padding-left: 19px; }
 .as-files img { width: 26px; height: 26px; object-fit: cover; border-radius: 5px; }
 .as-op-f { display: flex; flex-wrap: wrap; gap: 5px; padding-left: 19px; margin-top: 3px; }
-.as-op-f > button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 10px; font-size: 11.5px; color: var(--cue); background: var(--cue-soft); }
+/* ── 1.7.0 小羽对话内嵌示例小卡片列表 ───────────────── */
+.as-ex-wrap { gap: 7px; padding: 9px 10px; }
+.as-ex-list { display: flex; flex-direction: column; gap: 7px; }
+.as-ex-card {
+  display: flex; flex-direction: column; gap: 7px; padding: 8px 9px;
+  border-radius: 10px; background: var(--bg-1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.as-ex-top { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.as-ex-thumb {
+  flex: none; width: 88px; height: 52px; border-radius: 7px;
+  object-fit: cover; background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.as-ex-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.as-ex-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.as-ex-head b { flex: none; font-size: 12.5px; color: var(--fg-0); white-space: nowrap; }
+.as-ex-head i {
+  font-style: normal; font-size: 10.5px; color: var(--fg-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.as-ex-card .as-ex-one { margin: 0; padding: 0; font-size: 11.5px; line-height: 1.45; color: var(--fg-1); }
+.as-ex-acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.as-ex-acts button {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 9px; border-radius: 7px;
+  font-size: 11.5px; font-weight: 600; color: var(--fg-1);
+  background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line);
+  white-space: nowrap;
+}
+.as-ex-acts button:hover { color: var(--fg-0); background: var(--bg-3); }
+.as-ex-acts button.primary { color: #04161a; background: var(--cue); box-shadow: none; font-weight: 700; }
+.as-ex-acts button.primary:hover { filter: brightness(1.06); }
 .as-op.cmd { box-shadow: inset 3px 0 0 var(--fg-3); }
 .as-op.cmd .as-op-h { cursor: pointer; }
 .as-op.cmd .as-op-h svg { color: var(--fg-2); }
@@ -227,3 +259,10 @@
 .as-switch i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .as-switch input:checked + i { background: var(--cue); }
 .as-switch input:checked + i::after { transform: translateX(12px); }
+/* 1.7.0 cs_tools 的工具行：点开看返回内容 */
+.as-op.quiet.tool { flex-direction: column; align-items: stretch; }
+.as-op-t { display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.as-op-t span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-op-t .up { transform: rotate(180deg); }
+.as-op.quiet.tool pre { margin: 4px 0 2px 18px; max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 11.5px; color: var(--fg-2); background: var(--bg-2); border-radius: var(--r-sm, 6px); padding: 6px 8px; }
+.as-resume { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 3px 10px; width: auto; }

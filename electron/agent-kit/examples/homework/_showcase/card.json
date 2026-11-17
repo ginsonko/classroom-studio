@@ -1,0 +1,36 @@
+{
+  "id": "homework",
+  "skill": "homework",
+  "label": "分层作业",
+  "one": "必做 30 分钟保底 + 选做拔高，卷首带一段家长看得懂的配合说明，附老师 30 秒快速批改卡。",
+  "highlights": [
+    "必做题逐题精确控时共 30 分钟，选做题给学有余力的孩子加餐，再也不怕布置多了写不完",
+    "卷首自带零术语「给家长的一段话」，交代做多久、怎么交、怎么提醒写公式，发群不用另敲一段解释",
+    "教师版开头就是一张 10 分制快速批改要点卡，步骤分、高频错因、下节课前 5 分钟怎么跟进一目了然"
+  ],
+  "when": ["下课当场发微信布置", "周末分层巩固", "需要家长配合督促时"],
+  "formats": "Word + PDF（作业单 / 批改要点版）+ 手机长图 + 题库",
+  "cost": "约 6 分钟 · 约 ¥0.6 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "homework/_showcase/shot-1.webp",
+      "homework/_showcase/shot-2.webp",
+      "homework/_showcase/shot-3.webp",
+      "homework/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    { "label": "课后分层作业 学生单（PDF）", "file": "homework/_showcase/超重与失重-作业.pdf", "kind": "pdf" },
+    { "label": "快速批改要点与答案 教师版（PDF）", "file": "homework/_showcase/超重与失重-作业答案.pdf", "kind": "pdf" },
+    { "label": "微信手机长图（含家长说明）", "file": "homework/_showcase/超重与失重-学生长图.png", "kind": "png" },
+    { "label": "课后分层作业 学生单（Word 可改）", "file": "homework/_showcase/超重与失重-作业.docx", "kind": "docx" },
+    { "label": "快速批改要点与答案（Word 可改）", "file": "homework/_showcase/超重与失重-作业答案.docx", "kind": "docx" }
+  ],
+  "styleRef": [
+    "homework/超重与失重-作业.md",
+    "homework/超重与失重-作业答案.md",
+    "homework/超重与失重-学生长图.md",
+    "homework/超重与失重-题库.json"
+  ]
+}

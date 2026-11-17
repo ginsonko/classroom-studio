@@ -10,22 +10,23 @@ import { packOf, studentSubject } from '../lib/subjects';
 import { isDefaultTopic, isGroup, kindName, membersOf } from '../lib/groups';
 import { dateKey } from '../doc/scheduleModel';
 import { baseInstructions, developerInstructions, hello } from './prompt';
-import { box, runTool, toolSpecs, toolsSignature, type ToolCtx } from './tools';
+import { box, runTool, toolSpecs, toolsSignature, type ExampleCardBrief, type ToolCtx } from './tools';
 import { changeSummary, occurrences, undoChanges, WEEK, type Change } from './toolsLogic';
 import { afterFire, dueEvent, dueTimed, PAGES, whenText, type AppEvent, type Fire } from './triggersLogic';
 import { loadAssistantData, putTrigger, setCurrent, useAssistantData, type Access } from './state';
 
-export interface Meta { id: string; title: string; created: number; updated: number; running: boolean; cny: number; source: string; persona: string; count: number }
+export interface Meta { id: string; title: string; created: number; updated: number; running: boolean; retrying?: boolean; cny: number; source: string; persona: string; count: number }
 export interface Item {
-  id: string; kind: 'user' | 'text' | 'cmd' | 'file' | 'tool' | 'approval' | 'note' | 'error'; turn: string; at: number;
+  id: string; kind: 'user' | 'text' | 'cmd' | 'file' | 'tool' | 'approval' | 'note' | 'error' | 'suggest'; turn: string; at: number;
   text?: string; files?: string[] | { path: string; kind: string }[]; phase?: string; streaming?: boolean;
   command?: string; status?: string; exit?: number | null; output?: string;
-  name?: string; args?: unknown; card?: { title: string; lines?: string[]; files?: string[]; tone?: string } | null; undoable?: boolean;
+  name?: string; label?: string; server?: string; args?: unknown; card?: { title: string; lines?: string[]; files?: string[]; tone?: string; examples?: ExampleCardBrief[] } | null; undoable?: boolean;
   type?: string; title?: string; detail?: string; reason?: string; questions?: { id: string; header: string; question: string; options: { label: string; description: string }[]; secret: boolean }[]; answers?: Record<string, string> | null;
 }
 export interface Turn { id: string; at: number; status: string; changes: Change[]; cny: number; undone?: number }
-interface Chat extends Meta { items: Item[]; turns: Turn[] }
-export interface Status { found: boolean; where: string; version: string; studioKey: boolean; running: boolean; workspace: string }
+interface Chat extends Meta { items: Item[]; turns: Turn[]; model?: string }
+export interface WarmupView { phase: 'idle' | 'running' | 'ready' | 'failed'; step: string; pct: number; elapsedSec: number; error: string }
+export interface Status { found: boolean; where: string; version: string; studioKey: boolean; running: boolean; workspace: string; warmup?: WarmupView | null }
 interface Ask { reqId: string; chatId: string; kind: 'tool' | 'approval'; tool?: string; args?: unknown; callId?: string; turnId?: string; itemId?: string }
 export interface Confirm { id: string; chatId: string; title: string; detail: string; yes: string; resolve: (ok: boolean) => void }
 export interface GrantReq { id: string; chatId: string; paths: string[]; reason: string; resolve: (paths: string[]) => void }
@@ -49,7 +50,13 @@ let started = false;
 export function startAssistant() {
   if (started || !host.electron) return;
   started = true;
-  host.onEvent((e) => { if (e?.type === 'assistant' && e.assistant) onEvent(e.assistant); });
+  host.onEvent((e) => {
+    if (e?.type === 'assistant' && e.assistant) onEvent(e.assistant);
+    else if (e?.type === 'codexWarmup' && e.state) {
+      const st = G().status;
+      if (st) set({ status: { ...st, warmup: e.state as WarmupView } });
+    }
+  });
   void (async () => {
     await loadAssistantData();
     try {

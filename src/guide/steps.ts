@@ -52,11 +52,11 @@ export const normAngle = (a: number) => { const t = 2 * Math.PI; let x = ((a % t
 
 export const STEPS: Step[] = [
   {
-    id: 'ai', chapter: '准备', title: '配置 AI', quick: true, help: 'import',
-    scene: 'AI 讲题、AI 整理、拍照拆题都要先配好模型。不配也能上课，这一步可以跳过。',
-    todo: () => '在银子 API 网站新建一把密钥，点「一键导入到软件」→ 选本软件，回到这里点「导入并测试」。也可以点下面的「打开 AI 设置」手动填。配好后这里自动打勾。',
-    tip: 'AI 配好了。花了多少钱都记在 AI 账本里。',
-    spot: { win: 'teacher', sel: '.rail-b[aria-label="AI"]' },
+    id: 'ai', chapter: '准备', title: '登录或配置 AI', quick: true, help: 'account',
+    scene: 'AI 讲题、AI 整理、小羽、AI 工坊都要先连上 AI。不配也能上课，这一步可以跳过。',
+    todo: () => '最省事：点右上角「登录」，用玲珑账号（软件里就能注册）或银子 API 等合作站的老账号登录，软件自动配好。已经有 Key 的话点下面「打开 AI 设置」一键导入或手填。配好后这里自动打勾。',
+    tip: 'AI 配好了。花了多少钱都记在 AI 账本里；登录了账号的，余额、充值、档位都在右上角的账号里。',
+    spot: { win: 'teacher', sel: '[data-qa="tb-account"]' },
     done: (c) => c.ai,
   },
   {

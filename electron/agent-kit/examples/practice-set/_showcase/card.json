@@ -1,0 +1,36 @@
+{
+  "id": "quiz",
+  "skill": "practice-set",
+  "label": "练习题",
+  "one": "基础、提高、拓展三层共 10 题，真题逐题标出处，解析专讲易错点，学生版、答案版、手机长图一次出齐。",
+  "highlights": [
+    "三层梯度一套卷：基础题保底、提高题练受力分析、拓展题挖接触条件，课后按学生水平直接圈题",
+    "真题出处可点开原卷核对，拿不准的一律标「原创」，家长和教研问起来经得住查",
+    "每题解析末尾一句「易错」，正好对着学生最常犯的「看速度判超重」「漏算反作用力」讲"
+  ],
+  "when": ["新课后分层巩固", "周末一对一布置", "单元复习查漏"],
+  "formats": "Word + PDF（学生版 / 教师答案版）+ 手机长图 + 题库",
+  "cost": "约 8 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "practice-set/_showcase/shot-1.webp",
+      "practice-set/_showcase/shot-2.webp",
+      "practice-set/_showcase/shot-3.webp",
+      "practice-set/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    { "label": "分层练习 学生版（PDF）", "file": "practice-set/_showcase/超重与失重-练习.pdf", "kind": "pdf" },
+    { "label": "答案与解析 教师版（PDF）", "file": "practice-set/_showcase/超重与失重-答案.pdf", "kind": "pdf" },
+    { "label": "学生手机长图", "file": "practice-set/_showcase/超重与失重-学生长图.png", "kind": "png" },
+    { "label": "分层练习 学生版（Word 可改）", "file": "practice-set/_showcase/超重与失重-练习.docx", "kind": "docx" },
+    { "label": "答案与解析 教师版（Word 可改）", "file": "practice-set/_showcase/超重与失重-答案.docx", "kind": "docx" }
+  ],
+  "styleRef": [
+    "practice-set/超重与失重-练习.md",
+    "practice-set/超重与失重-答案.md",
+    "practice-set/超重与失重-学生长图.md",
+    "practice-set/超重与失重-题库.json"
+  ]
+}

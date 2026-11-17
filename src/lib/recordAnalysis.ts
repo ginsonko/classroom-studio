@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import { ai } from './ai';
 import { host } from './host';
 import { useStore } from './store';
-import { addQuestion, nowIso, recordAttempt, sid, useStudy } from './studyStore';
+import { addQuestion, nowIso, patchQuestion, recordAttempt, sid, useStudy } from './studyStore';
 import { findDuplicate, guessDifficulty, guessType, levelText, looseJSON, mastery, pointLabel, pointsOf, resultOfLevel, type Result, type SortRecord, type StudentNote, type UnsureItem } from './studyLogic';
 import { aiConfig } from './studyActions';
 import { online } from './studyAi';
@@ -13,7 +13,7 @@ import { mapKey, packOf, studentSubject } from './subjects';
 import { isGroup, membersOf } from './groups';
 import { applyMap, fullGrid } from './mapLogic';
 import { setGrid } from './mapUpdate';
-import { BATCH, MAX_FRAMES, MAX_FRAMES_VOICE, analysisPrompt, lessonMapPlan, mergeReplies, parseAnalysis, pickFrames, type AnalysisReply } from './recordAnalysisLogic';
+import { BATCH, analysisPrompt, lessonMapPlan, mergeReplies, parseAnalysis, planFrames, wholePrompt, type AnalysisReply, type BoardShot } from './recordAnalysisLogic';
 import { decide, fineNote, finePrompt, fineTokens, frameDigest, manualDigest, MIN_LINES, MODE_NAME, parseFine, talkMarks, transcriptText, visionTokens, type FineReply } from './fineLogic';
 import { asrApi, useAsr } from './asr';
 import { undoSort } from './sort';
@@ -80,22 +80,32 @@ export async function analyzeRecording(rid: string, o: { auto?: boolean } = {}):
   try {
     const tr = row.transcript?.phase === 'done' ? await asrApi.transcript(rid).catch(() => null) : null;
     const segs = tr?.segments ?? [], voice = segs.length >= MIN_LINES;
-    let times = pickFrames(chapters, duration, voice ? MAX_FRAMES_VOICE : MAX_FRAMES, voice ? talkMarks(segs) : []);
-    const vcost = await estimate(visionTokens(times.length, BATCH), { input: 0, output: 0 });
-    // 看图模型很贵时少截几张，最少 4 张；还超就不做
-    if (vcost !== null && vcost > cap) {
-      const n = Math.floor((times.length * cap) / vcost);
+    // 1.7.0 每一页有新增书写的、每一次换课件页都看（黑板页看下课时存的板书原图）；预算内能看多少看多少，结果里写清看了几页
+    const boards = await host.call<(BoardShot & { url: string })[]>('recordBoardImages', { id: rid }).catch(() => [] as (BoardShot & { url: string })[]);
+    const all = planFrames(chapters, duration, boards, { extra: voice ? talkMarks(segs) : [] });
+    let looks = all.looks;
+    // 单节预算：看图最多花掉上限的 3/4（有课堂原话时还要留钱给精析）；太贵就按优先级少看几张，最少 4 张
+    const vcap = voice ? cap * 0.75 : cap;
+    const vcost = await estimate(visionTokens(looks.length, BATCH), { input: 0, output: 0 });
+    if (vcost !== null && vcost > vcap) {
+      const n = Math.floor((looks.length * vcap) / vcost);
       if (n < 4) throw Error(`按现在的看图模型价格，看一遍录像约 ¥${vcost.toFixed(2)}，超过单节课上限 ¥${cap}`);
-      times = evenly(times, n);
+      looks = planFrames(chapters, duration, boards, { max: n, extra: voice ? talkMarks(segs) : [] }).looks;
     }
-    step(rid, '正在从录像里截画面');
-    const frames = await host.call<{ t: number; url: string }[]>('recordFrames', { id: rid, times });
+    step(rid, `正在准备 ${looks.length} 张画面（板书原图 ${looks.filter((l) => l.board !== undefined).length} 张）`);
+    const shots = looks.filter((l) => l.board === undefined);
+    const got = shots.length ? await host.call<{ t: number; url: string }[]>('recordFrames', { id: rid, times: shots.map((l) => l.t) }) : [];
+    const frames: { t: number; url: string; label: string }[] = [];
+    for (const l of looks) {
+      if (l.board !== undefined) { const b = boards[l.board]; if (b?.url) frames.push({ t: l.t, url: b.url, label: l.label }); continue; }
+      const f = got.find((x) => Math.abs(x.t - l.t) < 0.06); if (f) frames.push({ t: l.t, url: f.url, label: l.label });
+    }
     if (!frames.length) throw Error('没能从录像里截到画面');
     const replies: AnalysisReply[] = [];
     for (let i = 0; i < frames.length; i += BATCH) {
       const part = frames.slice(i, i + BATCH);
       step(rid, `AI 正在看第 ${i + 1}–${i + part.length} / ${frames.length} 张画面`);
-      const r = await ai.chat([{ role: 'user', content: analysisPrompt({ subject, student: who.name, title, chapters, times: part.map((f) => f.t) }) }], {
+      const r = await ai.chat([{ role: 'user', content: analysisPrompt({ subject, student: who.name, title, chapters, times: part.map((f) => f.t), labels: part.map((f) => f.label), part: { from: i, all: frames.length } }) }], {
         images: part.map((f) => f.url), json: true, maxTokens: 6000, temperature: 0, feature: '录像分析', timeout: 5 * 60000, ...(cfg!.visionModel ? { model: cfg!.visionModel } : {}),
       });
       const v = looseJSON(r.content);
@@ -103,6 +113,8 @@ export async function analyzeRecording(rid: string, o: { auto?: boolean } = {}):
       replies.push(parseAnalysis(v, part.length, i));
     }
     const res = mergeReplies(replies, valid);
+    // 分了好几批看：再用文字模型把各批的小结合成一段（便宜；失败就用拼起来的）
+    if (replies.length > 1) { step(rid, '正在把各段画面合成整节课的小结'); const s = await wholeSummary(res, { subject, who: who.name, title }).catch(() => null); if (s) { res.summary = s.summary; if (s.weak.length) res.weak = s.weak.filter((k) => valid.has(k)); } }
     const ctx: WriteCtx = { rid, subject, members: members.map((m) => ({ id: m.id, name: m.name })), group: isGroup(who) ? who.id : null, title, startedAt: row.startedAt ?? 0, endedAt: row.endedAt ?? 0 };
     // 课后精析：有课堂原话才做；出错或超过上限只做画面分析，不整个失败
     let fine: FineCtx | null = null, fineSkip = '';
@@ -118,7 +130,7 @@ export async function analyzeRecording(rid: string, o: { auto?: boolean } = {}):
     const out = write(res, frames, ctx, fine);
     const rec = out.rec;
     const a: RecordAnalysis = {
-      at: nowIso(), frames: frames.length, questions: rec?.questions.length ?? 0, attempts: rec?.attempts.length ?? 0, map: rec?.map?.length ?? 0,
+      at: nowIso(), frames: frames.length, pages: frames.length, pagesAll: all.total, boards: frames.filter((f) => f.label.startsWith('板书原图')).length, questions: rec?.questions.length ?? 0, attempts: rec?.attempts.length ?? 0, map: rec?.map?.length ?? 0,
       summary: fine?.reply.summary || res.summary, weak: res.weak, ...(rec ? { sortId: rec.id } : {}),
       ...(fine ? { voice: fine.lines, pending: rec?.unsure.length ?? 0, taught: rec?.taught?.length ?? 0, segments: fine.reply.segments.map((s) => ({ t0: s.t0, t1: s.t1, kind: s.kind, title: s.title })), items: out.items } : {}),
       ...(fineSkip ? { fineSkip } : {}),
@@ -127,7 +139,7 @@ export async function analyzeRecording(rid: string, o: { auto?: boolean } = {}):
     if (rec) {
       const pending = rec.unsure.length;
       const bits = [a.questions ? `${a.questions} 道题进收件箱` : '', a.attempts ? `记了 ${a.attempts} 条作答` : '', a.map ? `学习地图 ${a.map} 处` : '', rec.notes.length ? '课堂小结记进档案' : ''].filter(Boolean);
-      const head = fine ? `AI 听完、看完了「${title}」` : `AI 看完了「${title}」的录像`;
+      const head = (fine ? `AI 听完、看完了「${title}」` : `AI 看完了「${title}」的录像`) + `（看了 ${frames.length}${all.total > frames.length ? ` / ${all.total}` : ''} 页画面）`;
       toast(`${head}：${bits.join('、') || '没认出题目'}${pending ? `；${pending} 道拿不准，需要你看一眼` : ''}${!fine && res.weak.length ? `；${res.weak.length} 个知识点可能薄弱，写在档案里` : ''}`, {
         ms: 20000, action: pending ? { label: '去确认', run: () => useStore.getState().set({ page: 'replay' }) } : { label: '撤销', run: () => undoSort(rec.id) },
       });
@@ -187,7 +199,7 @@ const clip = (s: string, n: number) => { const t = s.replace(/\s+/g, ' ').trim()
 
 function write(res: AnalysisReply, frames: { t: number; url: string }[], c: WriteCtx, fine: FineCtx | null): { rec: SortRecord | null; items: RecordItem[] } {
   const ids = c.members.map((m) => m.id);
-  const rec: SortRecord = { id: sid(), at: nowIso(), title: `录像分析：${c.title}`, studentIds: ids, lines: [], questions: [], attempts: [], notes: [], unsure: [], map: [], recordId: c.rid, ...(fine ? { taught: [], enriched: [] } : {}) };
+  const rec: SortRecord = { id: sid(), at: nowIso(), title: `录像分析：${c.title}`, studentIds: ids, lines: [], questions: [], attempts: [], notes: [], unsure: [], map: [], recordId: c.rid, ...(c.startedAt ? { date: dateOf(c.startedAt) } : {}), ...(fine ? { taught: [], enriched: [] } : {}) };
   const since = c.startedAt ? c.startedAt - 60000 : 0, practiced = new Map<string, Set<string>>(ids.map((id) => [id, new Set()]));
   const seen = new Set<string>(res.frames.flatMap((f) => f.points)), pending: Promise<void>[] = [], items: RecordItem[] = [];
   const tally = { right: 0, wrong: 0, half: 0 };
@@ -202,8 +214,9 @@ function write(res: AnalysisReply, frames: { t: number; url: string }[], c: Writ
       for (const p of x.points) seen.add(p);
       const d = useStudy.getState().data, dup = findDuplicate(x.stem, d.questions.filter((q) => (q.subject ?? 'physics') === c.subject));
       let qid = dup?.q.id;
+      if (qid && x.tag && !dup!.q.tag) patchQuestion(qid, { tag: x.tag });
       if (!qid) {
-        const q = addQuestion({ stem: x.stem, answer: x.answer, analysis: '', points: x.points, difficulty: guessDifficulty(x.stem), qtype: guessType(x.stem, c.subject), source: `${c.title} 录像 ${Math.floor(frames[f.i]?.t ?? 0)} 秒`, origin: 'import', status: 'inbox', subject: c.subject, batch: rec.id });
+        const q = addQuestion({ stem: x.stem, tag: x.tag, answer: x.answer, analysis: '', points: x.points, difficulty: guessDifficulty(x.stem), qtype: guessType(x.stem, c.subject), source: `${c.title} 录像 ${Math.floor(frames[f.i]?.t ?? 0)} 秒`, origin: 'import', status: 'inbox', subject: c.subject, batch: rec.id });
         qid = q.id; rec.questions.push(q.id);
         const url = frames[f.i]?.url;
         if (url && x.box) pending.push(cropBox(url, x.box).then((img) => img ? host.call<string>('study.image', img) : null).then((image) => {
@@ -225,8 +238,9 @@ function write(res: AnalysisReply, frames: { t: number; url: string }[], c: Writ
       if (!qid && x.stem.replace(/\s+/g, '').length >= 12) {
         const d = useStudy.getState().data, dup = findDuplicate(x.stem, d.questions.filter((q) => (q.subject ?? 'physics') === c.subject));
         qid = dup?.q.id;
+        if (qid && x.tag && !dup!.q.tag) patchQuestion(qid, { tag: x.tag });
         if (!qid) {
-          const q = addQuestion({ stem: x.stem, answer: '', analysis: '', points: x.points, difficulty: guessDifficulty(x.stem), qtype: guessType(x.stem, c.subject), source: `${c.title} 课堂原话 ${mmss(x.t0)}`, origin: 'import', status: 'inbox', subject: c.subject, batch: rec.id });
+          const q = addQuestion({ stem: x.stem, tag: x.tag, answer: '', analysis: '', points: x.points, difficulty: guessDifficulty(x.stem), qtype: guessType(x.stem, c.subject), source: `${c.title} 课堂原话 ${mmss(x.t0)}`, origin: 'import', status: 'inbox', subject: c.subject, batch: rec.id });
           qid = q.id; rec.questions.push(q.id);
         }
       }
@@ -281,8 +295,10 @@ function write(res: AnalysisReply, frames: { t: number; url: string }[], c: Writ
     rec.map!.push(...plan.apply.map((x) => ({ mapKey: key, ci: x.ci, si: x.si, from: x.from, to: x.to })));
   }
   const text = fine ? fineNote(fine.reply) : visionNote(res);
-  const head = fine ? `课堂精析（AI 听了 ${fine.lines} 句课堂原话、看了 ${frames.length} 张画面）` : `课堂录像小结（AI 看了 ${frames.length} 张画面）`;
-  const addNote = (n: Omit<StudentNote, 'id' | 'at'>) => { const x: StudentNote = { id: sid(), at: nowIso(), ...n }; useStudy.getState().update((dd) => ({ ...dd, notes: [...dd.notes, x] })); rec.notes.push(x.id); };
+  const head = fine ? `课堂精析（AI 听了 ${fine.lines} 句课堂原话、看了 ${frames.length} 页画面）` : `课堂录像小结（AI 看了 ${frames.length} 页画面）`;
+  // 1.7.0 档案记在上课那天（隔天才分析也能被那天的课后总结找到）
+  const lessonAt = c.endedAt ? new Date(c.endedAt).toISOString() : nowIso();
+  const addNote = (n: Omit<StudentNote, 'id' | 'at'>) => { const x: StudentNote = { id: sid(), at: lessonAt, ...n }; useStudy.getState().update((dd) => ({ ...dd, notes: [...dd.notes, x] })); rec.notes.push(x.id); };
   if (text) for (const id of ids) addNote({ studentId: id, kind: 'teacher', text: `${head}：\n${text}`, source: `录像分析 · ${c.title}` });
   // 老师课上说「下节课再练」：记成待办，备课时会看到
   for (const t of fine?.reply.todo ?? []) for (const id of ids) addNote({ studentId: id, kind: 'teacher', text: `下节课：${t.text}（课上 ${mmss(t.t)} 说的）`, source: `录像分析 · ${c.title}`, todo: 'practice' });
@@ -294,6 +310,14 @@ function write(res: AnalysisReply, frames: { t: number; url: string }[], c: Writ
   useStudy.getState().update((dd) => ({ ...dd, sorts: [...(dd.sorts ?? []), rec].slice(-200) }));
   void Promise.all(pending);
   return { rec, items };
+}
+
+/** 好几批画面的小结合成整节课一段：讲了哪些题、学生做到了什么（内部用，写进学生档案） */
+async function wholeSummary(res: AnalysisReply, o: { subject: WriteCtx['subject']; who: string; title: string }): Promise<{ summary: string; weak: string[] } | null> {
+  const r = await ai.chat([{ role: 'user', content: wholePrompt({ ...o, res }) }], { json: true, maxTokens: 1500, temperature: 0.2, feature: '录像分析', timeout: 120000 });
+  const v = looseJSON(r.content) as { summary?: unknown; weak?: unknown } | null;
+  const summary = typeof v?.summary === 'string' ? v.summary.trim().slice(0, 1200) : '';
+  return summary ? { summary, weak: Array.isArray(v!.weak) ? v!.weak.map(String).slice(0, 8) : [] } : null;
 }
 
 function visionNote(res: AnalysisReply): string {

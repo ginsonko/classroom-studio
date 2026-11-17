@@ -51,7 +51,9 @@ const at = (h, m = 0, s = 0) => new Date(2026, 9, 21, h, m, s).getTime();
 
   // ── 1. 设置 ──
   const s0 = await T(`return (await Q.host.call('settings')).autoRec`);
-  assert.deepEqual(s0, { start: true, lead: 5, stopAfter: 15, idle: true, idleMinutes: 20, adhoc: false, sound: false });
+  // 1.7.0 起默认准时提醒、不自动开也不自动下课；这里打开「直接开始」「自动下课」，接着验 1.6.0 的倒计时做法（提醒模式见 v170-class-desktop）
+  assert.deepEqual(s0, { v: 2, start: true, autoStart: false, lead: 0, stopAfter: 15, autoStop: false, idle: true, idleMinutes: 20, adhoc: false, sound: false, stageButton: true });
+  await T(`await Q.host.call('setSettings',{autoRec:{v:2,autoStart:true,autoStop:true}});return true`);
   await T(`Q.useRecording.setState({panel:true});return true`);
   await until(() => T(`return !!document.querySelector('[data-qa="autorec-settings"]')`), 8000, '设置面板');
   assert.equal(await T(`return document.querySelector('[data-qa="autorec-start"]').checked`), true);
@@ -113,7 +115,7 @@ const at = (h, m = 0, s = 0) => new Date(2026, 9, 21, h, m, s).getTime();
   await setNow(at(21, 42, 59)); assert.equal(await card(), null);
   await setNow(at(21, 43));
   const c3 = await until(card, 3000, '自动下课卡片');
-  assert.equal(c3.kind, 'stop'); assert.match(c3.text, /2:00后自动下课并保存录像/); assert.match(c3.text, /21:30 就下课了/);
+  assert.equal(c3.kind, 'stop'); assert.match(c3.text, /2:00后自动下课并保存录像/); assert.match(c3.text, /21:30 下课/);
   await shot('v160-4-stop.png');
   await click('autorec-extend');
   await until(async () => (await card()) === null, 3000);

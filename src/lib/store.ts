@@ -33,12 +33,24 @@ export interface Shared {
   desk: DeskWin[];    // 学生画面里打开着的各项（黑板垫底），各自记住页码；当前项 = pgmMat
   deskLimit: number;  // 同时打开的课件上限（不含黑板），0 不限
   slideSteps: boolean; // PPT 按单击动画分步出现（关掉就整页显示）
+  /** 1.7.0 学生窗口角落的上课按钮和课堂计时（老师端发布，学生窗口和浮层只读；按钮点了发 class 消息回老师端） */
+  classBar: ClassBar | null;
+}
+export interface ClassBar {
+  /** 设置里「学生窗口显示上课按钮」 */
+  show: boolean;
+  /** idle / starting / recording / stopping */
+  phase: string;
+  /** 开始录的时刻（课堂计时从这里算） */
+  since: number;
+  /** 到点了「要开始上课吗？」：给谁上；学生窗口那份只给老师点 */
+  ask: { name: string; late: boolean; next: boolean } | null;
 }
 interface Local {
   students:Student[]; slots:LessonSlot[]; learning:Record<string,ChapterState[][]>;
   skin: Skin; motion: boolean; page: Page; libraryOpen: boolean; rightOpen: boolean;
   libraryW: number; rightW: number; pinned: string[]; recents: string[]; favorites: string[]; expanded: string[];
-  pvw: {mat:Material;view:View} | null; reader: {mat:Material;view:View;split:Material|null};
+  pvw: {mat:Material;view:View;teacherOnly?:boolean} | null; reader: {mat:Material;view:View;split:Material|null};
   notes: Record<string,string>; studentId: string; rec: {on:boolean;start:number};
   aiOpen: boolean; skinsOpen: boolean; paletteOpen: boolean; roots: string[]; saveError: string | null;
   answerMarks: Record<string, number[] | AnswerMark>;   // 文件路径 → 老师确认过的答案页（旧版只存页码）
@@ -81,13 +93,15 @@ interface Actions {
 export type State=Shared&Local&Actions;
 export const inkKey=(materialId:string,page:number)=>`${materialId}#${page}`;
 export const defaultView=(mat:Material,p:Partial<View>={}):View=>({materialId:mat.id,page:0,slide:0,fit:mat.kind==='board'?'page':mat.pages.some(x=>(x.slides?.length??0)>1)?'slides':mat.pages[0]?.h>mat.pages[0]?.w?'width':'page',zoom:1,...(isLong(mat)?{y:0}:{}),...p});
-export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps'];
+export const SHARED_KEYS:(keyof Shared)[]=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps','classBar'];
 const LOCAL_KEYS:(keyof Local)[]=['students','slots','learning','skin','motion','libraryOpen','rightOpen','libraryW','rightW','pinned','recents','favorites','expanded','notes','studentId','roots','reader','pvw','answerMarks','answerAutoDetect','freeSubject','classOf'];
 const board=boardMaterial();
 // contextBridge 传进来的对象不可扩展：撤销记录等要原地修改的数据必须先深拷贝，否则第一次在新页面书写就抛错
 const stored = (()=>{if(host.electron)return host.initial?JSON.parse(JSON.stringify(host.initial)):{};if(ROLE!=='teacher')return {};try{return JSON.parse(localStorage.getItem('cs.v2.teacher')||'{}');}catch{return {};}})();
 const history:Histories=ROLE==='teacher'?(stored.history as Histories??{}):{};
-const sharedInit:Shared={pgm:defaultView(board),pgmMat:board,boardSkin:'ivory',pattern:'grid',eyeCare:0,ink:{},studentTools:'open',inkOptions:{eraserMode:'segment',eraserSize:'m',eraserV:2,shapeSnap:true},drawAuthor:'teacher',selectedInk:null,curtain:null,spotlight:null,takeAt:0,sim:null,tool:'pen',color:'ink',size:3,objKind:'block',revealed:[],answerGuard:true,warm:[],subject:'physics',desk:[],deskLimit:DEFAULT_LIMIT,slideSteps:true,...stored.shared};
+const sharedInit:Shared={pgm:defaultView(board),pgmMat:board,boardSkin:'ivory',pattern:'grid',eyeCare:0,ink:{},studentTools:'open',inkOptions:{eraserMode:'segment',eraserSize:'m',eraserV:2,shapeSnap:true},drawAuthor:'teacher',selectedInk:null,curtain:null,spotlight:null,takeAt:0,sim:null,tool:'pen',color:'ink',size:3,objKind:'block',revealed:[],answerGuard:true,warm:[],subject:'physics',desk:[],deskLimit:DEFAULT_LIMIT,slideSteps:true,classBar:null,...stored.shared};
+// 上次存下的上课状态不作数：教师窗口起来后按录像的真实状态重新发布
+sharedInit.classBar=null;
 if(!Array.isArray(sharedInit.desk))sharedInit.desk=[];
 if(!Number.isFinite(sharedInit.deskLimit))sharedInit.deskLimit=DEFAULT_LIMIT;
 // A restarted simulation resumes paused; no hidden elapsed-time jump.
@@ -159,7 +173,7 @@ export const useStore=create<State>()((set,get)=>{
  undo:(k,a)=>travel(k,a,false),redo:(k,a)=>travel(k,a,true),
  open:(mat,page=0)=>{get().touch(mat.id);set({reader:{mat,view:defaultView(mat,{page}),split:null}});},
  cue:(mat,view)=>{get().touch(mat.id);set({pvw:{mat,view:defaultView(mat,view)}});},
- take:()=>{const p=get().pvw;if(!p)return;get().showNow(p.mat,p.view);set({pvw:null});},
+ take:()=>{const p=get().pvw;if(!p||p.teacherOnly)return;get().showNow(p.mat,p.view);set({pvw:null});},
  // 上屏：已经打开过的课件直接切回去（没指定页码就回到上次那页）；新的加进学生画面，超过上限关掉最久没用的
  showNow:(mat,view)=>{get().touch(mat.id);const st=get();const desk=syncDesk(st.desk,st.pgmMat,st.pgm,st.sim,boardMaterial,defaultView);const i=desk.findIndex(w=>w.id===mat.id);let m=mat,v:View;
   if(i>=0){const w=desk[i];if(mat.kind==='board')m=w.mat;v=view?defaultView(m,view):w.view;desk[i]={...w,mat:m,view:v,mode:w.mode==='min'?(w.prev??'max'):w.mode,z:topZ(desk)+1,at:Date.now()};}
@@ -265,7 +279,7 @@ if(ROLE==='teacher')onStepsReady((id,apply)=>{
  if(st.pgmMat.id===id){const m=apply(st.pgmMat);patch.pgmMat=m;patch.pgm=settleView(m,st.pgm);}
  if(st.desk.some(w=>w.id===id))patch.desk=st.desk.map(w=>{if(w.id!==id)return w;const m=apply(w.mat);return {...w,mat:m,view:settleView(m,w.view)};});
  if(Object.keys(patch).length)st.setShared(patch);
- const p=st.pvw;if(p&&p.mat.id===id){const m=apply(p.mat);useStore.setState({pvw:{mat:m,view:settleView(m,p.view)}});}
+ const p=st.pvw;if(p&&p.mat.id===id){const m=apply(p.mat);useStore.setState({pvw:{...p,mat:m,view:settleView(m,p.view)}});}
 });
 
 // ── 翻页：幻灯片模式下逐块前进，跨页自动接续 ─────────────────

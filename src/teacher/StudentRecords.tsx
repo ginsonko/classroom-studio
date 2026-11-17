@@ -13,6 +13,7 @@ import { toast } from '../lib/toast';
 import { FileChip } from '../ui/FileChip';
 import { MdText } from './TexText';
 import { openStudy } from './StudyPage';
+import { prepLine } from '../lib/prepRecord';
 
 type Tab = 'files' | 'preps' | 'lessons' | 'notes';
 const TABS: [Tab, string][] = [['files', '文件'], ['preps', '备课'], ['lessons', '课后总结'], ['notes', '备注']];
@@ -64,10 +65,11 @@ export function StudentRecords({ student }: { student: Student }) {
         {f.note && <p className="sr-note">{f.note}</p>}
       </div>) : <p className="sr-empty">还没有文件。换学生上课时板书会自动存到上一位学生名下；小羽做的教案、你点右上角添加的文件也会放在这里。</p>)}
       {tab === 'preps' && (lists.preps.length ? lists.preps.map((p) => <div key={p.id} className="sr-i">
-        {head(p.id, p.topic || '备课', `${p.date}${p.via === 'ai' ? ' · AI' : ''}${p.auto ? ' · 自动' : ''}`, p.studentId)}
+        {head(p.id, p.topic || '备课', `${p.date}${p.from === 'assistant' || p.from === 'file' ? ' · 小羽' : p.from === 'migrate' ? ' · 小羽（补记）' : p.via === 'ai' ? ' · AI' : ''}${p.auto ? ' · 自动' : ''}`, p.studentId)}
+        <p className="sr-note" data-qa="prep-line">{prepLine(p)}</p>
         {chips([...(p.files ?? []), ...(p.courseware ?? [])])}
         {open === p.id && <div className="sr-body">{p.points.length > 0 && <p className="sr-note">知识点：{p.points.join('、')}</p>}{p.plan ? <MdText text={p.plan} className="sr-md" /> : <p className="sr-note">没有教案正文</p>}</div>}
-      </div>) : <p className="sr-empty">还没有备课记录。小羽或自动备课生成后会出现在这里。</p>)}
+      </div>) : <p className="sr-empty">还没有备课记录。让小羽给这位学生备课、出练习或讲义，做完会自动记在这里；自动备课、「文件」页里归成教案的文件也会出现在这里。</p>)}
       {tab === 'lessons' && (lists.lessons.length ? lists.lessons.map((l) => <div key={l.id} className="sr-i">
         {head(l.id, l.topic || '课后总结', `${l.date}${l.minutes ? ` · ${l.minutes} 分钟` : ''}`, l.studentId)}
         {chips(l.files)}

@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>超重与失重 · 太空电梯特训闯关</title>
+<style>
+  :root {
+    --bg: #07111e;
+    --panel: #0f1e32;
+    --panel-2: #152842;
+    --line: rgba(100, 168, 225, 0.24);
+    --ink: #eef6ff;
+    --ink-2: #b5cbe2;
+    --muted: #7996b5;
+    --cyan: #38bdf8;
+    --amber: #fbbf24;
+    --orange: #fb923c;
+    --emerald: #34d399;
+    --rose: #fb7185;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(circle at 20% 10%, #102744 0%, #07111e 65%);
+    color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .shell {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 14px 18px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  /* 顶栏状态舱 */
+  .hud {
+    background: rgba(15, 30, 50, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand-badge {
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.16);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: var(--cyan);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .brand h1 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+  }
+  .stage-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    border: 1px solid var(--line);
+    background: rgba(21, 40, 66, 0.75);
+    color: var(--ink-2);
+    padding: 6px 12px;
+    border-radius: 99px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: linear-gradient(90deg, #0284c7, #0ea5e9);
+    color: #fff;
+    border-color: #38bdf8;
+  }
+  .tab-btn.done::after {
+    content: " ✓";
+    color: var(--emerald);
+  }
+  .score-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .stat-chip {
+    background: rgba(7, 17, 30, 0.65);
+    border: 1px solid var(--line);
+    padding: 4px 11px;
+    border-radius: 99px;
+  }
+  .stat-chip b { color: var(--amber); font-size: 15px; }
+
+  /* 主驾驶舱双栏 */
+  .cockpit {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .viz-card, .ctrl-card {
+    background: rgba(15, 30, 50, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    min-width: 0;
+  }
+  .canvas-wrap {
+    width: 100%;
+    height: 490px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #060d18;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    position: relative;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .viz-foot {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* 右侧任务面板 */
+  .mission-box {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .mission-kicker {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--cyan);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .mission-title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    line-height: 1.35;
+  }
+  .mission-desc {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    line-height: 1.55;
+  }
+
+  /* 交互控件区 */
+  .quiz-opts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .opt-btn {
+    border: 1px solid rgba(125, 211, 252, 0.28);
+    background: rgba(21, 40, 66, 0.9);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px 12px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    transition: transform 0.1s, border-color 0.15s, background 0.15s;
+  }
+  .opt-btn small {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .opt-btn:hover { border-color: var(--cyan); background: rgba(14, 116, 144, 0.28); }
+  .opt-btn.correct { border-color: var(--emerald); background: rgba(16, 185, 129, 0.22); }
+  .opt-btn.wrong { border-color: var(--rose); background: rgba(244, 63, 94, 0.22); }
+
+  .slider-panel {
+    background: rgba(7, 17, 30, 0.58);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .slider-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13.5px;
+  }
+  .slider-head b {
+    font-size: 18px;
+    color: var(--amber);
+  }
+  input[type="range"] {
+    width: 100%;
+    height: 28px;
+    accent-color: var(--cyan);
+    cursor: pointer;
+  }
+  .quick-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .q-btn {
+    flex: 1 1 58px;
+    border: 1px solid var(--line);
+    background: rgba(21, 40, 66, 0.85);
+    color: var(--ink-2);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .q-btn:hover { border-color: var(--cyan); color: #fff; }
+  .action-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .act-btn {
+    flex: 1 1 120px;
+    border: none;
+    border-radius: 11px;
+    padding: 11px 14px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .act-btn.primary {
+    background: linear-gradient(90deg, #f59e0b, #ea580c);
+    color: #fff;
+  }
+  .act-btn.secondary {
+    background: rgba(56, 189, 248, 0.16);
+    border: 1px solid rgba(56, 189, 248, 0.42);
+    color: var(--cyan);
+  }
+  .act-btn.ghost {
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+  }
+
+  /* 反馈与通关勋章 */
+  .feedback {
+    border-radius: 12px;
+    padding: 11px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    border: 1px solid var(--line);
+    background: rgba(15, 23, 42, 0.72);
+    color: var(--ink-2);
+  }
+  .feedback.ok {
+    background: rgba(6, 78, 59, 0.45);
+    border-color: rgba(52, 211, 153, 0.5);
+    color: #d1fae5;
+  }
+  .feedback.bad {
+    background: rgba(136, 19, 55, 0.45);
+    border-color: rgba(251, 113, 133, 0.5);
+    color: #ffe4e6;
+  }
+
+  .formula-card {
+    margin-top: auto;
+    background: rgba(7, 17, 30, 0.65);
+    border: 1px dashed rgba(56, 189, 248, 0.3);
+    border-radius: 12px;
+    padding: 10px 13px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .formula-card b { color: var(--cyan); }
+  .math {
+    font-family: "Cambria Math", "Times New Roman", serif;
+    font-style: italic;
+  }
+  .math sub, .math sup { font-style: normal; font-size: 0.76em; }
+  .math .rm { font-style: normal; }
+
+  .medal-banner {
+    display: none;
+    background: linear-gradient(120deg, rgba(245, 158, 11, 0.22), rgba(14, 165, 233, 0.22));
+    border: 1px solid rgba(251, 191, 36, 0.6);
+    border-radius: 14px;
+    padding: 12px 15px;
+  }
+  .medal-banner.show { display: block; }
+  .medal-banner h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    color: var(--amber);
+  }
+  .medal-banner p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+
+  @media (max-width: 820px) {
+    .shell { padding: 10px 10px 22px; }
+    .cockpit { grid-template-columns: 1fr; }
+    .canvas-wrap { height: 390px; }
+    .quiz-opts { grid-template-columns: 1fr; }
+    .brand h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="hud">
+    <div class="brand">
+      <span class="brand-badge">SPACE LIFT LAB</span>
+      <h1>超重与失重 · 太空电梯闯关特训</h1>
+    </div>
+    <nav class="stage-tabs" aria-label="闯关选择">
+      <button type="button" class="tab-btn active" id="tab-0">第 1 关 · 直觉破壁</button>
+      <button type="button" class="tab-btn" id="tab-1">第 2 关 · 精准控重</button>
+      <button type="button" class="tab-btn" id="tab-2">第 3 关 · 软着陆大师</button>
+    </nav>
+    <div class="score-bar">
+      <span class="stat-chip">总积分：<b id="hud-score">0</b></span>
+      <span class="stat-chip">连击：<b id="hud-combo">×0</b></span>
+      <span class="stat-chip" id="hud-stars">☆☆☆ 见习生</span>
+    </div>
+  </header>
+
+  <div class="cockpit">
+    <section class="viz-card">
+      <div class="canvas-wrap">
+        <canvas id="game-cv" aria-label="太空电梯轿厢、弹簧台秤与受力矢量实时仿真画面"></canvas>
+      </div>
+      <div class="viz-foot">
+        <span>坐标约定：竖直向上为正方向（取重力加速度 g = 10 m/s²）</span>
+        <span>同屏联动：轿厢推进器 · 双针台秤表盘 · 隔离体受力矢量</span>
+      </div>
+    </section>
+
+    <section class="ctrl-card">
+      <div class="medal-banner" id="medal-box">
+        <h3 id="medal-title">★★★ 通关勋章：太空电梯首席载荷官！</h3>
+        <p id="medal-desc">你已全部通关三大物理特训，彻底攻克「凭速度猜状态」「视重换算」「制动过载控制」！</p>
+      </div>
+
+      <div class="mission-box">
+        <div class="mission-kicker">
+          <span id="m-step">STAGE 1 · 第 1 / 4 题</span>
+          <span id="m-mass-tag">宇航员质量 m = 60 kg</span>
+        </div>
+        <h2 class="mission-title" id="m-title">加载关卡中…</h2>
+        <p class="mission-desc" id="m-desc"></p>
+      </div>
+
+      <!-- 第 1 关：四选一快判 -->
+      <div id="pane-s1" class="quiz-opts">
+        <button type="button" class="opt-btn" data-ans="over">超重状态<small>支持力大于重力（a 向上）</small></button>
+        <button type="button" class="opt-btn" data-ans="bal">平衡状态<small>支持力等于重力（a = 0）</small></button>
+        <button type="button" class="opt-btn" data-ans="under">失重状态<small>支持力小于重力（a 向下）</small></button>
+        <button type="button" class="opt-btn" data-ans="zero">完全失重<small>支持力为零（a = -g）</small></button>
+      </div>
+      <div id="pane-s1-next" class="action-row" style="display:none">
+        <button type="button" class="act-btn secondary" id="btn-s1-next">下一道挑战 ›</button>
+      </div>
+
+      <!-- 第 2 & 3 关：推进器滑块控台 -->
+      <div id="pane-slider" class="slider-panel" style="display:none">
+        <div class="slider-head">
+          <span>推进器合加速度 <span class="math">a</span>（向上为正）</span>
+          <b id="sl-readout">+0.0 m/s²</b>
+        </div>
+        <input type="range" id="accel-slider" min="-10" max="8" step="0.5" value="0" aria-label="调节加速度">
+        <div class="quick-row" id="quick-btns">
+          <button type="button" class="q-btn" data-a="-10">-10 失重</button>
+          <button type="button" class="q-btn" data-a="-4">-4.0</button>
+          <button type="button" class="q-btn" data-a="0">0 匀速</button>
+          <button type="button" class="q-btn" data-a="2.5">+2.5</button>
+          <button type="button" class="q-btn" data-a="4">+4.0</button>
+          <button type="button" class="q-btn" data-a="6">+6.0</button>
+        </div>
+        <div class="action-row" id="s2-actions">
+          <button type="button" class="act-btn primary" id="btn-s2-lock">点火锁定 · 核验台秤读数</button>
+          <button type="button" class="act-btn secondary" id="btn-s2-next" style="display:none">下一轮目标 ›</button>
+        </div>
+        <div class="action-row" id="s3-actions" style="display:none">
+          <button type="button" class="act-btn primary" id="btn-s3-run">点火开始着陆</button>
+          <button type="button" class="act-btn secondary" id="btn-s3-auto">自动驾驶示范</button>
+          <button type="button" class="act-btn ghost" id="btn-s3-reset">重置高度</button>
+        </div>
+      </div>
+
+      <div class="feedback" id="fb-box">
+        观察左侧轿厢的速度箭头与推进器喷焰方向，判断加速度方向后再出手！
+      </div>
+
+      <div class="formula-card">
+        <b>通关物理铁律：</b>只隔离分析「宇航员」，取竖直向上为正：<span class="math">F<sub>N</sub> − mg = ma ⇒ F<sub>N</sub> = m(g + a)</span>。<br>
+        超重或失重<b>只看加速度 <span class="math">a</span> 的方向</b>，与速度 <span class="math">v</span> 向上还是向下无关；完全失重时 <span class="math">F<sub>N</sub> = 0</span>，但重力 <span class="math">mg</span> 不变。
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var G = 10;
+  var cv = document.getElementById('game-cv');
+  var ctx = cv.getContext('2d');
+
+  var state = {
+    stage: 0,
+    score: 0,
+    combo: 0,
+    cleared: [false, false, false],
+    // Stage 1
+    qIdx: 0,
+    s1Answered: false,
+    // Stage 2
+    tIdx: 0,
+    s2Solved: false,
+    // Shared physics
+    mass: 60,
+    a: -3,
+    v: -14,
+    h: 28,
+    maxFnSeen: 600,
+    s3Running: false,
+    s3Auto: false,
+    s3Done: false,
+    animPhase: 0,
+    hideReadout: true
+  };
+
+  var S1_QUESTIONS = [
+    {
+      mass: 60, v: -16, a: +4, ans: 'over',
+      title: '高速下降舱紧急制动！',
+      desc: '返回舱正以 16 m/s 向下高速下降，底部推进器猛烈喷火使其减速刹停（速率正在变小）。此时舱内宇航员处于什么状态？',
+      explain: '向下减速 ⇒ 加速度方向与速度相反（竖直向上，a = +4 m/s² > 0）⇒ 支持力 F_N = 60×(10+4) = 840 N > 600 N，属于典型的「超重状态」！'
+    },
+    {
+      mass: 50, v: +12, a: -3, ans: 'under',
+      title: '上升接近空间站，减速停靠！',
+      desc: '轿厢正以 12 m/s 向上升起，即将抵达轨道停靠港，正在平稳减速上升。此时台秤上的宇航员处于什么状态？',
+      explain: '向上减速 ⇒ 加速度竖直向下（a = -3 m/s² < 0）⇒ 支持力 F_N = 50×(10-3) = 350 N < 500 N，处于「失重状态」！'
+    },
+    {
+      mass: 60, v: -8, a: -10, ans: 'zero',
+      title: '电磁导轨脱钩 · 自由落体测试！',
+      desc: '轿厢关闭全部推进器并解除导轨摩擦，在地球引力场（g = 10 m/s²）中做理想自由落体运动。此时宇航员处于？',
+      explain: '自由落体加速度 a = -g = -10 m/s² ⇒ 支持力 F_N = m(g - g) = 0 N，属于「完全失重」！注意：宇航员所受重力仍为 600 N 不变。'
+    },
+    {
+      mass: 70, v: +15, a: 0, ans: 'bal',
+      title: '巡航段恒速爬升！',
+      desc: '太空电梯进入同步索道巡航段，以 15 m/s 的恒定速度竖直向上匀速上升。此时脚底弹簧台秤读数满足？',
+      explain: '匀速直线运动加速度 a = 0 ⇒ F_N = mg = 700 N，视重等于实重，处于「平衡状态」！'
+    }
+  ];
+
+  var S2_TARGETS = [
+    {
+      mass: 60, targetFn: 840, needA: 4.0,
+      title: '过载耐受校准：让台秤支持力达到 840 N',
+      desc: '宇航员质量 m = 60 kg（实重 mg = 600 N）。请调节推进器加速度滑块 a，使脚底台秤支持力精准达到 840 N（相当于 84.0 kg 视重）。'
+    },
+    {
+      mass: 50, targetFn: 300, needA: -4.0,
+      title: '火星低重力模拟：让台秤标定示数降为 30.0 kg',
+      desc: '宇航员质量 m = 50 kg（实重 500 N）。请控制轿厢产生向下的加速度，让按地球 g=10 标定的台秤显示 30.0 kg（即支持力 300 N）。'
+    },
+    {
+      mass: 60, targetFn: 0, needA: -10.0,
+      title: '零重力悬浮实验：开启完全失重舱（0 N）',
+      desc: '宇航员质量 m = 60 kg。请调节加速度使宇航员与台秤之间挤压支持力恰好降为 0 N，进入完全失重悬浮态！'
+    }
+  ];
+
+  var slider = document.getElementById('accel-slider');
+  var slReadout = document.getElementById('sl-readout');
+  var fbBox = document.getElementById('fb-box');
+
+  function setFeedback(text, kind) {
+    fbBox.className = 'feedback' + (kind ? ' ' + kind : '');
+    fbBox.innerHTML = text;
+  }
+
+  function updateHud() {
+    document.getElementById('hud-score').textContent = String(state.score);
+    document.getElementById('hud-combo').textContent = '×' + state.combo;
+    var doneCnt = state.cleared.filter(Boolean).length;
+    var starText = doneCnt === 3 ? '★★★ 首席载荷官' : doneCnt === 2 ? '★★☆ 高级工程师' : doneCnt === 1 ? '★☆☆ 正式宇航员' : '☆☆☆ 见习生';
+    document.getElementById('hud-stars').textContent = starText;
+    for (var i = 0; i < 3; i++) {
+      var tb = document.getElementById('tab-' + i);
+      tb.classList.toggle('active', state.stage === i);
+      tb.classList.toggle('done', state.cleared[i]);
+    }
+    var medal = document.getElementById('medal-box');
+    if (doneCnt === 3) {
+      medal.classList.add('show');
+      document.getElementById('medal-title').textContent = '★★★ 满星通关！最终积分 ' + state.score + ' 分';
+    } else {
+      medal.classList.remove('show');
+    }
+  }
+
+  function syncSliderUI() {
+    var a = Number(state.a);
+    slider.value = String(a);
+    slReadout.textContent = (a > 0 ? '+' : '') + a.toFixed(1) + ' m/s²';
+  }
+
+  function loadStage(idx) {
+    state.stage = idx;
+    state.s3Running = false;
+    state.s3Auto = false;
+
+    document.getElementById('pane-s1').style.display = idx === 0 ? 'grid' : 'none';
+    document.getElementById('pane-s1-next').style.display = 'none';
+    document.getElementById('pane-slider').style.display = idx === 0 ? 'none' : 'flex';
+    document.getElementById('s2-actions').style.display = idx === 1 ? 'flex' : 'none';
+    document.getElementById('s3-actions').style.display = idx === 2 ? 'flex' : 'none';
+
+    if (idx === 0) {
+      loadS1Question(state.qIdx);
+    } else if (idx === 1) {
+      loadS2Target(state.tIdx);
+    } else {
+      resetS3();
+    }
+    updateHud();
+  }
+
+  function loadS1Question(qi) {
+    state.qIdx = qi % S1_QUESTIONS.length;
+    var q = S1_QUESTIONS[state.qIdx];
+    state.s1Answered = false;
+    state.hideReadout = true;
+    state.mass = q.mass;
+    state.v = q.v;
+    state.a = q.a;
+    state.h = 22;
+
+    document.getElementById('m-step').textContent = 'STAGE 1 · 快判挑战 ' + (state.qIdx + 1) + ' / ' + S1_QUESTIONS.length;
+    document.getElementById('m-mass-tag').textContent = '宇航员质量 m = ' + q.mass + ' kg';
+    document.getElementById('m-title').textContent = q.title;
+    document.getElementById('m-desc').textContent = q.desc;
+    document.getElementById('pane-s1-next').style.display = 'none';
+
+    var btns = document.querySelectorAll('#pane-s1 .opt-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.remove('correct', 'wrong');
+      btns[i].disabled = false;
+    }
+    setFeedback('提示：先由「加速同向、减速反向」找出加速度 a 的方向，再点选状态！', '');
+  }
+
+  function loadS2Target(ti) {
+    state.tIdx = ti % S2_TARGETS.length;
+    var t = S2_TARGETS[state.tIdx];
+    state.s2Solved = false;
+    state.hideReadout = false;
+    state.mass = t.mass;
+    state.a = 0;
+    state.v = 2;
+    state.h = 18;
+    syncSliderUI();
+
+    document.getElementById('m-step').textContent = 'STAGE 2 · 控重任务 ' + (state.tIdx + 1) + ' / ' + S2_TARGETS.length;
+    document.getElementById('m-mass-tag').textContent = '质量 m = ' + t.mass + ' kg（mg = ' + (t.mass * G) + ' N）';
+    document.getElementById('m-title').textContent = t.title;
+    document.getElementById('m-desc').textContent = t.desc;
+    document.getElementById('btn-s2-next').style.display = 'none';
+    setFeedback('拖动滑块调节加速度 a，观察左侧台秤指针变化，对准目标值后点「点火锁定」！', '');
+  }
+
+  function resetS3() {
+    state.hideReadout = false;
+    state.mass = 60;
+    state.h = 36.0;
+    state.v = -12.0;
+    state.a = 0.0;
+    state.maxFnSeen = 600;
+    state.s3Running = false;
+    state.s3Auto = false;
+    state.s3Done = false;
+    syncSliderUI();
+
+    document.getElementById('m-step').textContent = 'STAGE 3 · 动力学实时软着陆';
+    document.getElementById('m-mass-tag').textContent = 'm = 60 kg ｜ 安全过载上限 ≤ 900 N';
+    document.getElementById('m-title').textContent = '36 米高空返回舱：不超载安全软着陆！';
+    document.getElementById('m-desc').textContent = '初速度 v₀ = -12.0 m/s（向下）。请点击「点火开始着陆」并实时调节向上制动加速度 a：要求全程台秤支持力不超过 900 N（即 a ≤ +5.0 m/s²），且触地速度 |v| ≤ 1.8 m/s！';
+    document.getElementById('btn-s3-run').textContent = '点火开始着陆';
+    setFeedback('算一算：由 v² = 2ah，从 12 m/s 在 36 m 内刹停，理想匀减速需要 a = +2.0 m/s²（此时 F_N = 720 N 超重但安全）！', '');
+  }
+
+  // 事件绑定：关卡切换
+  for (var ti = 0; ti < 3; ti++) {
+    (function (idx) {
+      document.getElementById('tab-' + idx).addEventListener('click', function () { loadStage(idx); });
+    })(ti);
+  }
+
+  // 第 1 关判题
+  var optBtns = document.querySelectorAll('#pane-s1 .opt-btn');
+  for (var oi = 0; oi < optBtns.length; oi++) {
+    optBtns[oi].addEventListener('click', function (ev) {
+      if (state.s1Answered) return;
+      var pick = ev.currentTarget.getAttribute('data-ans');
+      var q = S1_QUESTIONS[state.qIdx];
+      state.s1Answered = true;
+      state.hideReadout = false;
+
+      for (var k = 0; k < optBtns.length; k++) {
+        var b = optBtns[k];
+        if (b.getAttribute('data-ans') === q.ans) b.classList.add('correct');
+        else if (b === ev.currentTarget) b.classList.add('wrong');
+      }
+
+      if (pick === q.ans) {
+        state.combo += 1;
+        var pts = 100 + state.combo * 20;
+        state.score += pts;
+        setFeedback('<b>✓ 判断精准！+' + pts + ' 分</b><br>' + q.explain, 'ok');
+      } else {
+        state.combo = 0;
+        setFeedback('<b>✗ 掉进直觉陷阱啦！</b><br>' + q.explain, 'bad');
+      }
+
+      if (state.qIdx === S1_QUESTIONS.length - 1) {
+        state.cleared[0] = true;
+        document.getElementById('btn-s1-next').textContent = '第 1 关完成 · 进入第 2 关 ›';
+      } else {
+        document.getElementById('btn-s1-next').textContent = '下一道挑战 ›';
+      }
+      document.getElementById('pane-s1-next').style.display = 'flex';
+      updateHud();
+    });
+  }
+
+  document.getElementById('btn-s1-next').addEventListener('click', function () {
+    if (state.qIdx >= S1_QUESTIONS.length - 1) {
+      loadStage(1);
+    } else {
+      loadS1Question(state.qIdx + 1);
+    }
+  });
+
+  // 滑块与快捷按钮
+  slider.addEventListener('input', function () {
+    state.a = Number(slider.value) || 0;
+    state.s3Auto = false;
+    syncSliderUI();
+  });
+
+  var qBtns = document.querySelectorAll('#quick-btns .q-btn');
+  for (var qi = 0; qi < qBtns.length; qi++) {
+    qBtns[qi].addEventListener('click', function (ev) {
+      state.a = Number(ev.currentTarget.getAttribute('data-a')) || 0;
+      state.s3Auto = false;
+      syncSliderUI();
+    });
+  }
+
+  // 第 2 关核验
+  document.getElementById('btn-s2-lock').addEventListener('click', function () {
+    if (state.stage !== 1) return;
+    var t = S2_TARGETS[state.tIdx];
+    var fn = Math.round(Math.max(0, state.mass * (G + state.a)));
+    if (Math.abs(fn - t.targetFn) <= 5) {
+      if (!state.s2Solved) {
+        state.s2Solved = true;
+        state.combo += 1;
+        var pts = 150 + state.combo * 25;
+        state.score += pts;
+        if (state.tIdx === S2_TARGETS.length - 1) {
+          state.cleared[1] = true;
+          document.getElementById('btn-s2-next').textContent = '第 2 关通关 · 挑战软着陆 ›';
+        } else {
+          document.getElementById('btn-s2-next').textContent = '下一轮目标 ›';
+        }
+        document.getElementById('btn-s2-next').style.display = 'inline-block';
+        setFeedback('<b>✓ 推力精准命中！+' + pts + ' 分</b><br>当 a = ' + (state.a > 0 ? '+' : '') + state.a.toFixed(1) + ' m/s² 时，F<sub>N</sub> = ' + state.mass + '×(10 ' + (state.a >= 0 ? '+ ' + state.a.toFixed(1) : '− ' + Math.abs(state.a).toFixed(1)) + ') = ' + fn + ' N！', 'ok');
+        updateHud();
+      }
+    } else {
+      state.combo = 0;
+      var diff = fn - t.targetFn;
+      setFeedback('<b>还差一点！当前支持力为 ' + fn + ' N</b>（比目标 ' + t.targetFn + ' N ' + (diff > 0 ? '偏大 ' + diff + ' N，请调小加速度 a' : '偏小 ' + Math.abs(diff) + ' N，请调大向上加速度 a') + '）。', 'bad');
+      updateHud();
+    }
+  });
+
+  document.getElementById('btn-s2-next').addEventListener('click', function () {
+    if (state.tIdx >= S2_TARGETS.length - 1) loadStage(2);
+    else loadS2Target(state.tIdx + 1);
+  });
+
+  // 第 3 关控制
+  document.getElementById('btn-s3-run').addEventListener('click', function () {
+    if (state.s3Done) resetS3();
+    state.s3Running = !state.s3Running;
+    document.getElementById('btn-s3-run').textContent = state.s3Running ? '暂停飞行' : '继续着陆';
+  });
+
+  document.getElementById('btn-s3-auto').addEventListener('click', function () {
+    resetS3();
+    state.s3Auto = true;
+    state.s3Running = true;
+    state.a = 2.0;
+    syncSliderUI();
+    document.getElementById('btn-s3-run').textContent = '暂停飞行';
+    setFeedback('已开启自动驾驶制导：维持向上制动加速度 a = +2.0 m/s²（超重态 F<sub>N</sub> = 720 N < 900 N），平稳减速下降中…', '');
+  });
+
+  document.getElementById('btn-s3-reset').addEventListener('click', function () {
+    resetS3();
+  });
+
+  // 物理步进与画布渲染
+  function stepSim(dt) {
+    state.animPhase += dt;
+    if (state.stage === 2 && state.s3Running && !state.s3Done) {
+      if (state.s3Auto && state.h > 0.05) {
+        var idealA = Math.min(4.5, Math.max(-2, (state.v * state.v) / (2 * Math.max(0.4, state.h))));
+        state.a = Math.round(idealA * 2) / 2;
+        syncSliderUI();
+      }
+      var fnNow = Math.max(0, state.mass * (G + state.a));
+      if (fnNow > state.maxFnSeen) state.maxFnSeen = fnNow;
+
+      state.v += state.a * dt;
+      state.h += state.v * dt;
+
+      if (state.maxFnSeen > 900) {
+        state.s3Running = false;
+        state.s3Done = true;
+        state.combo = 0;
+        document.getElementById('btn-s3-run').textContent = '重新挑战';
+        setFeedback('<b>✗ 制动过猛触发过载警报！</b><br>峰值支持力达 ' + Math.round(state.maxFnSeen) + ' N（超过 900 N 安全上限，a > +5 m/s²）。请减小向上制动加速度再试一次！', 'bad');
+        updateHud();
+      } else if (state.h <= 0) {
+        state.h = 0;
+        state.s3Running = false;
+        state.s3Done = true;
+        document.getElementById('btn-s3-run').textContent = '再飞一次';
+        var impactV = Math.abs(state.v);
+        if (impactV <= 1.8) {
+          state.cleared[2] = true;
+          state.combo += 1;
+          var pts = 260 + state.combo * 30;
+          state.score += pts;
+          state.v = 0;
+          state.a = 0;
+          syncSliderUI();
+          setFeedback('<b>★ 完美软着陆成功！+' + pts + ' 分</b><br>触地速度仅 ' + impactV.toFixed(2) + ' m/s，全程最大支持力 ' + Math.round(state.maxFnSeen) + ' N（安全超重减速制动）！', 'ok');
+        } else {
+          state.combo = 0;
+          setFeedback('<b>✗ 着陆速度过快（' + impactV.toFixed(1) + ' m/s > 1.8 m/s）！</b><br>向下速度没刹住，请提早拉正加速度滑块（a > 0 向上减速制动）！', 'bad');
+        }
+        updateHud();
+      } else if (state.h > 46) {
+        state.h = 46;
+        state.v = 0;
+      }
+    }
+  }
+
+  function drawArrow(x1, y1, x2, y2, color, label, width) {
+    var dy = y2 - y1, dx = x2 - x1;
+    var len = Math.hypot(dx, dy);
+    if (len < 3) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width || 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    var ang = Math.atan2(dy, dx);
+    var head = 9;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - head * Math.cos(ang - 0.45), y2 - head * Math.sin(ang - 0.45));
+    ctx.lineTo(x2 - head * Math.cos(ang + 0.45), y2 - head * Math.sin(ang + 0.45));
+    ctx.closePath();
+    ctx.fill();
+    if (label) {
+      ctx.font = 'bold 12.5px "PingFang SC", "Microsoft YaHei UI", sans-serif';
+      ctx.fillText(label, x2 + 8, y2 + 4);
+    }
+    ctx.restore();
+  }
+
+  function renderCanvas() {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var rect = cv.getBoundingClientRect();
+    var w = Math.max(300, Math.floor(rect.width));
+    var h = Math.max(260, Math.floor(rect.height));
+    if (cv.width !== Math.floor(w * dpr) || cv.height !== Math.floor(h * dpr)) {
+      cv.width = Math.floor(w * dpr);
+      cv.height = Math.floor(h * dpr);
+    }
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    // 星空井道背景
+    var grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#06101f');
+    grad.addColorStop(1, '#0d2138');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 星星点缀
+    ctx.fillStyle = 'rgba(186, 230, 253, 0.38)';
+    for (var si = 0; si < 24; si++) {
+      var sx = ((si * 97) % (w - 20)) + 10;
+      var sy = ((si * 61 + Math.floor(state.animPhase * (state.v * -8))) % h + h) % h;
+      ctx.fillRect(sx, sy, si % 3 === 0 ? 2.2 : 1.4, si % 3 === 0 ? 2.2 : 1.4);
+    }
+
+    var fn = Math.max(0, state.mass * (G + state.a));
+    var mg = state.mass * G;
+    var statusLabel = fn <= 0.1 ? '完全失重' : state.a > 0.05 ? '超重' : state.a < -0.05 ? '失重' : '平衡';
+    var statusColor = fn <= 0.1 ? '#c084fc' : state.a > 0.05 ? '#fb923c' : state.a < -0.05 ? '#38bdf8' : '#34d399';
+
+    // 左侧：太空电梯导轨与轿厢
+    var shaftX = Math.min(155, w * 0.27);
+    var topY = 34, botY = h - 38;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(shaftX - 58, topY); ctx.lineTo(shaftX - 58, botY);
+    ctx.moveTo(shaftX + 58, topY); ctx.lineTo(shaftX + 58, botY);
+    ctx.stroke();
+
+    // 着陆垫
+    ctx.fillStyle = '#1e3a5f';
+    ctx.fillRect(shaftX - 68, botY, 136, 10);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(shaftX - 44, botY, 88, 4);
+
+    // 高度映射轿厢纵坐标
+    var normH = state.stage === 2
+      ? Math.max(0, Math.min(1, state.h / 40))
+      : 0.45 + 0.12 * Math.sin(state.animPhase * 2.1);
+    var cabH = 128, cabW = 96;
+    var cabY = botY - cabH - normH * (botY - topY - cabH - 12);
+    var cabX = shaftX - cabW / 2;
+
+    // 推进器火焰（a > -10 时底部有向上支撑推力；a > 0 时喷焰强劲）
+    var thrust = Math.max(0, G + state.a);
+    if (thrust > 0.2) {
+      var flameLen = Math.min(52, 8 + thrust * 2.6 + Math.sin(state.animPhase * 28) * 4);
+      var fg = ctx.createLinearGradient(0, cabY + cabH, 0, cabY + cabH + flameLen);
+      fg.addColorStop(0, '#fef08a');
+      fg.addColorStop(0.5, '#fb923c');
+      fg.addColorStop(1, 'rgba(239,68,68,0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath();
+      ctx.moveTo(shaftX - 22, cabY + cabH);
+      ctx.lineTo(shaftX + 22, cabY + cabH);
+      ctx.lineTo(shaftX, cabY + cabH + flameLen);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 轿厢壳体
+    ctx.fillStyle = 'rgba(15, 36, 62, 0.94)';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.roundRect(cabX, cabY, cabW, cabH, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    // 轿厢内弹簧台秤
+    var compress = Math.min(10, (fn / 1000) * 10);
+    var scaleTop = cabY + cabH - 22 + compress * 0.5;
+    ctx.fillStyle = '#0284c7';
+    ctx.fillRect(shaftX - 28, scaleTop, 56, 8);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(shaftX - 14, scaleTop + 8); ctx.lineTo(shaftX - 14, cabY + cabH - 6);
+    ctx.moveTo(shaftX + 14, scaleTop + 8); ctx.lineTo(shaftX + 14, cabY + cabH - 6);
+    ctx.stroke();
+
+    // 宇航员小人（完全失重时微微飘起）
+    var floatGap = fn <= 0.1 ? 8 + Math.sin(state.animPhase * 4) * 3 : 0;
+    var footY = scaleTop - floatGap;
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    // 头盔
+    ctx.fillStyle = '#e0f2fe';
+    ctx.beginPath();
+    ctx.arc(shaftX, footY - 52, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0284c7';
+    ctx.beginPath();
+    ctx.arc(shaftX + 2, footY - 52, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    // 躯干与四肢
+    ctx.beginPath();
+    ctx.moveTo(shaftX, footY - 40); ctx.lineTo(shaftX, footY - 18);
+    ctx.moveTo(shaftX - 14, footY - 30); ctx.lineTo(shaftX, footY - 36); ctx.lineTo(shaftX + 14, footY - 30);
+    ctx.moveTo(shaftX, footY - 18); ctx.lineTo(shaftX - 10, footY - 2);
+    ctx.moveTo(shaftX, footY - 18); ctx.lineTo(shaftX + 10, footY - 2);
+    ctx.stroke();
+
+    // 轿厢旁速度矢量 v 与高度读数
+    if (Math.abs(state.v) > 0.2) {
+      var vLen = Math.max(22, Math.min(58, Math.abs(state.v) * 3.2));
+      var vy1 = cabY + cabH * 0.5;
+      var vy2 = state.v > 0 ? vy1 - vLen : vy1 + vLen;
+      drawArrow(cabX - 18, vy1, cabX - 18, vy2, '#34d399', 'v', 3);
+    }
+    ctx.fillStyle = '#93c5fd';
+    ctx.font = '12px "PingFang SC", sans-serif';
+    ctx.fillText('v = ' + (state.v > 0 ? '+' : '') + state.v.toFixed(1) + ' m/s', 14, 24);
+    if (state.stage === 2) {
+      ctx.fillText('高度 h = ' + state.h.toFixed(1) + ' m', 14, 42);
+    }
+
+    // 右半区：上为双针弹簧台秤表盘，下为隔离体受力矢量图
+    var rightX = shaftX + 82;
+    var rightW = w - rightX - 14;
+    if (rightW > 130) {
+      var cx = rightX + rightW * 0.5;
+      var dialY = 122;
+      var r = Math.min(78, rightW * 0.38);
+
+      // 表盘底座卡片
+      ctx.fillStyle = 'rgba(10, 22, 39, 0.86)';
+      ctx.strokeStyle = 'rgba(100, 168, 225, 0.22)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.roundRect(rightX, 18, rightW, 206, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#b5cbe2';
+      ctx.font = 'bold 12.5px "PingFang SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('舱内弹簧台秤实时示数', cx, 38);
+
+      // 表盘刻度弧（0 ~ 1200 N）
+      var startA = Math.PI * 0.8, endA = Math.PI * 2.2;
+      ctx.strokeStyle = '#1e3a5f';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(cx, dialY, r, startA, endA);
+      ctx.stroke();
+
+      // 安全/超载色带
+      var valShow = state.hideReadout ? mg : fn;
+      var frac = Math.min(1, valShow / 1200);
+      ctx.strokeStyle = state.hideReadout ? '#64748b' : statusColor;
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(cx, dialY, r, startA, startA + (endA - startA) * frac);
+      ctx.stroke();
+
+      // 静止基准灰针（mg）
+      var mgAng = startA + (endA - startA) * Math.min(1, mg / 1200);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(cx, dialY);
+      ctx.lineTo(cx + (r - 12) * Math.cos(mgAng), dialY + (r - 12) * Math.sin(mgAng));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 实时彩针
+      if (!state.hideReadout) {
+        var fnAng = startA + (endA - startA) * frac;
+        ctx.strokeStyle = statusColor;
+        ctx.lineWidth = 3.4;
+        ctx.beginPath();
+        ctx.moveTo(cx, dialY);
+        ctx.lineTo(cx + (r - 8) * Math.cos(fnAng), dialY + (r - 8) * Math.sin(fnAng));
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.arc(cx, dialY, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 表盘中心数字
+      ctx.fillStyle = state.hideReadout ? '#94a3b8' : '#ffffff';
+      ctx.font = 'bold 21px "PingFang SC", sans-serif';
+      ctx.fillText(state.hideReadout ? '??? N' : Math.round(fn) + ' N', cx, dialY + 34);
+      ctx.font = '12px "PingFang SC", sans-serif';
+      ctx.fillStyle = state.hideReadout ? '#fbbf24' : statusColor;
+      ctx.fillText(
+        state.hideReadout ? '请先在右侧作答揭晓示数' : '视重 ' + (fn / G).toFixed(1) + ' kg · ' + statusLabel,
+        cx, dialY + 54
+      );
+      if (state.stage === 1) {
+        var tgt = S2_TARGETS[state.tIdx].targetFn;
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillText('本轮目标：' + tgt + ' N（' + (tgt / G).toFixed(1) + ' kg）', cx, dialY + 74);
+      } else if (state.stage === 2) {
+        ctx.fillStyle = state.maxFnSeen > 900 ? '#fb7185' : '#93c5fd';
+        ctx.fillText('峰值支持力：' + Math.round(state.maxFnSeen) + ' / 900 N', cx, dialY + 74);
+      }
+
+      // 右下：隔离体受力矢量图
+      var fTop = 236;
+      var fH = h - fTop - 16;
+      if (fH > 120) {
+        ctx.fillStyle = 'rgba(10, 22, 39, 0.86)';
+        ctx.strokeStyle = 'rgba(100, 168, 225, 0.22)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.roundRect(rightX, fTop, rightW, fH, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#b5cbe2';
+        ctx.font = 'bold 12.5px "PingFang SC", sans-serif';
+        ctx.fillText('隔离研究对象：宇航员', cx, fTop + 22);
+
+        var midY = fTop + fH * 0.54;
+        ctx.fillStyle = '#1e3a5f';
+        ctx.strokeStyle = '#60a5fa';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(cx - 24, midY - 18, 48, 36, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#eef6ff';
+        ctx.font = 'bold 13px "PingFang SC", sans-serif';
+        ctx.fillText('人 m', cx, midY + 5);
+
+        ctx.textAlign = 'left';
+        var scalePx = Math.min(72, fH * 0.34) / 800;
+        var mgLen = Math.max(22, mg * scalePx);
+        drawArrow(cx, midY + 18, cx, midY + 18 + mgLen, '#fbbf24', 'mg = ' + mg + ' N', 3.6);
+
+        if (!state.hideReadout) {
+          if (fn > 2) {
+            var fnLen = Math.max(16, Math.min(fH * 0.42, fn * scalePx));
+            drawArrow(cx, midY - 18, cx, midY - 18 - fnLen, statusColor, 'F_N = ' + Math.round(fn) + ' N', 3.8);
+          } else {
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 12px "PingFang SC", sans-serif';
+            ctx.fillText('F_N = 0 N（无支持力）', cx + 30, midY - 12);
+          }
+          if (Math.abs(state.a) > 0.05) {
+            var aLen = Math.max(18, Math.min(46, Math.abs(state.a) * 5.5));
+            drawArrow(cx - 46, midY, cx - 46, state.a > 0 ? midY - aLen : midY + aLen, '#f43f5e', 'a', 2.8);
+          }
+        } else {
+          drawArrow(cx - 46, midY, cx - 46, state.a > 0 ? midY - 30 : state.a < 0 ? midY + 30 : midY, 'rgba(244,63,94,0.35)', 'a?', 2.5);
+        }
+      }
+      ctx.textAlign = 'left';
+    }
+
+    ctx.restore();
+  }
+
+  var lastTs = performance.now();
+  function loop(now) {
+    var dt = Math.min(0.05, Math.max(0.001, (now - lastTs) / 1000));
+    lastTs = now;
+    stepSim(dt);
+    renderCanvas();
+    requestAnimationFrame(loop);
+  }
+
+  loadStage(0);
+  requestAnimationFrame(loop);
+
+  // 供录制/轮播截图摆出最佳太空电梯驾驶姿态
+  window.__showcasePose = function () {
+    state.score = 420;
+    state.combo = 3;
+    state.cleared = [true, true, false];
+    loadStage(2);
+    state.h = 19.5;
+    state.v = -7.6;
+    state.a = 3.5;
+    state.maxFnSeen = 810;
+    state.s3Running = false;
+    syncSliderUI();
+    setFeedback('<b>制动推进中：</b>当前向下速度 v = −7.6 m/s，向上制动加速度 a = +3.5 m/s²，台秤示数 F<sub>N</sub> = 810 N（安全超重减速）！', 'ok');
+    updateHud();
+    renderCanvas();
+  };
+})();
+</script>
+</body>
+</html>

@@ -21,18 +21,31 @@ import { readSource } from '../lib/scheduleAi';
 import { openSort, sortInBackground } from '../lib/sort';
 import { filesOf, linkFiles } from '../lib/studentFiles';
 import { fmtT } from '../lib/timeline';
+import { cleanPath } from '../lib/pathText';
+import { topicOf, upsertPrep } from '../lib/prepRecord';
+import { warmPrep } from '../lib/prepWarm';
 import type { RecordRow } from '../lib/recording';
 import { analyzeRecording } from '../lib/recordAnalysis';
 import { asrApi } from '../lib/asr';
 import { MODE_NAME } from '../lib/fineLogic';
 import { dateKey } from '../doc/scheduleModel';
-import { checkClash, day, lessonFrom, lessonText, occurrences, pickPeople, pickStudent, putIn, schema, signature, squash, WEEK, type Box, type Change, type Kind, type Param } from './toolsLogic';
+import { checkClash, day, filterExamples, lessonFrom, lessonText, occurrences, pickPeople, pickStudent, putIn, schema, signature, squash, WEEK, type Box, type Change, type Kind, type Param } from './toolsLogic';
+import { loadShowcase, stripEstimateSuffix } from '../teacher/ShowcaseCard';
 import { findGroupFor, GROUP_KINDS, groupsOf, individuals, isGroup, kindName, makeGroup, membersOf, peopleOf, whoText } from '../lib/groups';
 import type { GroupKind } from '../lib/types';
 import { cleanTrigger, PAGES, triggerJson, type Trigger } from './triggersLogic';
 import { putTrigger, removeTrigger, setMemory, setTriggers, useAssistantData, type Memory } from './state';
 
-export interface Card { title: string; lines?: string[]; files?: string[]; tone?: 'ok' | 'warn' | 'bad' }
+export interface ExampleCardBrief {
+  id: string;
+  label: string;
+  one: string;
+  formats: string;
+  cost: string;
+  thumbUrl?: string;
+  videoUrl?: string;
+}
+export interface Card { title: string; lines?: string[]; files?: string[]; tone?: 'ok' | 'warn' | 'bad'; examples?: ExampleCardBrief[] }
 export interface ToolResult { ok: boolean; text: string; images?: string[]; changes?: Change[]; card?: Card | null }
 export interface ToolCtx {
   chatId: string;
@@ -58,6 +71,20 @@ const int = (v: unknown, lo: number, hi: number, d: number) => { const n = Math.
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : has(v) ? String(v).split(/[,，、\n]/).map((x) => x.trim()).filter(Boolean) : []);
 const clip = (s: string | undefined, n: number) => { const t = (s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
 const P = (type: Param['type'], description: string, more: Partial<Param> = {}): Param => ({ type, description, ...more });
+/** AI 给的路径：file://、%20、mac 的 ~ 都还原成真实路径（主进程按磁盘核对）；没授权或找不到时返回清理过的原样 */
+const realPath = async (raw: unknown) => { const c = cleanPath(str(raw, 600)); return (await host.call<string | null>('resolvePath', c).catch(() => null)) ?? c; };
+const pathList = (v: unknown) => list(v).map((p) => cleanPath(p));
+/** 下一节课是哪天（没排课就是今天） */
+const nextLessonDay = (studentId: string) => { const from = new Date(); from.setHours(0, 0, 0, 0); const o = occurrences(S().slots, S().students, from, 14, studentId)[0] as { date?: string } | undefined; return o?.date ?? dayKey(); };
+/** 记一次备课（同一天同主题合并），并在后台把 PPT / Word 提前转好 */
+function notePrep(s: Student, o: { files: string[]; topic?: string; summary?: string; date?: string; points?: string[]; from: 'assistant' | 'file' }) {
+  const date = o.date ?? nextLessonDay(s.id);
+  let out: ReturnType<typeof upsertPrep> | null = null;
+  useStudy.getState().update((d) => { out = upsertPrep(d.preps ?? [], { studentId: s.id, subject: studentSubject(s), date, topic: o.topic || topicOf(o.files, s.name), summary: o.summary, files: o.files, points: o.points, from: o.from, at: nowIso(), id: sid }); return { ...d, preps: out.preps }; });
+  const prep = (out as ReturnType<typeof upsertPrep> | null)!.prep;
+  warmPrep(prep);
+  return prep;
+}
 const live = () => S().students.filter((s) => !s.archived);
 const who = (id: string) => S().students.find((s) => s.id === id)?.name ?? '（已删除的学生）';
 const fname = (p: string) => p.split(/[\\/]/).pop() ?? p;
@@ -419,18 +446,38 @@ const DEFS: Def[] = [
     name: 'link_file_to_student', description: '把文件归到学生名下：学生页「学生资料」和左侧资料库「学生档案」书架里都能看到、点开。你给某位学生做了教案、讲义、练习、报告等文件（包括在工作目录里自己写的），做完一定要调用这个；老师给的这位学生的资料也可以归进来', write: true,
     params: {
       student: P('string', '学生姓名或 id；不填 = 当前学生'), paths: P('array', '文件完整路径', { items: { type: 'string' } }),
-      kind: P('string', 'prep=教案 / 备课资料，doc=其他资料（讲义、练习、报告、试卷）', { enum: ['prep', 'doc'] }), note: P('string', '一句话说明，例如「10/29 期中冲刺教案」'),
+      kind: P('string', 'prep=给这位学生备课用的（教案、讲义、练习、学案、课件，会同时记成一条备课），doc=其他资料（报告、试卷分析、老师给的资料）', { enum: ['prep', 'doc'] }), note: P('string', '一句话说明这节课讲什么，例如「11/18 期中冲刺：电磁感应综合 6 题」'),
+      topic: P('string', 'kind=prep 时：这节课的主题'), date: P('string', 'kind=prep 时：给哪天的课备的 YYYY-MM-DD，默认今天'),
     },
     required: ['paths'],
     async run(a) {
-      const s = studentOf(a.student), paths = list(a.paths).map((p) => str(p, 600).replace(/\\/g, '/'));
+      const s = studentOf(a.student), paths = pathList(a.paths).map((p) => p.slice(0, 600));
       if (!paths.length) throw Error('没有给文件路径');
       const ok: string[] = [], bad: string[] = [];
       // 工作目录、学情库里的文件和老师同意过的文件才能归档（exists 对没授权的路径也返回 false）
-      for (const p of paths) (await host.call<boolean>('exists', p).catch(() => false) ? ok : bad).push(p);
+      for (const p of paths) { const r = await host.call<string | null>('resolvePath', p).catch(() => null); if (r) ok.push(r); else bad.push(p); }
       if (!ok.length) throw Error('这些文件不存在，或老师还没同意给你看（先用 request_computer_access）：' + bad.join('；'));
       const made = linkFiles(s.id, ok, { kind: a.kind === 'prep' ? 'prep' : 'doc', via: 'assistant', note: str(a.note, 120) || undefined });
-      return { text: { ok: true, linked: made.length, already: ok.length - made.length, ...(bad.length ? { missing: bad } : {}) }, card: { title: `归到了「${s.name}」名下`, files: ok } };
+      // 1.7.0 教案 / 备课资料：同时记成一条备课（学生资料「备课」页能看到，课前卡片、写课后总结也会用上），PPT / Word 后台提前转好
+      const prep = a.kind === 'prep' ? notePrep(s, { files: ok, topic: str(a.topic, 80) || undefined, summary: str(a.note, 200) || undefined, date: has(a.date) ? day(a.date) : undefined, from: 'file' }) : null;
+      return { text: { ok: true, linked: made.length, already: ok.length - made.length, ...(prep ? { prep: { id: prep.id, date: prep.date, topic: prep.topic } } : {}), ...(bad.length ? { missing: bad } : {}) }, card: { title: `归到了「${s.name}」名下${prep ? '，记进了备课' : ''}`, files: ok } };
+    },
+  },
+  {
+    name: 'record_prep', description: '记一次备课：你已经给某位学生做好了教案 / 讲义 / 练习 / 课件（不论是自己在工作目录写的，还是工坊做的），用它记进这位学生的「备课」，不用重新生成。给某学生备课、出练习、出讲义，做完必须调用它（或 link_file_to_student kind=prep）', write: true,
+    params: {
+      student: P('string', '学生姓名或 id；不填 = 当前学生'), topic: P('string', '这节课讲什么'), summary: P('string', '一句话说明这节课讲什么、怎么讲（20~50 字，老师上课前看）'),
+      files: P('array', '做好的文件完整路径（PDF / 长图 / Word / PPT 优先，md、json 是中间文件可以不放）', { items: { type: 'string' } }),
+      date: P('string', '给哪天的课备的 YYYY-MM-DD；不填 = 这位学生下一节课那天，没有排课就是今天'), points: P('array', '知识点（可选，名称或 key）', { items: { type: 'string' } }),
+    },
+    required: ['topic'],
+    async run(a) {
+      const s = studentOf(a.student), files: string[] = [];
+      for (const p of pathList(a.files)) { const r = await host.call<string | null>('resolvePath', p).catch(() => null); if (r) files.push(r); }
+      if (files.length) linkFiles(s.id, files, { kind: 'prep', via: 'assistant', note: str(a.summary, 120) || str(a.topic, 80) });
+      const valid = new Set(pointsOf(studentSubject(s)).map((p) => p.key)), pts = list(a.points).map((x) => (valid.has(x) ? x : guessPoints(x, studentSubject(s))[0])).filter((x): x is string => !!x);
+      const prep = notePrep(s, { files, topic: str(a.topic, 80), summary: str(a.summary, 200) || undefined, date: has(a.date) ? day(a.date) : undefined, points: [...new Set(pts)].slice(0, 6), from: 'assistant' });
+      return { text: { ok: true, prep: { id: prep.id, date: prep.date, topic: prep.topic, files: prep.files.length } }, card: { title: `记进了「${s.name}」的备课：${prep.date}`, lines: [prep.topic + (prep.summary ? ' · ' + prep.summary : '')], files } };
     },
   },
   // ── 课表 ──
@@ -781,7 +828,7 @@ const DEFS: Def[] = [
       show: P('boolean', '打开整理窗口给老师看（老师要求打开时才用）；默认 false，后台整理'),
     }, required: ['paths'],
     async run(a, c) {
-      const ok = c.granted(), paths = list(a.paths).filter((p) => ok.some((g) => p.replace(/\\/g, '/').toLowerCase().startsWith(g.toLowerCase())));
+      const ok = c.granted(), paths = pathList(a.paths).filter((p) => ok.some((g) => p.replace(/\\/g, '/').toLowerCase().startsWith(g.toLowerCase())));
       if (!paths.length) throw Error('这些文件老师还没有同意给你看，先用 request_computer_access');
       if (a.show === true) { openSort({ paths }); return { text: { ok: true, opened: paths.length }, card: { title: '打开了 AI 整理', lines: paths.slice(0, 4).map(fname) } }; }
       const sid0 = has(a.student) ? studentOf(a.student).id : undefined;
@@ -859,7 +906,7 @@ const DEFS: Def[] = [
     params: { paths: P('array', '要访问的文件或文件夹的完整路径；不知道具体位置可以不填，请老师自己选', { items: { type: 'string' } }), reason: P('string', '为什么要访问') },
     required: ['reason'],
     async run(a, c) {
-      const got = await c.grant({ paths: list(a.paths).slice(0, 10), reason: str(a.reason, 300) });
+      const got = await c.grant({ paths: pathList(a.paths).slice(0, 10), reason: str(a.reason, 300) });
       return got.length ? { text: { ok: true, granted: got } } : { ok: false, text: '老师没有同意' };
     },
   },
@@ -867,7 +914,7 @@ const DEFS: Def[] = [
     name: 'read_file', description: '读老师电脑上的文件内容（Word、Excel、PDF、PPT、txt、图片）。只能读老师拖给你、附在消息里、或同意过的文件',
     params: { path: P('string', '文件完整路径') }, required: ['path'],
     async run(a, c) {
-      const p = str(a.path, 600).replace(/\\/g, '/');
+      const p = (await realPath(a.path)).replace(/\\/g, '/');
       if (!c.granted().some((g) => p.toLowerCase() === g.toLowerCase() || p.toLowerCase().startsWith(g.toLowerCase().replace(/\/?$/, '/')))) throw Error('这个文件老师还没有同意给你看，先用 request_computer_access');
       if (/\.pptx?$/i.test(p)) {
         const pages = await host.call<{ lines: { t: string }[] }[] | null>('slideTexts', p);
@@ -880,7 +927,42 @@ const DEFS: Def[] = [
   {
     name: 'open_file', description: '用电脑上的默认程序打开你在工作目录里做好的文件（讲义、PPT、Word、PDF），或软件导出的文件',
     params: { path: P('string', '文件完整路径') }, required: ['path'],
-    async run(a) { await host.call('assistant.open', { path: str(a.path, 600) }); return { text: { ok: true }, card: { title: '打开了文件', files: [str(a.path, 600)] } }; },
+    async run(a) { const p = cleanPath(str(a.path, 600)); await host.call('assistant.open', { path: p }); return { text: { ok: true }, card: { title: '打开了文件', files: [p] } }; },
+  },
+  {
+    name: 'show_examples',
+    description: '在对话里向老师展示软件内置的教学成品示例小卡片（互动课件、讲课 PPT、练习题、分层作业、测验卷、课堂讲义、教案、做插件、自定义），每张卡都有预览图、「看完整示例」（只进老师预监）和「去工坊照这个做」按钮。老师问「你能做什么样的课件」「能做哪些材料」「有没有例子看看」时调用',
+    params: {
+      types: P('array', '可选：按类型过滤（html / ppt / quiz / homework / test / notes / plan / plugin / free 或中文名称）；不填展示全部示例', { items: { type: 'string' } }),
+      kind: P('string', '可选：单个类型或关键词（如 互动课件、PPT、试卷）'),
+    },
+    async run(a) {
+      const mf = await loadShowcase();
+      const matched = filterExamples(mf.items, a.types, a.kind);
+      if (!matched.length) return { ok: false, text: '当前还没有可展示的内置示例' };
+      const examples: ExampleCardBrief[] = matched.map((it) => ({
+        id: it.id,
+        label: it.label,
+        one: it.one,
+        formats: it.formats,
+        cost: stripEstimateSuffix(it.cost),
+        thumbUrl: it.preview.posterUrl || it.preview.imageUrls?.[0] || '',
+        videoUrl: it.preview.srcUrl || '',
+      }));
+      return {
+        text: {
+          ok: true,
+          topic: mf.topic,
+          count: matched.length,
+          items: matched.map((it) => ({ id: it.id, label: it.label, one: it.one, highlights: it.highlights, formats: it.formats, cost: it.cost })),
+          note: '示例小卡片已发在对话里，老师可以直接点「看完整示例」或「去工坊照这个做」。回复时一两句话简短介绍即可。',
+        },
+        card: {
+          title: matched.length === mf.items.length ? `内置成品示例（共 ${matched.length} 种）` : `成品示例（${matched.map((x) => x.label).join('、')}）`,
+          examples,
+        },
+      };
+    },
   },
 ];
 
@@ -899,9 +981,9 @@ export const TOOL_LABEL: Record<string, string> = {
   get_overview: '看了软件概况', list_students: '查了学生', get_student: '看了学生情况', add_student: '添加学生', update_student: '修改学生', add_group: '建班组', update_group: '改班组', add_student_note: '记学生资料', link_file_to_student: '归档学生文件', get_learning_map: '看了学习地图', set_map_state: '改学习地图', apply_map_suggestions: '按作答更新地图', list_recordings: '看了课堂录像', analyze_recording: '分析课堂录像',
   list_lessons: '查了课表', add_lesson: '排课', update_lesson: '调课', delete_lesson: '删课', search_questions: '找题', get_question: '看题', add_question: '加题', update_question: '改题',
   delete_questions: '删题', record_attempt: '记作答', look_at_screen: '看了学生画面', capture_screen_question: '收题', wrong_book: '看了错题本', list_points: '查了知识点',
-  write_lesson_summary: '写课后总结', edit_lesson_summary: '改课后总结', list_lesson_summaries: '查了课后总结', send_to_parent: '发给家长', make_homework: '组作业', prepare_lesson: '备课',
+  write_lesson_summary: '写课后总结', edit_lesson_summary: '改课后总结', list_lesson_summaries: '查了课后总结', send_to_parent: '发给家长', make_homework: '组作业', prepare_lesson: '备课', record_prep: '记了备课',
   search_library: '找课件', open_material: '打开课件', navigate: '切换页面', app_help: '查了说明书', sort_files: 'AI 整理', list_triggers: '查了提醒', create_trigger: '建提醒',
-  update_trigger: '改提醒', delete_trigger: '删提醒', remember: '记住', forget: '忘掉', request_computer_access: '请求访问电脑文件', read_file: '读文件', open_file: '打开文件',
+  update_trigger: '改提醒', delete_trigger: '删提醒', remember: '记住', forget: '忘掉', request_computer_access: '请求访问电脑文件', read_file: '读文件', open_file: '打开文件', show_examples: '展示了成品示例',
 };
 
 /** 执行一次工具调用 */

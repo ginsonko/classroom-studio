@@ -1,12 +1,15 @@
 // 录像自动开关：每秒按课表、录像状态、最近的声音和操作跑一次 autoRecord 的逻辑，把结果变成卡片、提示和真正的开始 / 下课。
-// 只在教师窗口里跑；卡片也只在教师窗口显示，学生画面和会议里看不到。
+// 只在教师窗口里跑。1.7.0 起默认到点只提醒：教师窗口弹卡片，学生窗口角落也弹一个小的「要开始上课吗？」（只有老师会去点），
+// 学生窗口角落还常驻一个小小的「开始上课 / 下课」按钮和课堂计时（classBar，设置里可关）。
 import { create } from 'zustand';
 import { host } from './host';
 import { useStore } from './store';
 import { toast } from './toast';
 import { isLive, nextLesson, startRecording, stopRecording, useRecording } from './recording';
 import { quietRecords } from './recordAnalysis';
-import { DEFAULT_AUTO_RECORD, SOUND_LEVEL, cleanAutoRecord, dismissAdhoc, extendStop, initialAutoRecord, lessonsAround, skipLesson, stepAutoRecord, type AutoAction, type AutoCard, type AutoRecordSettings, type AutoRecordState, type Lesson } from './autoRecord';
+import { DEFAULT_AUTO_RECORD, SOUND_LEVEL, cleanAutoRecord, dismissAdhoc, extendStop, initialAutoRecord, lessonsAround, skipLesson, snoozeCard, stepAutoRecord, type AutoAction, type AutoCard, type AutoRecordSettings, type AutoRecordState, type Lesson } from './autoRecord';
+import { bus } from './bus';
+import type { ClassBar } from './store';
 
 /** 桌面测试里换成假时钟 */
 let clock = () => Date.now();
@@ -113,6 +116,35 @@ export function cardStopNow() {
   useAutoRecord.setState({ card: null });
   void stopRecording();
 }
+/** 「稍后 5 分钟再提醒」 */
+export function cardSnooze() {
+  const c = useAutoRecord.getState().card;
+  if (!c) return;
+  useAutoRecord.setState((s) => ({ card: null, state: snoozeCard(s.state, clock(), c) }));
+  toast('好的，5 分钟后再提醒你');
+}
+
+/** 学生窗口角落的按钮（只有老师会去点）：按教师窗口自己的状态来做 */
+export function classButton(act: 'start' | 'stop' | 'later' | 'skip') {
+  const c = useAutoRecord.getState().card, phase = useRecording.getState().status.phase;
+  if (act === 'later') return cardSnooze();
+  if (act === 'skip') return cardSkip();
+  if (act === 'stop') { if (phase === 'recording') { if (c?.kind === 'stop') cardStopNow(); else void stopRecording(); } return; }
+  if (c?.kind === 'start' || c?.kind === 'next') return cardStartNow();
+  if (!isLive(phase)) void startRecording();
+}
+
+let lastBar = '';
+/** 把上课状态发布给学生窗口和浮层（只在变化时发，计时由各窗口自己按 since 走） */
+export function publishClassBar() {
+  const { settings, card } = useAutoRecord.getState(), status = useRecording.getState().status;
+  const ask = card && (card.kind === 'start' || card.kind === 'next') && !card.deadline ? { name: card.lesson.name, late: card.kind === 'start' && card.late, next: card.kind === 'next' } : null;
+  const bar: ClassBar = { show: settings.stageButton, phase: status.phase, since: isLive(status.phase) ? status.startedAt ?? 0 : 0, ask };
+  const json = JSON.stringify(bar);
+  if (json === lastBar) return;
+  lastBar = json;
+  useStore.getState().setShared({ classBar: bar });
+}
 export function cardAdhoc(start: boolean) {
   useAutoRecord.setState((s) => ({ card: null, state: dismissAdhoc(s.state, clock()) }));
   if (start) void startRecording();
@@ -123,6 +155,9 @@ export function startAutoRecord() {
   if (timer || !host.electron || host.role !== 'teacher') return;
   host.call<{ autoRec?: unknown }>('settings').then((s) => setAutoRecordSettings(s.autoRec)).catch(() => {});
   useStore.subscribe((s, p) => { if (s.ink !== p.ink || s.pgmMat !== p.pgmMat || s.pgm !== p.pgm) noteActivity(); });
-  useRecording.subscribe((s) => { if (Math.max(s.status.micLevel ?? 0, s.status.systemLevel ?? 0) >= SOUND_LEVEL) noteSound(); });
+  useRecording.subscribe((s) => { if (Math.max(s.status.micLevel ?? 0, s.status.systemLevel ?? 0) >= SOUND_LEVEL) noteSound(); publishClassBar(); });
+  useAutoRecord.subscribe(() => publishClassBar());
+  bus.on((m) => { if (m.t === 'class') classButton(m.act); });
+  publishClassBar();
   timer = setInterval(() => tick(), 1000);
 }

@@ -4,6 +4,9 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import './export.css';
 import { parseMarkdown, splitSlides, type Block, type Run } from './markdown';
+import { isParent, parentHtml } from './parentCard';
+import { slideHtml, collectLayers, hideLeaves } from './slides';
+import { diagramHtml, isDiagram } from './diagrams';
 
 const root = document.getElementById('root')!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -14,6 +17,12 @@ const THEMES = ['physics', 'math', 'chem', 'bio', 'chinese', 'english', 'history
 function applyMeta(md: string) {
   const m = /<!--\s*cs:theme=([a-z]+)\s*-->/.exec(md.slice(0, 400));
   document.body.dataset.theme = m && THEMES.includes(m[1]) ? m[1] : 'physics';
+  // 1.7.0 自定义主题色：<!-- 主题色 #12a08f --> 或 <!-- cs:accent=#12a08f -->，深浅几档按它调出来
+  const a = /<!--\s*(?:cs:accent\s*=|主题色\s*[:：]?)\s*(#[0-9a-f]{6})\s*-->/i.exec(md)?.[1];
+  const st = document.body.style;
+  for (const [k, v] of [['--c1', 'black 45%'], ['--c2', ''], ['--c3', 'black 25%'], ['--c4', 'white 91%'], ['--c5', 'white 55%']]) {
+    if (!a) st.removeProperty(k); else st.setProperty(k, v ? `color-mix(in srgb, ${a}, ${v})` : a);
+  }
 }
 
 function runs(rs: Run[]) {
@@ -28,6 +37,8 @@ function runs(rs: Run[]) {
   }).join('');
 }
 const plain = (rs: Run[]) => rs.map((r) => (r.t === 'text' ? r.text : r.tex)).join('');
+/** 一小段行内 Markdown（时间轴、结构图里的文字）→ HTML */
+function inl(s: string) { const b = parseMarkdown(s).blocks[0]; return b && 'runs' in b ? runs(b.runs) : esc(s); }
 /** 去掉开头 n 个字符（只动第一段文字） */
 function dropHead(rs: Run[], n: number): Run[] {
   const [first, ...rest] = rs;
@@ -64,9 +75,11 @@ function block(b: Block, mode: Mode): string {
     case 'li': return `<p class="li d${b.depth}">${b.ordered ? `<span class="bullet">${b.n}.</span>` : '<span class="dot"></span>'}<span>${runs(b.runs)}</span></p>`;
     case 'table': return `<table>${b.rows.map((r, i) => `<tr>${r.map((c) => (i === 0 ? `<th>${runs(c)}</th>` : `<td>${runs(c)}</td>`)).join('')}</tr>`).join('')}</table>`;
     case 'math': return `<div class="dm">${tex(b.tex, true)}</div>`;
-    case 'code': return `<pre>${esc(b.text)}</pre>`;
+    case 'code': return isDiagram(b.lang) ? diagramHtml(b.lang!, b.text, inl) : `<pre>${esc(b.text)}</pre>`;
     case 'img': {
-      if (!/^data:image\/(png|jpeg);base64,/.test(b.src)) return `<p class="quote">[图片缺失：${esc(b.alt || '题图')}]</p>`;
+      // 插图位（[[插图 …]] 或图片文件还没有）：幻灯片里画成虚线框，PPT 里老师换成自己的图
+      if (mode === 'slide' && !/^data:image\/(png|jpeg);base64,/.test(b.src)) return `<p class="ph"><b>插图位</b><br>${esc(b.alt || '在这里放一张图')}</p>`;
+      if (!/^data:image\/(png|jpeg);base64,/.test(b.src)) return b.src === 'placeholder' ? '' : `<p class="quote">[图片缺失：${esc(b.alt || '题图')}]</p>`;
       // 「题图 w=360」：原卷截图，按原卷上的宽度（pt）排，靠左接在题号后面
       const w = Number(/\bw=(\d{2,4})\b/.exec(b.alt)?.[1]);
       const alt = b.alt.replace(/\s*\bw=\d+/, '');
@@ -76,6 +89,7 @@ function block(b: Block, mode: Mode): string {
     case 'break': return '<div class="pb"></div>';
     case 'gap': return mode === 'doc' ? '<div class="gap"></div>' : '';
     case 'fields': return `<div class="fields">${b.items.map((f) => `<span class="fd${f.value ? ' v' : ''}"><b>${esc(f.label)}</b><span class="ln">${esc(f.value)}</span></span>`).join('')}</div>`;
+    case 'meta': return '';
   }
 }
 
@@ -147,6 +161,23 @@ async function settle() { await document.fonts.ready; await new Promise((r) => r
 let slides: Block[][] = [], deckTitle = '';
 
 const api = {
+  /** 1.7.0 来源核对：PDF 原文（base64）里的全部文字，最多 60 页（pdf.js 按需加载，不影响平时排版） */
+  async pdfText(b64: string) {
+    const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
+    GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const task = getDocument({ data, cMapUrl: new URL('./pdfjs/cmaps/', document.baseURI).href, cMapPacked: true, standardFontDataUrl: new URL('./pdfjs/standard_fonts/', document.baseURI).href, wasmUrl: new URL('./pdfjs/wasm/', document.baseURI).href });
+    const doc = await task.promise;
+    let s = '';
+    try {
+      for (let i = 1; i <= Math.min(doc.numPages, 60); i++) {
+        const tc = await (await doc.getPage(i)).getTextContent();
+        for (const it of tc.items) if ('str' in it) s += it.str + (it.hasEOL ? '\n' : '');
+        s += '\n';
+      }
+    } finally { void task.destroy(); }
+    return s;
+  },
   /** A4 文档：返回块结构和公式列表，主进程随后 printToPDF */
   /** 插件导出模板的样式，排在内置样式后面（同优先级时覆盖内置） */
   addCss(css: string) {
@@ -158,8 +189,12 @@ const api = {
   async renderDoc(md: string) {
     applyMeta(md);
     const p = parseMarkdown(md);
+    // 1.7.0 家长版课后反馈：每块不同版式，插画头图
+    if (isParent(md)) { document.body.className = 'doc parent'; root.innerHTML = parentHtml(p.blocks, (b) => block(b, 'doc'), (b) => ('runs' in b ? plain(b.runs) : ''), 'doc'); }
+    else {
     document.body.className = 'doc';
     root.innerHTML = `<article>${docHtml(p.blocks)}<div class="foot">最强网课教辅系统 · ${new Date().toLocaleDateString('zh-CN')}</div></article>`;
+    }
     await settle();
     return p;
   },
@@ -172,12 +207,23 @@ const api = {
     const pad = 4;
     return { x: Math.floor(f.left - pad), y: Math.floor(f.top - pad), w: Math.ceil(f.width + pad * 2), h: Math.ceil(f.height + pad * 2), depth: Math.max(0, f.bottom + pad - bl.top), size: parseFloat(getComputedStyle(root.querySelector('.f')!).fontSize) };
   },
+  /** 时间轴 / 结构图单独排一张（Word 里放截图）：返回截图区域 */
+  async showDiagram(lang: string, text: string) {
+    document.body.className = 'doc sheet-dg';
+    root.innerHTML = `<article><div class="dg-cell">${diagramHtml(lang, text, inl)}</div></article>`;
+    await settle();
+    const r = root.querySelector('.dg')!.getBoundingClientRect();
+    return { x: Math.floor(r.left - 4), y: Math.floor(r.top - 4), w: Math.ceil(r.width + 8), h: Math.ceil(r.height + 8) };
+  },
   /** 手机分享用的竖版长图：固定 750px 宽，返回整页高度，主进程按高度截图 */
   async renderCard(md: string) {
     applyMeta(md);
     const p = parseMarkdown(md);
+    if (isParent(md)) { document.body.className = 'card parent'; root.innerHTML = parentHtml(p.blocks, (b) => block(b, 'card'), (b) => ('runs' in b ? plain(b.runs) : ''), 'card'); }
+    else {
     document.body.className = 'card';
     root.innerHTML = `<article>${p.blocks.map((b) => block(b, 'card')).join('')}<footer>最强网课教辅系统 · ${new Date().toLocaleDateString('zh-CN')}</footer></article>`;
+    }
     await settle();
     await Promise.all([...root.querySelectorAll('img')].map((im) => (im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }))));
     return { height: Math.ceil(root.getBoundingClientRect().height) };
@@ -189,24 +235,31 @@ const api = {
     const notes = slides.map((s) => s.map((b) => (b.type === 'math' ? b.tex : 'runs' in b ? plain(b.runs) : '')).filter(Boolean).join('\n'));
     return { count: slides.length, title: p.title, notes };
   },
-  /** 第 i 页排进 1600×900 的画面；内容放不下时逐步缩小字号 */
+  /** 第 i 页排进 1600×900 的画面（6 种版式之一）；内容放不下时逐步缩小字号。返回版式和单击分步的步数 */
   async showSlide(i: number) {
     const s = slides[i];
-    const cover = i === 0 && s.length <= 3 && s[0]?.type === 'h' && s.slice(1).every((b) => b.type === 'p');
-    document.body.className = 'slide' + (cover ? ' cover' : '');
-    const head = s[0]?.type === 'h' ? s[0] : null, body = head ? s.slice(1) : s;
-    const title = head ? plain(head.runs) : '', kind = cover ? null : KINDS.find(([re]) => re.test(title));
-    const no = cover ? '' : `<span class="no">${String(i).padStart(2, '0')}</span>`;
-    const tag = kind && !title.startsWith(kind[2]) ? `<span class="tag">${kind[2]}</span>` : '';
-    root.innerHTML = `<section class="sl${kind ? ' k-' + kind[1] : ''}"><header class="${head ? '' : 'empty'}">${no}<span class="tt">${head ? runs(head.runs) : ''}</span>${tag}</header><div class="rule"></div><div class="body">${body.map((b) => block(b, 'slide')).join('')}</div><footer><span>${esc(cover ? new Date().toLocaleDateString('zh-CN') : deckTitle)}</span><span class="pg">${i + 1} / ${slides.length}</span></footer></section>`;
-    const el = root.querySelector('.body') as HTMLElement;
+    const { html, layout } = slideHtml(s, i, slides.length, deckTitle, { block: (b) => block(b, 'slide'), runs, plain, esc });
+    document.body.className = 'slide' + (layout === 'cover' ? ' cover' : '');
+    const head = s.find((b) => b.type === 'h') as Extract<Block, { type: 'h' }> | undefined, title = head ? plain(head.runs) : '';
+    const kind = layout === 'content' ? KINDS.find(([re]) => re.test(title)) : null;
+    root.innerHTML = html;
+    const sec = root.querySelector('.sl') as HTMLElement;
+    if (kind) { sec.classList.add('k-' + kind[1]); if (!title.startsWith(kind[2])) sec.querySelector('header')?.insertAdjacentHTML('beforeend', `<span class="tag">${kind[2]}</span>`); }
+    if (!head) sec.querySelector('header')?.classList.add('empty');
+    await Promise.all([...root.querySelectorAll('img')].map((im) => (im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }))));
+    const fits = [...root.querySelectorAll('.body')] as HTMLElement[];
     for (let size = 34; size >= 16; size -= 2) {
-      el.style.fontSize = size + 'px';
+      for (const el of fits) el.style.fontSize = size + 'px';
       await settle();
-      if (el.scrollHeight <= el.clientHeight + 2) break;
+      if (fits.every((el) => el.scrollHeight <= el.clientHeight + 2 && el.scrollWidth <= el.clientWidth + 2)) break;
     }
-    return true;
+    const steps = new Set([...root.querySelectorAll('[data-step]')].map((e) => (e as HTMLElement).dataset.step)).size;
+    return { layout, steps };
   },
+  /** 当前页拆层：可编辑元素的位置和样式（主进程据此拼可编辑的 PPTX） */
+  slideLayers() { return collectLayers(root.querySelector('.sl') as HTMLElement); },
+  /** 截背景前藏起可编辑元素，截完放回来 */
+  async hideLeaves(on: boolean) { hideLeaves(on); await settle(); return true; },
 };
 Object.assign(window, { csExport: api });
 document.body.dataset.ready = '1';

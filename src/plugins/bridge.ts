@@ -16,7 +16,7 @@ import { ai } from '../lib/ai';
 import { manifestOf, type Manifest, type Permission } from './pluginStore';
 
 export type Where = 'console' | 'dock' | 'page' | 'lesson' | 'preview';
-export interface FrameHooks { where: Where; onClose?: () => void; onResize?: (w: number, h: number) => void; onToast?: (text: string) => void }
+export interface FrameHooks { where: Where; isolated?: boolean; onClose?: () => void; onResize?: (w: number, h: number) => void; onToast?: (text: string) => void }
 
 const frames = new Map<HTMLIFrameElement, FrameHooks>();
 /** 插件宿主组件挂上 iframe 时登记；没登记的插件框架（学生画面上的课件页）按 lesson 处理 */
@@ -163,6 +163,9 @@ function cleanMessages(list: unknown) {
 }
 
 async function handle(c: Ctx, method: string, a: Record<string, unknown>) {
+  if (c.hooks.isolated && !['app.info', 'storage.get', 'storage.set', 'storage.remove', 'storage.keys', 'ui.toast', 'ui.close', 'ui.resize'].includes(method)) {
+    throw new Error('示例试玩只在老师预监中进行，不会更改课堂或学生画面');
+  }
   const feature = `插件·${c.manifest?.name ?? c.id}`.slice(0, 40);
   switch (method) {
     case 'app.info': return { app: '最强网课教辅系统', protocol: 'cs-plugin/1', where: c.hooks.where, subject: useStore.getState().subject, role: host.role ?? 'teacher' };

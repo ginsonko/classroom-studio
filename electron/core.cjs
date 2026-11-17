@@ -45,4 +45,17 @@ function workspaceJSON(ws){
  });
  return Buffer.concat(out);
 }
-module.exports={id,within,atomicJSON,atomicWrite,workspaceJSON,readJSON,cleanTemps};
+/**
+ * 收到的文件路径统一规范化：AI 回复、Markdown 链接里常把路径写成 file:///…、带 %20 之类的网址编码，mac 上还常写 ~/…。
+ * file:// 转成本机路径；~ 展开到用户目录；含 %XX 且原样找不到文件时，解码后再试（真有文件名带 %20 的也不受影响）。
+ */
+function fixPath(raw,{home=require('node:os').homedir(),exists=fs.existsSync}={}){
+ let p=String(raw??'').trim().replace(/^<(.*)>$/,'$1').replace(/^["'](.*)["']$/,'$1');
+ if(!p)return p;
+ if(/^file:\/\//i.test(p)){try{p=require('node:url').fileURLToPath(p.replace(/^file:\/\/(?=[A-Za-z]:)/i,'file:///'));}catch{p=p.replace(/^file:\/\/\/?/i,process.platform==='win32'?'':'/');try{p=decodeURIComponent(p);}catch{}}}
+ if(p==='~'||/^~[\\/]/.test(p))p=path.join(home,p.slice(1));
+ p=path.resolve(p);
+ if(/%[0-9A-Fa-f]{2}/.test(p)&&!exists(p)){try{const d=path.resolve(decodeURIComponent(p));if(d!==p&&exists(d))return d;}catch{}}
+ return p;
+}
+module.exports={id,within,atomicJSON,atomicWrite,workspaceJSON,readJSON,cleanTemps,fixPath};

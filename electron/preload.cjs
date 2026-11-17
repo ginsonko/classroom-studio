@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('csHost',{
  convert:async(p,progress)=>{const id=crypto.randomUUID(),off=on('cs:event',e=>{if(e.type==='convert'&&e.id===id)progress?.(e.progress);});try{return await call('convert',{path:p,id});}finally{off();}},
  openStudentWindow:()=>void call('student'),displays:()=>call('displays'),placeStudent:(id,fullscreen)=>void call('placeStudent',{id,fullscreen}),
  revealInFolder:p=>void call('reveal',p),openDock:()=>void call('dock'),persist:v=>call('persist',v),
- busPost:m=>ipcRenderer.send('cs:bus',m),onBus:fn=>on('cs:bus',fn),call,onEvent:fn=>on('cs:event',fn)
+ busPost:m=>ipcRenderer.send('cs:bus',m),onBus:fn=>on('cs:bus',fn),call,onEvent:fn=>on('cs:event',fn),
+ showcase:{manifest:()=>call('showcase.manifest'),open:(id,index=0)=>call('showcase.open',typeof id==='object'&&id!==null?id:{id,index})}
 });
 }

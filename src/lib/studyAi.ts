@@ -2,11 +2,12 @@
 // 都有不用模型的规则版兜底；模型的回复一律当不可信输入，逐字段校验。
 import { ai, type AiConfig } from './ai';
 import {
-  answersMatch, guessDifficulty, guessPoints, guessType, levelText, looseJSON, parseOutline, pointLabel, pointList, qtypesOf, validPoints,
+  answersMatch, guessDifficulty, guessPoints, guessType, levelText, looseJSON, parseOutline, pickCoveredTags, pointLabel, pointList, qtypesOf, validPoints,
   type LessonInput, type LessonNote, type Outline, type Profile, type Question,
 } from './studyLogic';
 import { packOf, subjectOfKey, type SubjectId } from './subjects';
 import { MODE_NAME } from './fineLogic';
+import { oneLineOf, positiveLesson } from './parentReport';
 
 const sys = (subject?: SubjectId) => packOf(subject).prompt.persona;
 /** 知识点决定学科：出题、课件按所选知识点的学科写提示词 */
@@ -46,7 +47,7 @@ export async function readQuestion(cfg: AiConfig | null, o: { text?: string; ima
   return { stem, answer: str(j.answer, 1500), analysis: str(j.analysis, 3000), points: points.length ? points : guessPoints(stem, subject), difficulty: diff(j.difficulty, guessDifficulty(stem)), qtype: qtypes.includes(str(j.qtype)) ? str(j.qtype) : guessType(stem, subject), via: 'ai', model: r.model };
 }
 
-type LessonText = Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent'>;
+type LessonText = Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent' | 'oneLine' | 'pending' | 'covered'>;
 export async function lessonByAi(i: LessonInput): Promise<LessonText & { model: string }> {
   const lines = i.attempts.map(({ q, a }, n) => {
     const how = [typeof a.level === 'number' ? levelText(a.level) : '', a.mode ? MODE_NAME[a.mode] : '', a.misconception ? '误区：' + a.misconception : ''].filter(Boolean).join('，');
@@ -58,14 +59,22 @@ export async function lessonByAi(i: LessonInput): Promise<LessonText & { model: 
     lines.length ? '课堂作答记录：\n' + lines.join('\n') : '本节课没有记录作答。',
     i.notes.trim() ? '老师的课堂笔记：\n' + i.notes.trim().slice(0, 2000) : '',
     i.homework ? '布置的作业：' + i.homework : '',
+    i.prep ? '这节课的备课：' + i.prep : '',
+    i.covered?.length ? `这节课讲到 / 做过的题（课堂录像里认出来的，共 ${i.covered.length} 道）：\n` + i.covered.slice(0, 30).map((x, n) => `${n + 1}. ${x}`).join('\n') + '\ncovered 按这个顺序给每道题写一句「练了什么」：6~16 个字说考点和做法（比如「电梯超重失重判断」「连接体受力分析」），不要抄题干；数量必须和题目数完全一样。' : '',
+    i.last ? '上节课：' + i.last : '',
     i.roots?.length ? '知识网络提示（错题对应知识点的前置掌握不好，可能是出错的根源）：\n' + i.roots.join('\n') + '\n如果和本节课的问题相关，在需要加强或下一步里点出来；不相关就不提。' : '',
-    '请写课后总结。要求：具体、基于上面的记录，不编造没发生的内容；记录里有学生原话的，给家长的话里可以引用一句（加引号），让家长知道孩子课上具体的表现，不要引用老师的话；给家长的话 120~200 字，语气礼貌、专业、有温度，不用"您的孩子"这种生硬称呼，直接用学生名字；不知道学生性别，不要用"他/她"，需要指代时重复名字或省略主语。"下一步"每条一句话，不要把题目答案写进去。',
-    '输出 JSON：{"summary":"本节课总结 2~4 句","strengths":["做得好的点"],"problems":["需要加强的点"],"next":["下一步建议"],"parent":"给家长的话"}',
+    '请写课后总结。要求：具体、基于上面的记录，不编造没发生的内容；讲到的题要尽量都体现出来（summary 里点出讲了哪几类题、几道），不要只挑一两道；记录里有学生原话的，给家长的话里可以引用一句（加引号），让家长知道孩子课上具体的表现，不要引用老师的话；给家长的话 120~200 字，语气礼貌、专业、有温度，不用"您的孩子"这种生硬称呼，直接用学生名字；不知道学生性别，不要用"他/她"，需要指代时重复名字或省略主语。"下一步"每条一句话，不要把题目答案写进去。',
+    '语气要积极、让学生和家长有信心：写讲了哪些题、学生做到了什么、哪里有进步、下一步怎么练。严禁写"不能证明…""暂不能判断""无法确定""证据不足""录像里看不出"这类防御性的话，也不要提把握几成、AI、录像、转写这些过程；拿不准的事不要写进 summary / strengths / problems / next / parent，放进 pending（只给老师看）。需要加强的点用"接下来重点练…"这种建设性的说法。',
+    '输出 JSON：{"oneLine":"一句话说这节课讲了什么（20~40 字，例如：讲了牛顿第二定律的 5 道连接体题，受力分析更熟练了）","summary":"本节课总结 2~4 句","strengths":["做得好的点"],"problems":["需要加强的点"],"next":["下一步建议"],"parent":"给家长的话","pending":["拿不准、要老师确认的事（可以为空）"],"covered":["每道题一句「练了什么」，上面没有题目列表就输出 []"]}',
   ].filter(Boolean).join('\n\n');
   const r = await ai.chat([{ role: 'system', content: sys(i.subject) }, { role: 'user', content: prompt }], { json: true, maxTokens: 1500, temperature: 0.4, feature: '课后总结' });
   const j = looseJSON(r.content) as Record<string, unknown> | null;
   if (!j || !str(j.summary) || !str(j.parent)) throw new Error('模型没有按格式返回课后总结，请重试');
-  return { summary: str(j.summary, 1200), strengths: strs(j.strengths), problems: strs(j.problems), next: strs(j.next), parent: str(j.parent, 1200), model: r.model };
+  // 兜底：模型偶尔还是会写防御性的话，挪进「待确认」，不进家长版
+  const clean = positiveLesson({ summary: str(j.summary, 1200), strengths: strs(j.strengths), problems: strs(j.problems), next: strs(j.next), parent: str(j.parent, 1200), pending: strs(j.pending, 8) });
+  // 每道题的「练了什么」标签：数量对不上就作废，外面用兜底（知识点名 / 第 N 题）
+  const covered = pickCoveredTags(j.covered, i.covered?.length ?? 0);
+  return { ...clean, ...(covered ? { covered } : {}), oneLine: str(j.oneLine, 80) || oneLineOf({ summary: clean.summary, topic: i.topic }), model: r.model };
 }
 
 export function portraitByRules(name: string, p: Profile, roots: string[] = []): string {

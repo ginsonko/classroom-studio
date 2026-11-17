@@ -58,6 +58,7 @@
 .next-last span { font-size: 11px; color: var(--fg-2); }
 .next-last b { font-size: 13px; font-weight: 600; }
 .next-go {
+  flex: none; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 42px; padding: 0 20px;
   border-radius: 12px;

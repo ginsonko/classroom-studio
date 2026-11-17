@@ -35,12 +35,13 @@ async function fakeSite(files) {
 }
 
 /** 一个 npm 包的 tgz（package/ 目录） */
+const SYS_TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 async function tgz(name, extra = {}) {
   const dir = path.join(root, 'pkg-' + name), out = path.join(root, name + '.tgz');
   await fsp.mkdir(path.join(dir, 'package'), { recursive: true });
   await fsp.writeFile(path.join(dir, 'package', 'package.json'), JSON.stringify({ name, version: '2.0.1' }));
   for (const [f, s] of Object.entries(extra)) await fsp.writeFile(path.join(dir, 'package', f), s);
-  execFileSync('tar', ['-czf', out, '-C', dir, 'package'], { windowsHide: true });
+  execFileSync(fs.existsSync(SYS_TAR) ? SYS_TAR : 'tar', ['-czf', out, '-C', dir, 'package'], { windowsHide: true });
   return fsp.readFile(out);
 }
 

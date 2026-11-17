@@ -193,9 +193,12 @@ async function sameFile(file, f) {
   } catch { return false; }
 }
 
-/** Windows 10 起自带 tar（bsdtar），macOS 也有；-m 不还原文件时间 */
+/** Windows 10 起自带 tar（bsdtar），macOS 也有；-m 不还原文件时间。
+ *  PATH 里装了 Git for Windows 时 'tar' 会解析成 GNU tar，它把 C:/xxx 当成「主机:路径」远程文件而解压失败，
+ *  所以 Windows 上固定用 System32 里那个 bsdtar。 */
+const TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 function tar(args) {
-  return new Promise((resolve) => execFile('tar', ['-m', ...args], { windowsHide: true, timeout: 120000 }, (err, out, errOut) => resolve(String(out || '') + String(errOut || '') + (err ? String(err.message) : ''))));
+  return new Promise((resolve) => execFile(TAR, ['-m', ...args], { windowsHide: true, timeout: 120000 }, (err, out, errOut) => resolve(String(out || '') + String(errOut || '') + (err ? String(err.message) : ''))));
 }
 
 module.exports = { AsrSetup, plan, MODELS, NATIVE, JS, ENGINE, VERSION };

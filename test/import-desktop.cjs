@@ -165,7 +165,8 @@ function desktop() {
     await T(`await window.csHost.call('ai.setConfig',{model:'',visionModel:''});return true`);
     assert.match(await offer('sk-barekey99990000'), /自动挑选/);
     await click('导入并测试'); await until(() => T(`return !!document.querySelector('.imp-msg.ok')`), 15000, 'bare ok');
-    assert.equal((await cfg()).model, 'gpt-6.1-sol', 'flagship picked, not a mini model');
+    // 1.7.0：推荐 gpt-6-astra；列表里没有时挑旗舰对话模型，gpt-6.1-sol 偏弱、只在别无选择时才选
+    assert.equal((await cfg()).model, 'gpt-5.4', 'flagship picked, not a mini model, not gpt-6.1-sol');
     mark('bare key: model auto-picked (flagship, not mini)');
 
     const nonces = JSON.parse(fs.readFileSync(path.join(process.env.CS_DATA_DIR, 'import-nonces.json'), 'utf8'));

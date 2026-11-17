@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot, ChevronRight, CircleStop, Download, FileText, FolderOpen, FolderPlus, Loader2, Plus, RefreshCw, Send, Settings2, ShieldCheck, Sparkles, Terminal,
-  Trash2, TriangleAlert, Wallet, Wrench, X, Puzzle,
+  Trash2, TriangleAlert, Wallet, Wrench, X, Puzzle, Globe,
 } from 'lucide-react';
 import { loadPlugins, usePlugins } from '../plugins/pluginStore';
 import { host } from '../lib/host';
@@ -12,8 +12,16 @@ import { packOf, studentSubject } from '../lib/subjects';
 import { addRoot } from '../lib/useLib';
 import { loadAgentModel, loadStudioKey, saveAgentModel, saveStudioKey, type AgentEngine } from '../lib/agentPrefs';
 import { importBank, parseBank, studyReady } from '../lib/agentBank';
+import { explainAiError } from '../lib/aiErrors';
+import { AiTrouble } from '../ui/AiTrouble';
+import { CheckButton } from './Experience170';
 import { ModelPicker } from '../ui/ModelPicker';
+import { openBrowser, useAiTools } from '../lib/aiTools';
 import { AttachChips, EFFORT_NAME, EffortSeg, PluginPreview, useAttachments, type Effort } from './Workshop';
+import { ShowcaseCard, loadShowcase, styleRefOf, useShowcase, type ShowcaseItem, type StyleRefSelection } from './ShowcaseCard';
+import { TierChip, TierSeg, useTierSite } from '../account/TierPick';
+import { SuggestTip } from '../account/SuggestTip';
+import { openAccount, TIER_NAME, useAccount, type TierId } from '../account/account';
 import '../styles/agents.css';
 
 type Engine = AgentEngine;
@@ -25,16 +33,17 @@ const PERMISSION_HINT: Record<Permission, string> = {
   full: '在任务文件夹里自由读写、运行常见命令，不碰系统和其他目录（推荐）',
   danger: '不做任何限制，可以装软件、改系统，仅交给你完全信任的任务',
 };
-interface Ev { at: number; kind: 'user' | 'text' | 'think' | 'cmd' | 'tool' | 'file' | 'plan' | 'error' | 'usage' | 'status' | 'note' | 'out'; text: string }
+interface Ev { at: number; kind: 'user' | 'text' | 'think' | 'cmd' | 'tool' | 'file' | 'plan' | 'error' | 'usage' | 'status' | 'note' | 'out'; text: string; retry?: number; retryMax?: number }
 interface Task {
   id: string; engine: Engine; title: string; prompt: string; status: 'running' | 'done' | 'failed' | 'stopped' | 'budget';
   note?: string; cap: number; cny: number; tokens: number; turns: number; created: number; updated: number; work: string;
-  queued: number; last?: Ev | null; events?: Ev[]; live?: number; model?: string; pick?: string; permission?: Permission;
+  queued: number; last?: Ev | null; events?: Ev[]; live?: number; model?: string; pick?: string; modelName?: string; tierName?: string; permission?: Permission;
   formats?: Fmt[]; exporting?: boolean; calibrated?: boolean; reconciled?: boolean;
-  kind?: '' | 'plugin'; effort?: Effort; check?: { at: number; ok: boolean; problems: string[]; id: string; name: string; version: string };
+  kind?: '' | 'plugin'; effort?: Effort; tier?: TierId; tierSite?: boolean; suggest?: { why: string; at: number } | null; useStudioKey?: boolean; check?: { at: number; ok: boolean; problems: string[]; id: string; name: string; version: string };
 }
 interface CliInfo { name: string; found: boolean; version: string; pkg: string; where?: string; bundled?: string; native?: boolean }
 type Detect = { codex: CliInfo; claude: CliInfo; npm: boolean };
+interface WarmupState { phase: 'idle' | 'running' | 'ready' | 'failed'; step: string; pct: number; elapsedSec: number; error: string }
 interface Reconcile {
   auto: boolean; matched: number; pending: number; missed: number; est: number; real: number; lastSync: number; error: string;
   site: { origin: string; name: string; type: string; supported?: boolean } | null;
@@ -56,34 +65,36 @@ const WHERE_LABEL: Record<string, string> = { bundled: '内置', private: '已�
 
 // 每种成品的详细做法写在内置技能（electron/agent-kit/skills）里，这里只放老师最常改的几项要求；
 // 导播台会在提示词前面让 AI 先读对应的 SKILL.md。
-const TEMPLATES: { id: string; label: string; hint: string; skill: string; formats: Fmt[]; kind?: 'plugin'; build: (topic: string) => string }[] = [
+// 1.7.0：默认文字按一线老师的说法写全用途、对象、教材版本、资料来源、交付位置，老师只填主题（c 是任务背景里的年级和教材）
+interface Who { who: string; book: string }
+const TEMPLATES: { id: string; label: string; hint: string; skill: string; formats: Fmt[]; kind?: 'plugin'; build: (topic: string, c: Who) => string }[] = [
   {
     id: 'html', label: '互动课件', hint: '单文件 HTML，可调参数的动画', skill: 'courseware-html', formats: [],
-    build: (t) => `做一份「${t}」的单文件 HTML 互动课件，保存为「${t}.html」。\n6～10 页；至少一页带滑块调参数的动画演示；最后放 3 道随堂小测和答案页。`,
+    build: (t, c) => `给${c.who}上「${t}」新课用，教材${c.book}。做一份单文件 HTML 互动课件，学生在微信里点开就能用，上课我也直接共享这个文件。\n8～10 页，从生活现象引入；至少一页能拖参数的仿真动画（按真实公式算，读数跟着变）；公式清楚，推导一步步出现；最后 3 道点选小测，点了马上出对错和解析。\n保存为「${t}.html」。`,
   },
   {
     id: 'ppt', label: '讲课 PPT', hint: '16:9 幻灯片，公式清晰', skill: 'lecture-slides', formats: ['pptx', 'pdf'],
-    build: (t) => `做「${t}」的讲课幻灯片，写在「${t}-课件.md」里，10～14 页。`,
+    build: (t, c) => `给${c.who}讲「${t}」用的 PPT，教材${c.book}，我上课一页页讲。\n12～14 页，用上封面、情境图、对比、图解、例题分步、总结卡这几种版式；配 2～3 张情境图；例题和推导单击一步出一步；最后一页放随堂练习答案。\n写在「${t}-课件.md」里，导出成能改的 PPT。`,
   },
   {
     id: 'quiz', label: '练习题', hint: '分层出题，可一键导入题库', skill: 'practice-set', formats: ['docx', 'pdf'],
-    build: (t) => `为「${t}」出一套分层练习：基础 5 题 + 提高 3 题 + 拓展 2 题。\n文件：「${t}-练习.md」「${t}-答案.md」「${t}-题库.json」。`,
+    build: (t, c) => `给${c.who}课后巩固「${t}」用，教材${c.book}。出一套分层练习：基础 5 题 + 提高 3 题 + 拓展 2 题，优先从近三年本地区的期中期末、教研网公开的真题里选，每题标出处（卷名、年份、地区、题号、网址），找不到的用原创补并标「原创」，不要编出处。\n解析写关键步骤和易错点；另出一份学生手机看的长图版。\n文件：「${t}-练习.md」「${t}-答案.md」「${t}-题库.json」「${t}-学生长图.md」。`,
   },
   {
     id: 'homework', label: '分层作业', hint: '必做 + 选做，带批改要点', skill: 'homework', formats: ['docx', 'pdf'],
-    build: (t) => `为「${t}」布置课后分层作业：必做约 30 分钟（5～6 题）+ 选做 2～3 题。\n文件：「${t}-作业.md」「${t}-作业答案.md」「${t}-题库.json」。`,
+    build: (t, c) => `今天给${c.who}讲完「${t}」，布置课后作业，教材${c.book}。必做约 30 分钟（5～6 题）+ 选做 2～3 题，每题标预计用时和出处；带一段家长能看懂的完成说明；答案卷写评分要点和常见错法，方便我批改。\n文件：「${t}-作业.md」「${t}-作业答案.md」「${t}-题库.json」「${t}-学生长图.md」。`,
   },
   {
     id: 'test', label: '测验卷', hint: '限时测验，分值和评分细则', skill: 'quiz-paper', formats: ['docx', 'pdf'],
-    build: (t) => `出一份「${t}」的测验卷：40 分钟，满分 100 分。\n文件：「${t}-测验.md」「${t}-测验答案.md」「${t}-题库.json」。`,
+    build: (t, c) => `给${c.who}做「${t}」的单元小测，教材${c.book}，要像学校正式卷子：40 分钟、满分 100 分，卷头、分值、作答区齐全；难度约 6:3:1，优先选近年本地区真题并标出处。\n答案卷写分步评分细则，附双向细目表（知识点 × 难度 × 题号）。\n文件：「${t}-测验.md」「${t}-测验答案.md」「${t}-题库.json」。`,
   },
   {
     id: 'notes', label: '课堂讲义', hint: '要点、公式、例题，两页内', skill: 'lesson-notes', formats: ['docx', 'pdf'],
-    build: (t) => `写一份「${t}」的课堂讲义「${t}-讲义.md」，两页 A4 以内。`,
+    build: (t, c) => `给${c.who}上「${t}」时发的讲义，教材${c.book}，打印出来上课边听边记。两页 A4 以内：知识结构图 + 公式卡 + 易错点 + 两道例题，留出记笔记的空。\n写在「${t}-讲义.md」里。`,
   },
   {
     id: 'plan', label: '教案', hint: '一对一流程，分钟级安排', skill: 'lesson-plan', formats: ['docx', 'pdf'],
-    build: (t) => `写一份「${t}」的一对一教案「${t}-教案.md」，课时 60 分钟。`,
+    build: (t, c) => `我给${c.who}上「${t}」一对一新课，60 分钟，教材${c.book}。写一份能照着上的教案：画一张时间轴，每个环节写我怎么说、学生可能怎么错、我怎么接；附板书设计和学得快 / 学得慢时的调整。\n写在「${t}-教案.md」里。`,
   },
   {
     id: 'plugin', label: '做插件', hint: '给导播台加新功能，边做边预览', skill: 'plugin-dev', formats: [], kind: 'plugin',
@@ -110,6 +121,8 @@ function usePluginTemplates(): Template[] {
 
 export function AgentStudio() {
   const [tab, setTab] = useState<'tasks' | 'ledger'>('tasks');
+  const workshopIntent = useShowcase((s) => s.workshopIntent);
+  useEffect(() => { if (workshopIntent) setTab('tasks'); }, [workshopIntent]);
   const [sum, setSum] = useState<Summary | null>(null);
   const reloadSum = () => host.call<Summary>('ai.ledger').then(setSum).catch(() => {});
   useEffect(() => { void reloadSum(); const t = setInterval(reloadSum, 15000); return () => clearInterval(t); }, []);
@@ -147,19 +160,26 @@ function Tasks({ onSpend, cap }: { onSpend: () => void; cap: number }) {
   const [sel, setSel] = useState<string | 'new'>('new');
   const [detail, setDetail] = useState<Task | null>(null);
   const [cli, setCli] = useState<Detect | null>(null);
+  const [warmup, setWarmup] = useState<WarmupState | null>(null);
   const [installing, setInstalling] = useState<Engine | null>(null);
   const [installLog, setInstallLog] = useState<string[]>([]);
   const [error, setError] = useState('');
   const selRef = useRef(sel); selRef.current = sel;
-  // 从插件页点「用 AI 修改」过来时停在新任务上
-  const [fromPlugins] = useState(() => !!usePlugins.getState().workshop);
+  // 从插件页点「用 AI 修改」或从小羽示例卡点「去工坊照这个做」过来时停在新任务上
+  const showcaseIntent = useShowcase((s) => s.workshopIntent);
+  const [fromPlugins] = useState(() => !!usePlugins.getState().workshop || !!useShowcase.getState().workshopIntent);
+
+  useEffect(() => { if (showcaseIntent) setSel('new'); }, [showcaseIntent]);
 
   useEffect(() => {
     host.call<Task[]>('agents.list').then((l) => { setTasks(l); if (l[0]?.status === 'running' && !fromPlugins) setSel(l[0].id); }).catch((e) => setError(e.message));
     host.call<Detect>('agents.detect').then(setCli).catch(() => {});
+    host.call<WarmupState>('agents.warmup').then(setWarmup).catch(() => {});
     return host.onEvent((e) => {
+      if (e?.type === 'codexWarmup' && e.state) { setWarmup(e.state as WarmupState); return; }
       if (e?.type !== 'agent') return;
       const m = e.agent;
+      if (m?.type === 'warmup' && m.state) { setWarmup(m.state as WarmupState); return; }
       if (m?.type === 'install') { setInstallLog((l) => [...l.slice(-60), m.text]); return; }
       if (m?.type !== 'task') return;
       const t: Task = m.task;
@@ -197,7 +217,7 @@ function Tasks({ onSpend, cap }: { onSpend: () => void; cap: number }) {
               <span className={'ags-dot s-' + t.status} />
               <span className="ags-item-main">
                 <b>{t.title}</b>
-                <i>{t.engine === 'codex' ? 'Codex' : 'Claude'} · {STATUS[t.status]} · {yuan(t.cny)}</i>
+                <i data-qa="task-model">{t.engine === 'codex' ? 'Codex' : 'Claude'} · {t.modelName || t.pick || t.model || '默认模型'}{t.tierName ? ` · ${t.tierName}` : ''} · {STATUS[t.status]} · {yuan(t.cny)}</i>
               </span>
             </button>
           ))}
@@ -221,7 +241,26 @@ function Tasks({ onSpend, cap }: { onSpend: () => void; cap: number }) {
         </div>
       </aside>
       <section className="ags-main">
-        {error && <div className="ags-error" role="alert"><TriangleAlert size={14} />{error}<button onClick={() => setError('')}><X size={13} /></button></div>}
+        {error && <div className="ags-error" role="alert"><TriangleAlert size={14} />{error}<CheckButton small /><button onClick={() => setError('')}><X size={13} /></button></div>}
+        {warmup?.phase === 'running' && (
+          <div className="ags-warmup" role="status" data-qa="codex-warmup">
+            <div className="ags-warmup-row">
+              <Loader2 size={14} className="ags-spin" />
+              <span>{warmup.step || '正在后台准备 AI 安全运行环境（首次使用仅需一次，约 3～5 分钟）…'}</span>
+              <em className="num">{Math.max(5, Math.min(99, warmup.pct || 5))}%</em>
+            </div>
+            <div className="ags-warmup-bar"><i style={{ width: `${Math.max(5, Math.min(99, warmup.pct || 5))}%` }} /></div>
+          </div>
+        )}
+        {warmup?.phase === 'failed' && (
+          <div className="ags-warmup bad" role="status" data-qa="codex-warmup-failed">
+            <div className="ags-warmup-row">
+              <TriangleAlert size={14} />
+              <span>{warmup.error || warmup.step || '安全运行环境准备未完成'}（选择「完全访问」权限的任务不受影响）</span>
+              <button onClick={() => void host.call('agents.warmupRun', { force: true })}><RefreshCw size={12} />重试准备</button>
+            </div>
+          </div>
+        )}
         {(installing || installLog.length > 0) && (
           <pre className="ags-install" title={installing ? '' : '点一下关闭'} onClick={() => { if (!installing) setInstallLog([]); }}>{installLog.join('\n') || '正在安装…'}</pre>
         )}
@@ -244,8 +283,14 @@ function backgroundFor(): string {
   } else lines.push(`学生：未指定（按${pack.stage}${pack.name}平均水平）`);
   lines.push('', '## 本学科约定', `排版主题：Markdown 成品第一行写 <!-- cs:theme=${pack.family} -->`, `题型（题库文件的 qtype 只能用这些）：${pack.qtypes.join('、')}`,
     `难度：1 基础、2 巩固、3 中档、4 较难、5 压轴`, `出原创题的要求：${pack.prompt.draft}`, `答案写法：${pack.prompt.answer}`);
-  lines.push('', '输出要求：所有文件保存在当前文件夹；文件名用中文；不要联网下载东西。');
+  lines.push('', '输出要求：所有文件保存在当前文件夹；文件名用中文。需要真题、教研资料时按工作手册用 web_search / web_fetch 等联网工具查找，引用的资料写出处网址（安全模式不能联网）。');
   return lines.join('\n');
+}
+
+/** 模板里的「给谁上、哪个版本」：选了学生按学生的年级和教材，没选按学科默认 */
+function whoOf(stu: ReturnType<typeof useStore.getState>['students'][number] | undefined): Who {
+  const pack = packOf(studentSubject(stu));
+  return { who: stu?.grade ? stu.grade + '学生' : pack.stage + '学生', book: stu?.textbook || pack.textbook };
 }
 
 function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: number; onStarted: (t: Task) => void; onError: (m: string) => void }) {
@@ -260,23 +305,76 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
   const [prompt, setPrompt] = useState('');
   const [taskCap, setTaskCap] = useState(cap);
   const [studioKey, setStudioKey] = useState(loadStudioKey);
+  // 档位：默认用 AI 设置里「AI 工坊出成品」的档位（质量优先），这个任务可以单独改
+  const savedTier = useAccount((s) => s.tiers?.uses?.workshop);
+  const [tier, setTier] = useState<TierId | null>(null);
+  const tierSite = useTierSite();
   const [busy, setBusy] = useState(false);
   const student = useStore((s) => s.students.find((x) => x.id === s.studentId));
   const [formats, setFormats] = useState<Fmt[]>([]);
+  const [hoverTpl, setHoverTpl] = useState<string | null>(null);
+  const [styleRef, setStyleRef] = useState<StyleRefSelection | null>(null);
+  const hoverTimer = useRef<number>(0);
+  const topicRef = useRef<HTMLInputElement>(null);
+  const showcaseManifest = useShowcase((s) => s.manifest);
+  const showcaseIntent = useShowcase((s) => s.workshopIntent);
   const tpls = usePluginTemplates();
   const installed = usePlugins((s) => s.list?.items ?? []);
   const attach = useAttachments(onError);
   const cur = tpls.find((x) => x.id === tpl) ?? tpls[0];
   const plugin = cur.kind === 'plugin', editing = plugin ? installed.find((p) => p.id === pluginId) : undefined;
   const editName = editing?.name ?? '';
+  const activeTpl = tpls.find((x) => x.id === (hoverTpl ?? tpl)) ?? cur;
+  const activeCard = useMemo(
+    () => activeTpl.plugin ? null : showcaseManifest?.items.find((x) => x.id === activeTpl.id) ?? null,
+    [showcaseManifest, activeTpl.id, activeTpl.plugin],
+  );
+
+  useEffect(() => {
+    void loadShowcase();
+    return () => clearTimeout(hoverTimer.current);
+  }, []);
+
+  const enterTpl = (id: string) => { clearTimeout(hoverTimer.current); setHoverTpl(id); };
+  const leaveTpls = () => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverTpl(null), 400); };
+  const enterCard = () => { clearTimeout(hoverTimer.current); };
+  const leaveCard = () => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverTpl(null), 120); };
+
+  const applyStyle = (item: ShowcaseItem, subIdx = 0) => {
+    clearTimeout(hoverTimer.current);
+    const target = tpls.find((x) => x.id === item.id || (item.skill && x.skill === item.skill)) ?? cur;
+    setHoverTpl(null);
+    setTpl(target.id);
+    if (target.kind === 'plugin') setPluginId('');
+    setFormats(target.formats);
+    const who = whoOf(student);
+    if (target.id === 'free') {
+      const subLabel = item.full[subIdx]?.label || item.label;
+      setPrompt(`参照「${subLabel}」的风格与结构，给${who.who}做一份关于「${topic.trim() || '（请填写主题）'}」的教学成品（教材${who.book}）：版面清晰、科学准确、离线可直接打开。`);
+    } else {
+      setPrompt(target.build(topic.trim() || (target.kind === 'plugin' ? '（插件名称）' : '（主题）'), who));
+    }
+    setStyleRef(styleRefOf(item, subIdx));
+    setTimeout(() => topicRef.current?.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (!showcaseIntent || !showcaseManifest) return;
+    const hit = showcaseManifest.items.find((x) => x.id === showcaseIntent.id || (x.skill && x.skill === showcaseIntent.id));
+    useShowcase.setState({ workshopIntent: null });
+    if (hit) applyStyle(hit, showcaseIntent.index);
+    else if (tpls.some((x) => x.id === showcaseIntent.id)) setTpl(showcaseIntent.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showcaseIntent, showcaseManifest]);
+
   useEffect(() => { if (intent) usePlugins.setState({ workshop: null }); }, [intent]);
   useEffect(() => setTaskCap(cap), [cap]);
   useEffect(() => {
     if (cur.id === 'free') return;
     const ask = plugin && intent?.ask ? `\n\n老师的要求：${intent.ask}` : '';
     if (editName) setPrompt(`修改插件「${editName}」：\n` + ask.trim());
-    else setPrompt(cur.build(topic.trim() || (plugin ? '（插件名称）' : '（主题）')) + ask);
-  }, [cur, topic, editName, plugin, intent]);
+    else setPrompt(cur.build(topic.trim() || (plugin ? '（插件名称）' : '（主题）'), whoOf(student)) + ask);
+  }, [cur, topic, editName, plugin, intent, student]);
   useEffect(() => setFormats(cur.formats), [cur]);
   const ready = cli?.[engine]?.found;
   const start = async () => {
@@ -291,17 +389,20 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
       const title = (name ? name + ' · ' : '') + (editing ? '改插件' : t.label);
       onStarted(await host.call<Task>('agents.start', {
         engine, title, prompt, context: backgroundFor(), cap: taskCap, useStudioKey: studioKey, formats, model, permission, skill: t.skill,
-        effort, attachments: attach.files, kind: t.kind ?? '', pluginId: editing?.id ?? '',
+        effort, attachments: attach.files, kind: t.kind ?? '', pluginId: editing?.id ?? '', tier: tier ?? savedTier ?? 'quality',
+        styleRef: styleRef ?? undefined,
       }));
       attach.clear();
     } catch (e) { onError((e as Error).message); } finally { setBusy(false); }
   };
   return (
+    <div className="ags-new-wrap">
     <div className="ags-new-form" onDrop={attach.onDrop} onDragOver={attach.onDragOver}>
       <h3>新任务</h3>
       <p className="ags-sub">{plugin
         ? 'AI 按插件协议在独立文件夹里写插件，右侧实时预览，满意了一键装上。插件运行在沙盒里，拿不到电脑上的文件和密钥。'
         : <>任务在本机后台运行，只能读写它自己的文件夹。{student ? `会附上「${student.name}」的学生情况。` : '顶栏选好学生后，会自动附上学生情况。'}</>}</p>
+      {!plugin && <p className="ags-sub ags-tip-xy"><Sparkles size={12} />不想自己配？直接跟<a onClick={() => void import('../assistant/controller').then((m) => m.openAssistant())}>小羽</a>说要做什么（「给海淀出一套电磁感应练习，做成 PDF」），它会替你选好模型和做法，在后台调用工坊，做完归到学生名下。</p>}
       <div className="ags-field">
         <label>用谁来做</label>
         <div className="ags-seg">
@@ -314,7 +415,10 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
       </div>
       <div className="ags-field">
         <label>模型 <i className="ags-opt">可选，留空用 CLI 自己的默认模型；勾选「用导播台的 AI 接口」时从接口可用模型里挑</i></label>
-        <ModelPicker value={model} onChange={setModel} placeholder="默认模型" title="自动读取 AI 接口里能用的模型；可以搜索、收藏，也能直接输入模型名" />
+        <div className="ags-model-row">
+          <ModelPicker value={model} onChange={setModel} placeholder={studioKey && engine === 'codex' ? '推荐强模型（gpt-6-astra）' : '默认模型'} title="自动读取 AI 接口里能用的模型；可以搜索、收藏，也能直接输入模型名" />
+          {studioKey && tierSite && <TierChip use="workshop" value={tier ?? savedTier ?? 'quality'} onChange={setTier} qa="tier-chip-new" />}
+        </div>
       </div>
       <div className="ags-field">
         <label>AI 的权限</label>
@@ -331,8 +435,21 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
       </div>
       <div className="ags-field">
         <label>做什么</label>
-        <div className="ags-tpls">
-          {tpls.map((t) => <button key={t.id} className={tpl === t.id ? 'on' : ''} onClick={() => setTpl(t.id)} data-tip={t.plugin ? `来自插件「${t.plugin}」` : undefined}><b>{t.plugin && <Puzzle size={11} />}{t.label}</b><i>{t.hint}</i></button>)}
+        <div className="ags-tpls" onMouseLeave={leaveTpls}>
+          {tpls.map((t) => (
+            <button
+              key={t.id}
+              data-tpl-id={t.id}
+              className={tpl === t.id ? 'on' : ''}
+              onMouseEnter={() => enterTpl(t.id)}
+              onFocus={() => enterTpl(t.id)}
+              onBlur={leaveTpls}
+              onClick={() => { setTpl(t.id); setHoverTpl(null); if (styleRef && styleRef.id !== t.id) setStyleRef(null); }}
+              data-tip={t.plugin ? `来自插件「${t.plugin}」` : undefined}
+            >
+              <b>{t.plugin && <Puzzle size={11} />}{t.label}</b><i>{t.hint}</i>
+            </button>
+          ))}
         </div>
         {tpl !== 'free' && <p className="ags-perm-hint"><Sparkles size={12} />已内置「{cur.label}」的完整做法（结构、格式、自检），AI 会先照着做，下面只写这次的特别要求即可</p>}
       </div>
@@ -347,10 +464,22 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
         </div>
       )}
       {tpl !== 'free' && !editing && (
-        <div className="ags-field"><label>{plugin ? '插件名称' : '主题'}</label><input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={plugin ? '例如：课堂骰子、电路连接动画、化学方程式配平练习' : '例如：斜面上的受力分析'} /></div>
+        <div className="ags-field"><label>{plugin ? '插件名称' : '主题'}</label><input ref={topicRef} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={plugin ? '例如：课堂骰子、电路连接动画、化学方程式配平练习' : '例如：斜面上的受力分析'} /></div>
       )}
-      <div className="ags-field grow"><label>给 AI 的要求（可以直接改）</label><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={attach.onPaste}
-        placeholder={plugin ? '写清楚想要什么功能、放在哪里用、上课时怎么操作；有参考图可以直接 Ctrl+V 贴进来' : '写清楚要做什么、做成什么格式、存成什么文件名'} /></div>
+      <div className="ags-field grow">
+        <div className="ags-req-head">
+          <label>给 AI 的要求（可以直接改）</label>
+          {styleRef && (
+            <span className="ags-style-ref" data-qa="style-ref-chip">
+              <Sparkles size={12} />
+              <span>风格参考：{styleRef.label} 示例</span>
+              <button type="button" aria-label="移除风格参考" onClick={() => setStyleRef(null)}><X size={11} /></button>
+            </span>
+          )}
+        </div>
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onPaste={attach.onPaste}
+          placeholder={plugin ? '写清楚想要什么功能、放在哪里用、上课时怎么操作；有参考图可以直接 Ctrl+V 贴进来' : '写清楚要做什么、做成什么格式、存成什么文件名'} />
+      </div>
       <AttachChips a={attach} />
       {tpl !== 'html' && !plugin && (
         <div className="ags-field">
@@ -377,6 +506,16 @@ function NewTask({ cli, cap, onStarted, onError }: { cli: Detect | null; cap: nu
       </div>
       {cli && !ready && <p className="ags-warn"><Wrench size={13} />{cli[engine].name} 还没有安装，左下角可以一键安装{engine === 'codex' ? '（直接下载官方版，不需要 Node.js）' : ''}。</p>}
     </div>
+    <div className="ags-new-side">
+      <ShowcaseCard
+        item={activeCard}
+        pluginTemplateName={activeTpl.plugin}
+        onApplyStyle={applyStyle}
+        onCardEnter={enterCard}
+        onCardLeave={leaveCard}
+      />
+    </div>
+    </div>
   );
 }
 
@@ -398,7 +537,7 @@ function rowsOf(events: Ev[], detailed: boolean): Row[] {
 
 function stepSummary(items: Ev[]) {
   const n = (k: Ev['kind']) => items.filter((e) => e.kind === k).length;
-  const search = items.filter((e) => e.kind === 'tool' && e.text.startsWith('搜索')).length;
+  const search = items.filter((e) => e.kind === 'tool' && /^(联网)?搜索|^抓网页|^浏览器/.test(e.text)).length;
   const names = [...new Set(items.filter((e) => e.kind === 'file').flatMap((e) => e.text.split(/[，,]\s*/)).map((s) => s.replace(/^(新建|修改|删除)\s*/, '').split(/[\\/]/).pop()!.trim()).filter(Boolean))];
   const parts = [n('cmd') && `运行 ${n('cmd')} 条命令`, search && `查了 ${search} 次资料`, n('tool') - search > 0 && `用了 ${n('tool') - search} 次工具`, n('think') && `思考 ${n('think')} 次`].filter(Boolean) as string[];
   const plan = [...items].reverse().find((e) => e.kind === 'plan');
@@ -409,10 +548,11 @@ function stepSummary(items: Ev[]) {
 function nowDoing(events: Ev[]) {
   const e = [...events].reverse().find((x) => x.kind !== 'usage');
   if (!e) return 'AI 正在准备';
+  if ((e.kind === 'status' || e.retry) && e.text) return e.text;
   if (e.kind === 'cmd') return 'AI 正在运行命令、检查结果';
   if (e.kind === 'think') return 'AI 正在思考';
   if (e.kind === 'file') return 'AI 正在写文件';
-  if (e.kind === 'tool') return e.text.startsWith('搜索') ? 'AI 正在查资料' : 'AI 正在使用工具';
+  if (e.kind === 'tool') return /^(联网)?搜索|^抓网页|^浏览器/.test(e.text) ? 'AI 正在查资料' : /^截图自检/.test(e.text) ? 'AI 正在截图自查' : /^请老师/.test(e.text) ? 'AI 在等你在浏览器里操作' : 'AI 正在使用工具';
   if (e.kind === 'plan') { const s = e.text.split('\n'); return `AI 正在按计划做（${s.filter((l) => l.startsWith('✓')).length}/${s.filter(Boolean).length}）`; }
   return 'AI 正在工作';
 }
@@ -439,7 +579,10 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
   const [cfgOpen, setCfgOpen] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const running = task.status === 'running';
+  const hasBrowser = useAiTools((s) => !!s.browsers['task:' + task.id]);
   const rows = useMemo(() => rowsOf(task.events ?? [], detailed), [task.events, detailed]);
+  // 最近一条认得出来的接口错误（503 没有线路、Key 无效、余额不足…）：在日志上方翻译成一句话 + 按钮
+  const trouble = useMemo(() => [...(task.events ?? [])].reverse().find((e) => e.kind === 'error' && explainAiError(e.text))?.text ?? (task.status === 'failed' && explainAiError(task.note ?? '') ? task.note ?? '' : ''), [task.events, task.status, task.note]);
   useEffect(() => { const el = log.current; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight; }, [task.events?.length, rows.length]);
   useEffect(() => { log.current?.scrollTo({ top: 1e9 }); setOpen(new Set()); setCalib(null); }, [task.id]);
   const lastFile = (task.events ?? []).filter((e) => e.kind === 'file').length;
@@ -476,7 +619,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
     const r = importBank(drafts, subject, 'AI 工作室 · ' + task.title);
     setBankMsg(`按${packOf(subject).stage}导入：入库 ${r.bank}，待核对 ${r.inbox}${r.dup ? `，重复跳过 ${r.dup}` : ''}`);
   });
-  const configure = (v: { model?: string; permission?: Permission; effort?: Effort }) => void act(() => host.call('agents.configure', { id: task.id, ...v }));
+  const configure = (v: { model?: string; permission?: Permission; effort?: Effort; tier?: TierId }) => void act(() => host.call('agents.configure', { id: task.id, ...v }));
   const saveCalib = () => {
     const v = Number(calib);
     if (!(v >= 0)) { onError('请填写中转站后台显示的这个任务实际扣费（元）'); return; }
@@ -488,7 +631,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
         <div>
           <h3>{task.title}</h3>
           <p><span className={'ags-pill s-' + task.status}>{running && <Loader2 size={11} className="ags-spin" />}{STATUS[task.status]}</span>
-            {task.engine === 'codex' ? 'Codex CLI' : 'Claude Code'} · {task.pick || task.model || '默认模型'}{task.effort ? ` · 思考档位${EFFORT_NAME[task.effort]}` : ''} · {PERMISSION_NAME[task.permission ?? 'safe']} · {when(task.created)} · 第 {task.turns} 轮 ·
+            {task.engine === 'codex' ? 'Codex CLI' : 'Claude Code'} · <span data-qa="detail-model">{task.modelName || task.pick || task.model || '默认模型'}</span>{task.tierName ? ` · ${task.tierName}` : task.tierSite && task.tier ? ` · ${TIER_NAME[task.tier]}` : ''}{task.effort ? ` · 思考档位${EFFORT_NAME[task.effort]}` : ''} · {PERMISSION_NAME[task.permission ?? 'safe']} · {when(task.created)} · 第 {task.turns} 轮 ·
             <b className="num"> {yuan(task.cny)}</b>{running && task.live ? <em className="ags-live">本轮进行中 +{yuan(task.live)}</em> : null} / ¥{task.cap}
             {task.calibrated && <em className="ags-calibrated">已按实际扣费校准</em>}
             {task.reconciled && <em className="ags-calibrated">已和中转站对账</em>}
@@ -503,6 +646,7 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
             </div>)}
         </div>
         <div className="ags-d-act">
+          {task.permission !== 'safe' && <button title="看 AI 在内置浏览器里做了什么；要登录、过验证码时在这里自己操作" onClick={() => openBrowser('task:' + task.id)}><Globe size={14} />AI 浏览器{hasBrowser && <i className="ags-dotlive" />}</button>}
           <button className={cfgOpen ? 'on' : ''} title="换模型、思考档位、权限（下一轮对话生效）" onClick={() => setCfgOpen(!cfgOpen)}><Settings2 size={14} />模型 / 权限</button>
           {running ? <button className="danger" onClick={() => void act(() => host.call('agents.stop', task.id))}><CircleStop size={14} />停止</button>
             : <button onClick={() => { if (confirm('删除这个任务和它生成的所有文件？')) void act(async () => { await host.call('agents.remove', task.id); onRemoved(); }); }}><Trash2 size={14} />删除</button>}
@@ -514,6 +658,10 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
             <label>模型</label>
             <ModelPicker value={task.pick ?? ''} onChange={(m) => configure({ model: m })} placeholder="默认模型" title="下一轮对话开始用新模型" />
           </div>
+          {task.tierSite && <div className="ags-cfg-item">
+            <label>档位</label>
+            <TierSeg use="workshop" value={task.tier ?? 'quality'} onChange={(t) => configure({ tier: t })} />
+          </div>}
           <div className="ags-cfg-item">
             <label>思考档位</label>
             <div className="ags-seg">
@@ -533,13 +681,15 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
       )}
       <div className={'ags-d-body' + (isPlugin ? ' plugin' : '')}>
         <div className="ags-log" ref={log}>
+          {trouble && task.status !== 'running' && <AiTrouble raw={trouble} />}
+          {!trouble && task.status === 'failed' && <div className="ags-error" role="alert"><TriangleAlert size={14} /><span>{task.note || '任务运行中断，可检查网络与接口状态后继续'}</span><CheckButton small /></div>}
           {rows.map((r) => {
             if (r.kind === 'ev') {
               const e = r.e;
               return (
                 <div key={r.i} className={'ags-ev k-' + e.kind}>
                   {e.kind !== 'text' && <span className="ags-ev-k">{KIND_LABEL[e.kind] ?? e.kind}</span>}
-                  <div className="ags-ev-t">{e.text}{evMedia(e)}</div>
+                  <div className="ags-ev-t">{e.kind === 'error' && explainAiError(e.text) ? <details className="ags-ev-raw"><summary>{explainAiError(e.text)!.text.split('。')[0]}（点开看原文）</summary><pre>{e.text}</pre></details> : e.text}{evMedia(e)}</div>
                 </div>
               );
             }
@@ -595,15 +745,30 @@ function Detail({ task, onError, onRemoved }: { task: Task; onError: (m: string)
           <label className="ags-check small"><input type="checkbox" checked={detailed} onChange={(e) => toggleDetailed(e.target.checked)} />显示 AI 的每一步操作（命令、思考）</label>
         </aside>
       </div>
+      {task.suggest && task.tier !== 'quality' && <div className="ags-suggest"><SuggestTip why={task.suggest.why} model={task.model || task.pick} qa="ags-suggest" onRetry={() => act(() => host.call('agents.retryQuality', task.id))} /></div>}
       <div className="ags-input" onDrop={attach.onDrop} onDragOver={attach.onDragOver}>
         <AttachChips a={attach} compact />
         <textarea value={text} rows={2} onChange={(e) => setText(e.target.value)} onPaste={attach.onPaste}
           placeholder={running ? '追加要求：AI 会在当前工作里接着处理' : isPlugin ? '继续改：例如「按钮再大一点」「颜色换成蓝的」，可以 Ctrl+V 贴截图' : '继续这个任务：例如「把第三题改简单一点」'}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
+        {task.tierSite && <span className="ags-input-tier" data-tip="档位改了从下一轮开始生效"><TierChip use="workshop" up value={task.tier ?? 'quality'} onChange={(t) => configure({ tier: t })} qa="tier-chip-task" /></span>}
         <button disabled={!text.trim()} onClick={send}><Send size={15} />{running ? '追加' : '继续'}</button>
       </div>
     </div>
   );
+}
+
+/** 用量页顶上：登录了账号的，余额和站点实扣的消费明细在账号页；没登录的可以从这里叫出登录页 */
+function LedgerAccount() {
+  const v = useAccount((s) => s.view);
+  if (!host.electron) return null;
+  return <section className="agl-card agl-acc" data-qa="ledger-account">
+    {v?.signedIn
+      ? <><h3>{v.kind === 'linglong' ? '玲珑账号' : `${v.site?.name} 账号`}：{v.username}</h3><p className="ags-sub">余额、充值和站点实际扣费的消费明细都在账号页；这里的数字是软件按价格表估的，对账后改成实扣。</p>
+        <div className="ags-row"><button className="ags-go" onClick={() => openAccount()}>打开账号页</button><button className="agl-link" onClick={() => openAccount('signin')}>切换账号</button></div></>
+      : <><h3>登录账号</h3><p className="ags-sub">登录玲珑账号（软件里就能注册）或银子 API 等合作站的账号：AI 自动配好，余额、充值、消费明细都能在软件里看。</p>
+        <div className="ags-row"><button className="ags-go" onClick={() => openAccount('signin')}>登录 / 切换账号</button></div></>}
+  </section>;
 }
 
 function Ledger({ sum, onChange }: { sum: Summary | null; onChange: (s: Summary) => void }) {
@@ -623,6 +788,7 @@ function Ledger({ sum, onChange }: { sum: Summary | null; onChange: (s: Summary)
   const top = Math.max(0.01, ...feats.map((f) => f[1]));
   return (
     <div className="ags-ledger">
+      <LedgerAccount />
       <section className="agl-card">
         <h3>花费上限</h3>
         <p className="ags-sub">到了上限，新的 AI 请求会被拒绝；后台任务到了单任务上限会自动停止。金额按下面的价格表估算，以中转站实际扣费为准。</p>

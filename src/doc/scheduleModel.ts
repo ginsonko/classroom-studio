@@ -13,6 +13,30 @@ export function clock(h: number) {
   return (day > 0 ? '次日 ' : '') + `${String(Math.floor(r / 60)).padStart(2, '0')}:${String(r % 60).padStart(2, '0')}`;
 }
 export const spanText = (start: number, len: number) => `${clock(start)}–${clock(start + len)}`;
+/**
+ * 1.7.0：老师在输入框里直接打的上课时间，任意分钟都行：19:40 / 1940 / 19.40 / 19：40 / 19点40 / 7:40pm / 下午7:40 → 小时（19.666…）。
+ * 认不出或超出 0:00–23:59 返回 null
+ */
+export function parseClock(text: string): number | null {
+  let s = String(text ?? '').trim().toLowerCase().replace(/[：．。]/g, ':').replace(/\s+/g, '');
+  if (!s) return null;
+  const pm = /pm|下午|晚上|傍晚/.test(s), am = /am|上午|早上|凌晨/.test(s);
+  s = s.replace(/am|pm|上午|下午|晚上|傍晚|早上|凌晨|中午/g, '').replace(/点半$/, ':30').replace(/[点時时]/, ':').replace(/分$/, '');
+  let h: number, m: number;
+  const a = /^(\d{1,2})(?::(\d{1,2}))?$/.exec(s), b = /^(\d{1,2})\.(\d{2})$/.exec(s), c = /^(\d{3,4})$/.exec(s);
+  if (a) { h = +a[1]; m = a[2] === undefined ? 0 : +a[2]; }
+  else if (b) { h = +b[1]; m = +b[2]; }
+  else if (c) { h = +c[1].slice(0, -2); m = +c[1].slice(-2); }
+  else return null;
+  if (pm && h < 12) h += 12;
+  if (am && h === 12) h = 0;
+  if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59)) return null;
+  return h + m / 60;
+}
+/** 小时 → 输入框里显示的 HH:MM（精确到分钟） */
+export const clockInput = (h: number) => clock(((h % 24) + 24) % 24);
+/** 拖动课程时吸附到 5 分钟（输入框里可以精确到 1 分钟） */
+export const DRAG_STEP = 1 / 12;
 /** 过了午夜还在上的那一段（小时），没跨午夜是 0 */
 export const tailOf = (s: Pick<LessonSlot, 'start' | 'len'>) => Math.max(0, s.start + s.len - 24);
 

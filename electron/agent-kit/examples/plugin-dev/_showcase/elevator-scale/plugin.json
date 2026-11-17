@@ -1,0 +1,20 @@
+{
+  "protocol": "cs-plugin/1",
+  "id": "elevator-scale",
+  "name": "电梯体重秤",
+  "version": "1.0.0",
+  "author": "最强网课教辅系统",
+  "description": "超重与失重实时演示：老师端拖加速度/质量滑块或点选启动、匀速、制动、自由落体阶段，学生画面同步展示电梯升降、弹簧台秤读数与受力箭头变化，支持一键把当前数据写到黑板。",
+  "icon": "icon.svg",
+  "subjects": ["physics"],
+  "permissions": ["present", "board"],
+  "network": [],
+  "contributes": {
+    "panels": [
+      { "id": "main", "title": "电梯体重秤", "entry": "index.html", "where": ["console", "dock"], "width": 376, "height": 580 }
+    ],
+    "lessons": [
+      { "id": "screen", "title": "电梯体重秤（学生画面）", "entry": "screen.html", "subject": "physics" }
+    ]
+  }
+}

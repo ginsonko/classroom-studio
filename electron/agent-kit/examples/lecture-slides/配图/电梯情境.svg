@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 900" width="960" height="900">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a3b7a"/>
+      <stop offset="50%" stop-color="#3572d6"/>
+      <stop offset="100%" stop-color="#a8cdf8"/>
+    </linearGradient>
+    <linearGradient id="cabinWall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f7fc"/>
+      <stop offset="100%" stop-color="#dce5f2"/>
+    </linearGradient>
+    <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#cbd6e6"/>
+      <stop offset="100%" stop-color="#9aa9c0"/>
+    </linearGradient>
+    <linearGradient id="upGlow" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#2f6fd6" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.85"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 电梯井外城市天空背景 -->
+  <rect width="960" height="900" fill="url(#sky)"/>
+  <!-- 远处城市剪影与云朵 -->
+  <g fill="#ffffff" opacity="0.22">
+    <ellipse cx="230" cy="240" rx="95" ry="28"/>
+    <ellipse cx="285" cy="228" rx="65" ry="24"/>
+    <ellipse cx="730" cy="310" rx="110" ry="30"/>
+    <ellipse cx="670" cy="296" rx="70" ry="24"/>
+  </g>
+  <g fill="#1e4287" opacity="0.38">
+    <rect x="130" y="480" width="75" height="320" rx="4"/>
+    <rect x="220" y="540" width="62" height="260" rx="4"/>
+    <rect x="680" y="450" width="84" height="350" rx="4"/>
+    <rect x="780" y="520" width="70" height="280" rx="4"/>
+  </g>
+
+  <!-- 观光电梯轿厢框架 -->
+  <rect x="88" y="64" width="784" height="772" rx="28" fill="none" stroke="#334155" stroke-width="24"/>
+  <rect x="100" y="76" width="760" height="748" rx="18" fill="none" stroke="#e2e8f0" stroke-width="6"/>
+
+  <!-- 轿厢顶部与两侧立柱 -->
+  <path d="M100 76 H860 V168 H100 Z" fill="url(#cabinWall)"/>
+  <rect x="100" y="168" width="96" height="540" fill="url(#cabinWall)"/>
+  <rect x="764" y="168" width="96" height="540" fill="url(#cabinWall)"/>
+  <!-- 轿厢地板 -->
+  <polygon points="100,708 860,708 860,824 100,824" fill="url(#floorGrad)"/>
+  <line x1="100" y1="708" x2="860" y2="708" stroke="#64748b" stroke-width="4"/>
+
+  <!-- 顶部楼层显示屏：1F -> 10F 加速上升 -->
+  <rect x="330" y="96" width="300" height="54" rx="12" fill="#0f172a" stroke="#475569" stroke-width="3"/>
+  <polygon points="368,134 384,108 400,134" fill="#22c55e"/>
+  <text x="422" y="133" font-family="Microsoft YaHei, sans-serif" font-size="26" font-weight="700" fill="#38bdf8">3F</text>
+  <text x="475" y="131" font-family="Microsoft YaHei, sans-serif" font-size="20" font-weight="600" fill="#94a3b8">加速上升 a ↑</text>
+
+  <!-- 右侧电梯按键面板 -->
+  <rect x="786" y="300" width="52" height="190" rx="10" fill="#cbd5e1" stroke="#94a3b8" stroke-width="2"/>
+  <circle cx="812" cy="334" r="11" fill="#f97316"/>
+  <text x="812" y="339" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#fff">10</text>
+  <circle cx="812" cy="370" r="11" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <circle cx="812" cy="406" r="11" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+  <circle cx="812" cy="442" r="11" fill="#38bdf8"/>
+  <text x="812" y="447" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="#fff">1</text>
+
+  <!-- 窗外向下掠过的速度线（表现电梯向上加速） -->
+  <g stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.55">
+    <line x1="250" y1="210" x2="250" y2="330"/>
+    <line x1="285" y1="360" x2="285" y2="450"/>
+    <line x1="690" y1="230" x2="690" y2="365"/>
+    <line x1="650" y1="400" x2="650" y2="500"/>
+  </g>
+
+  <!-- 左侧大型加速度动势箭头 -->
+  <g transform="translate(230, 390)">
+    <rect x="-14" y="0" width="28" height="140" rx="6" fill="url(#upGlow)"/>
+    <polygon points="0,-34 -30,12 30,12" fill="#2563eb"/>
+    <rect x="-10" y="8" width="20" height="96" rx="4" fill="#2563eb"/>
+    <rect x="-52" y="118" width="104" height="38" rx="10" fill="#ffffff" opacity="0.94"/>
+    <text x="0" y="144" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#1d4ed8">a 向上</text>
+  </g>
+
+  <!-- 地面电子体重秤（放大高对比度） -->
+  <g transform="translate(480, 736)">
+    <ellipse cx="0" cy="28" rx="145" ry="22" fill="#0f172a" opacity="0.22"/>
+    <rect x="-125" y="-26" width="250" height="48" rx="16" fill="#1e293b" stroke="#fbbf24" stroke-width="4"/>
+    <rect x="-112" y="-18" width="224" height="16" rx="6" fill="#334155"/>
+    <!-- 秤面高光 -->
+    <rect x="-72" y="-15" width="144" height="28" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="0" y="6" text-anchor="middle" font-family="Consolas, Microsoft YaHei, sans-serif" font-size="24" font-weight="700" fill="#4ade80">600 N</text>
+  </g>
+
+  <!-- 高中生人物（清爽扁平矢量插画风格，无乱码） -->
+  <g transform="translate(480, 460)">
+    <!-- 腿与运动鞋 -->
+    <rect x="-42" y="135" width="26" height="105" rx="10" fill="#1e3a8a"/>
+    <rect x="16" y="135" width="26" height="105" rx="10" fill="#1e3a8a"/>
+    <path d="M-50 235 H-8 C-4 235 0 242 0 248 H-54 C-54 240 -52 235 -50 235 Z" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+    <path d="M8 235 H50 C52 235 54 240 54 248 H0 C0 242 4 235 8 235 Z" fill="#ffffff" stroke="#2563eb" stroke-width="3"/>
+
+    <!-- 校服上衣（蓝白运动校服） -->
+    <path d="M-58 8 C-58 -12 58 -12 58 8 L66 142 H-66 Z" fill="#ffffff" stroke="#2563eb" stroke-width="4"/>
+    <path d="M-58 8 C-58 -12 58 -12 58 8 L61 48 H-61 Z" fill="#2563eb"/>
+    <!-- 领口 -->
+    <polygon points="-20,-6 20,-6 0,24" fill="#ffffff"/>
+    <!-- 手臂（自然微张低头看秤） -->
+    <path d="M-58 14 L-92 98 C-95 108 -84 116 -76 108 L-48 42 Z" fill="#2563eb"/>
+    <circle cx="-84" cy="108" r="11" fill="#fed7aa"/>
+    <path d="M58 14 L92 98 C95 108 84 116 76 108 L48 42 Z" fill="#2563eb"/>
+    <circle cx="84" cy="108" r="11" fill="#fed7aa"/>
+
+    <!-- 颈部与头部（微微低头好奇观察示数） -->
+    <rect x="-12" y="-30" width="24" height="26" rx="8" fill="#fed7aa"/>
+    <circle cx="0" cy="-68" r="44" fill="#fed7aa"/>
+    <!-- 头发 -->
+    <path d="M-44 -72 C-46 -112 46 -116 44 -70 C36 -90 12 -96 -14 -92 C-30 -90 -38 -82 -44 -72 Z" fill="#1e293b"/>
+    <!-- 眼睛（往下看秤）与惊讶思考表情 -->
+    <ellipse cx="-15" cy="-60" rx="4.5" ry="5.5" fill="#0f172a"/>
+    <ellipse cx="15" cy="-60" rx="4.5" ry="5.5" fill="#0f172a"/>
+    <path d="M-22 -73 Q-15 -78 -8 -73" fill="none" stroke="#1e293b" stroke-width="3" stroke-linecap="round"/>
+    <path d="M8 -73 Q15 -78 22 -73" fill="none" stroke="#1e293b" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="0" cy="-44" r="5" fill="#ef4444"/>
+  </g>
+
+  <!-- 示数放大气泡框（对比平时体重 500 N vs 启动瞬间 600 N） -->
+  <g transform="translate(658, 596)">
+    <path d="M-95 85 L-48 48 L-20 62 Z" fill="#0f172a"/>
+    <rect x="-88" y="-76" width="206" height="138" rx="18" fill="#0f172a" stroke="#fbbf24" stroke-width="4"/>
+    <text x="15" y="-40" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#cbd5e1">静止时：500 N</text>
+    <line x1="-68" y1="-24" x2="98" y2="-24" stroke="#334155" stroke-width="2"/>
+    <text x="15" y="6" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#fbbf24">启动上升瞬间</text>
+    <text x="15" y="44" text-anchor="middle" font-family="Consolas, Microsoft YaHei, sans-serif" font-size="36" font-weight="700" fill="#4ade80">600 N ↑</text>
+  </g>
+</svg>

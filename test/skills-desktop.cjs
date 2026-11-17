@@ -4,6 +4,7 @@
 const fs = require('node:fs'); const path = require('node:path'); const http = require('node:http'); const assert = require('node:assert/strict');
 const out = path.join(process.env.CS_TEST_OUT || path.join(__dirname, '../.out/A'), 'skills-' + Date.now()); fs.mkdirSync(out, { recursive: true });
 process.env.CS_TEST = '1'; process.env.CS_DATA_DIR = path.join(out, 'data');
+process.env.CS_RETRY_DELAYS = process.env.CS_RETRY_DELAYS || '20,20,20,20,20';
 fs.mkdirSync(process.env.CS_DATA_DIR, { recursive: true });
 const student = { id: 'stu-1', name: '小林', grade: '高二', hue: 200, textbook: '人教版 2019', tags: [], lessons: 3, lastTopic: '洛伦兹力', lastAt: '' };
 fs.writeFileSync(path.join(process.env.CS_DATA_DIR, 'workspace.json'), JSON.stringify({ local: { roots: [], students: [student], studentId: 'stu-1', slots: [], learning: {} } }));
@@ -92,8 +93,8 @@ const hook = http.createServer((req, res) => { let b = ''; req.on('data', (c) =>
   mark('variants skill: capture → read → bank run automatically, pauses before the paid AI step, then drafts (self-check failures to inbox) and exports homework with cost shown', { cost: r.cost[3].toFixed(4), files: hwFiles.length });
 
   // ── 2. 同一页再跑：沿用这道题；AI 出题失败 → 显示错误 → 重试成功；再跑一次在确认处停止，不发请求 ──
-  // 502 会自动重试一次（ai.cjs），连续两次失败才报错
-  failDraft = 2;
+  // 1.7.0 起 502 最多自动重试 5 次（共 6 次尝试），连续 6 次失败才报错
+  failDraft = 6;
   await click('.sk-btns button', '出变式作业');
   await phase('ask');
   r = await run();

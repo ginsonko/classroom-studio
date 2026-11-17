@@ -28,10 +28,11 @@ function copyFile(from, to) {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.writeFileSync(to, body);
 }
-function copyDir(src, dest) {
+function copyDir(src, dest, skip) {
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (skip && skip(e.name, src)) continue;
     const from = path.join(src, e.name), to = path.join(dest, e.name);
-    if (e.isDirectory()) copyDir(from, to);
+    if (e.isDirectory()) copyDir(from, to, skip);
     else if (e.isFile()) copyFile(from, to);
   }
 }
@@ -66,12 +67,19 @@ function addPluginReference(skillDir) {
 
 const skillFile = (engine, id) => path.join(SKILL_ROOT[engine] || SKILL_ROOT.codex, id, 'SKILL.md').replace(/\\/g, '/');
 
+// 课件设计包（KaTeX、样式组件、打包工具）和样板成品：备课任务都放一份在任务文件夹的 .cs-kit（隐藏目录，不算成果）
+const DESIGN_KIT = path.join(KIT, 'kit'), EXAMPLES = path.join(KIT, 'examples');
+
 /** 把技能复制进任务文件夹；每轮都调用，已有且一样的就跳过（导播台升级后旧任务也能拿到新版技能） */
-function installKit(work, engine) {
+function installKit(work, engine, kind = '') {
   const dest = path.join(work, SKILL_ROOT[engine] || SKILL_ROOT.codex);
   for (const id of builtin()) copyDir(path.join(KIT, 'skills', id), path.join(dest, id));
   addPluginReference(path.join(dest, 'plugin-dev'));
   for (const s of extraSkills()) copyDir(s.dir, path.join(dest, s.key));
+  if (kind !== 'plugin') {
+    try { copyDir(DESIGN_KIT, path.join(work, '.cs-kit')); } catch { /* 设计包缺了就算了，技能里有不用设计包的写法 */ }
+    try { if (fs.existsSync(EXAMPLES)) copyDir(EXAMPLES, path.join(work, '.cs-kit', 'examples'), (name) => name === '_showcase'); } catch { /* 没带样板 */ }
+  }
   return dest;
 }
 

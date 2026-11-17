@@ -42,6 +42,13 @@ if (engine === 'codex') {
       if (!fs.existsSync('plugin/icon.svg')) fs.writeFileSync('plugin/icon.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="8" width="48" height="48" rx="10" fill="none" stroke="currentColor" stroke-width="4"/></svg>');
       if (img) fs.writeFileSync('素材需求.json', JSON.stringify([{ file: 'img/bg.png', prompt: '木纹桌面', size: '1024x1024' }, { file: '../evil.png', prompt: 'x' }]));
       out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\plugin\\plugin.json', kind: old ? 'update' : 'add' }, { path: process.cwd() + '\\plugin\\index.html', kind: 'add' }] } });
+    } else if (/BANKTEST|导播台自动检查了/.test(text)) {
+      // 1.7.0 成品自检：第一轮题库写一个对不上的「真题」出处、课件引用设计包；收到自检清单后改标原创
+      const fixed = /导播台自动检查了/.test(text);
+      fs.writeFileSync('超重与失重-题库.json', JSON.stringify({ version: 1, topic: '超重与失重', questions: [{ stem: '电梯以 2 m/s² 的加速度减速下降，质量 60 kg 的人对秤的压力多大？', answer: '720 N', qtype: '计算', difficulty: 2, verified: true, source: fixed ? { kind: '原创' } : { kind: '真题', title: '2024 北京海淀高一上期中', no: '第 7 题', url: process.env.FAKE_SRC_URL } }] }, null, 2));
+      if (!fixed) fs.writeFileSync('超重与失重.html', '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href=".cs-kit/cs-deck.css"></head><body><main class="cs-deck"><section class="cs-page"><h2>超重</h2><p>$F_N=m(g+a)$</p></section></main><script src=".cs-kit/cs-deck.js"></script></body></html>');
+      fs.writeFileSync('env.log', String(process.env.CS_NODE || ''));
+      out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\超重与失重-题库.json', kind: 'add' }] } });
     } else {
       fs.writeFileSync('课件.html', '<h1>' + text.trim().slice(0, 40) + '</h1>');
       out({ type: 'item.completed', item: { id: 'i2', type: 'file_change', changes: [{ path: process.cwd() + '\\课件.html', kind: 'add' }] } });

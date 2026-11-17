@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>电梯体重秤 · 教师控制面板</title>
+<link rel="stylesheet" href="/__cs/ui.css">
+<style>
+  .cs-wrap { padding: 10px 14px; gap: 8px; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+    border-radius: 99px; font-size: 12px; font-weight: 700;
+    background: var(--cs-accent-soft); color: var(--cs-accent);
+  }
+  .badge.over { background: rgba(255, 181, 71, .16); color: var(--cs-warn); }
+  .badge.under { background: var(--cs-accent-soft); color: var(--cs-accent); }
+  .badge.free { background: rgba(255, 90, 82, .16); color: var(--cs-danger); }
+  .badge.bal { background: rgba(60, 207, 145, .16); color: var(--cs-ok); }
+
+  .stage-preview {
+    display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center;
+    padding: 10px 12px; background: var(--cs-bg-2); border: 1px solid var(--cs-line); border-radius: var(--cs-radius);
+  }
+  #mini { width: 112px; height: 118px; border-radius: 7px; background: var(--cs-bg-3); display: block; }
+  .readouts { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .scale-kg { font: 800 30px/1.05 "JetBrains Mono", "Cascadia Mono", var(--cs-font); letter-spacing: -.01em; color: var(--cs-fg); }
+  .scale-kg small { font-size: 14px; font-weight: 600; color: var(--cs-fg-2); margin-left: 3px; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; font-size: 12px; color: var(--cs-fg-2); font-variant-numeric: tabular-nums; }
+  .kv-grid b { color: var(--cs-fg); font-weight: 600; }
+  .eq-line { font-size: 12px; color: var(--cs-fg-2); padding-top: 3px; border-top: 1px dashed var(--cs-line); font-variant-numeric: tabular-nums; }
+
+  .dir-row { display: grid; grid-template-columns: 1fr 1fr 72px; gap: 6px; }
+  .dir-row button, .stages button { min-height: 34px; padding: 5px 6px; font-size: 12.5px; font-weight: 600; }
+  .stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  button.on { border-color: var(--cs-accent); background: var(--cs-accent-soft); color: var(--cs-accent); }
+
+  .sliders { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+  .s-row { display: flex; flex-direction: column; gap: 3px; }
+  .s-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; }
+  .s-head span { color: var(--cs-fg-2); }
+  .s-head output { font-weight: 700; color: var(--cs-fg); font-variant-numeric: tabular-nums; }
+  input[type="range"] {
+    width: 100%; height: 24px; padding: 0; border: 0; background: transparent;
+    accent-color: var(--cs-accent); cursor: pointer; box-shadow: none;
+  }
+  input[type="range"]:focus { box-shadow: none; }
+
+  .actions { display: grid; grid-template-columns: 1.25fr 1fr; gap: 7px; }
+  .actions button { min-height: 36px; font-size: 13px; }
+  #tip { min-height: 18px; line-height: 1.35; }
+</style>
+</head>
+<body>
+<div class="cs-wrap">
+  <div class="top-bar">
+    <h2>电梯体重秤</h2>
+    <span id="badge" class="badge over">超重 · F<sub>N</sub> &gt; mg</span>
+  </div>
+
+  <div class="stage-preview">
+    <canvas id="mini" width="224" height="236" aria-label="电梯与受力实时预监"></canvas>
+    <div class="readouts">
+      <div class="cs-muted">弹簧台秤视重示数</div>
+      <div class="scale-kg"><span id="kg">60.0</span><small>kg</small></div>
+      <div class="kv-grid">
+        <span>支持力 <b id="fn">600 N</b></span>
+        <span>重力 <b id="mg">500 N</b></span>
+        <span>加速度 <b id="av">+2.0 m/s²</b></span>
+        <span>速度 <b id="vv">+2.4 m/s</b></span>
+      </div>
+      <div class="eq-line" id="eq">F_N = m(g+a) = 50×(10+2.0) = 600 N</div>
+    </div>
+  </div>
+
+  <div class="dir-row">
+    <button id="dir-up" class="on" type="button">上行电梯 ↑</button>
+    <button id="dir-down" type="button">下行电梯 ↓</button>
+    <button id="toggle-run" type="button">暂停</button>
+  </div>
+
+  <div class="stages" role="group" aria-label="运动阶段快捷预设">
+    <button type="button" data-stage="start" class="on">启动</button>
+    <button type="button" data-stage="cruise">匀速</button>
+    <button type="button" data-stage="brake">制动</button>
+    <button type="button" data-stage="fall">自由落体</button>
+  </div>
+
+  <div class="cs-card sliders">
+    <div class="s-row">
+      <div class="s-head"><span>加速度 a（竖直向上为正）</span><output id="out-a">+2.0 m/s²</output></div>
+      <input id="sl-a" type="range" min="-10" max="6" step="0.5" value="2" aria-label="加速度">
+    </div>
+    <div class="s-row">
+      <div class="s-head"><span>乘客质量 m（取 g = 10 m/s²）</span><output id="out-m">50 kg</output></div>
+      <input id="sl-m" type="range" min="30" max="100" step="5" value="50" aria-label="质量">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-present" class="cs-primary" type="button">投到学生画面</button>
+    <button id="btn-board" type="button">读数写黑板</button>
+  </div>
+  <p id="tip" class="cs-muted">拖滑块或点阶段按钮，学生画面将实时同步电梯、秤盘和受力箭头。</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var G = 10;
+  var state = {
+    m: 50,
+    a: 2.0,
+    v: 1.5,
+    y: 0,
+    dir: 1,          // 1 上行，-1 下行
+    stage: 'start',  // start | cruise | brake | fall | custom
+    running: true,
+    t0: Date.now()
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var stageBtns = Array.prototype.slice.call(document.querySelectorAll('[data-stage]'));
+  var saveTimer = 0;
+
+  function fmtSign(n, d) {
+    var s = Number(n).toFixed(d == null ? 1 : d);
+    if (Number(s) === 0) return '0.0';
+    return (n > 0 ? '+' : '−') + Math.abs(Number(n)).toFixed(d == null ? 1 : d);
+  }
+
+  function statusInfo(a) {
+    if (a <= -G + 1e-6) return { html: '完全失重 · F<sub>N</sub> = 0', cls: 'free', short: '完全失重' };
+    if (a < -1e-6) return { html: '失重 · F<sub>N</sub> &lt; mg', cls: 'under', short: '失重' };
+    if (a > 1e-6) return { html: '超重 · F<sub>N</sub> &gt; mg', cls: 'over', short: '超重' };
+    return { html: '平衡 · F<sub>N</sub> = mg', cls: 'bal', short: '平衡' };
+  }
+
+  function setTip(msg) { $('tip').textContent = msg; }
+
+  function persist(immediate) {
+    state.t0 = Date.now();
+    var write = function () {
+      saveTimer = 0;
+      if (window.cs && cs.storage) {
+        cs.storage.set('state', state).catch(function (e) { setTip('同步失败：' + e.message); });
+      }
+    };
+    if (immediate) {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; }
+      write();
+    } else if (!saveTimer) {
+      saveTimer = setTimeout(write, 60);
+    }
+  }
+
+  function applyStage(stage) {
+    state.stage = stage;
+    state.running = true;
+    if (stage === 'start') {
+      state.a = state.dir > 0 ? 2.0 : -2.0;
+      state.v = state.dir * 0.6;
+    } else if (stage === 'cruise') {
+      state.a = 0;
+      state.v = state.dir * 3.0;
+    } else if (stage === 'brake') {
+      state.a = state.dir > 0 ? -2.0 : 2.0;
+      state.v = state.dir * 4.0;
+    } else if (stage === 'fall') {
+      state.a = -10.0;
+      state.v = -1.5;
+    }
+    $('sl-a').value = String(state.a);
+    persist(true);
+    renderUI();
+  }
+
+  function renderUI() {
+    var m = state.m, a = state.a, mg = m * G, fn = Math.max(0, m * (G + a));
+    var st = statusInfo(a);
+    var b = $('badge');
+    b.innerHTML = st.html;
+    b.className = 'badge ' + st.cls;
+    $('kg').textContent = (fn / G).toFixed(1);
+    $('fn').textContent = Math.round(fn) + ' N';
+    $('mg').textContent = Math.round(mg) + ' N';
+    $('av').textContent = fmtSign(a, 1) + ' m/s²';
+    $('vv').textContent = fmtSign(state.v, 1) + ' m/s';
+    $('out-a').textContent = fmtSign(a, 1) + ' m/s²';
+    $('out-m').textContent = m + ' kg';
+    var signA = a >= 0 ? '+ ' + a.toFixed(1) : '− ' + Math.abs(a).toFixed(1);
+    $('eq').innerHTML = 'F<sub>N</sub> = ' + m + '×(10 ' + signA + ') = ' + Math.round(fn) + ' N';
+
+    $('dir-up').classList.toggle('on', state.dir > 0);
+    $('dir-down').classList.toggle('on', state.dir < 0);
+    $('toggle-run').textContent = state.running ? '暂停' : '继续';
+    stageBtns.forEach(function (btn) {
+      btn.classList.toggle('on', btn.getAttribute('data-stage') === state.stage);
+    });
+  }
+
+  var cv = $('mini'), ctx = cv.getContext('2d');
+  function cssVar(name, fallback) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  }
+  function drawMini() {
+    var w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+    var fg = cssVar('--cs-fg', '#eef1f6');
+    var line = cssVar('--cs-line', '#2b313d');
+    var acc = cssVar('--cs-accent', '#3dd9eb');
+    var warn = cssVar('--cs-warn', '#ffb547');
+    var danger = cssVar('--cs-danger', '#ff5a52');
+    var m = state.m, a = state.a, fn = Math.max(0, m * (G + a)), mg = m * G;
+
+    // 井道与滚动层线
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 2;
+    for (var i = -2; i <= 4; i++) {
+      var fy = ((i * 46 + state.y * 14) % 276 + 276) % 276 - 20;
+      ctx.beginPath(); ctx.moveTo(8, fy); ctx.lineTo(132, fy); ctx.stroke();
+    }
+    // 轿厢
+    ctx.strokeStyle = acc; ctx.lineWidth = 3;
+    ctx.fillStyle = 'rgba(61,217,235,0.07)';
+    ctx.beginPath(); ctx.roundRect(22, 34, 96, 168, 10); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(70, 0); ctx.lineTo(70, 34); ctx.stroke();
+
+    // 台秤与弹簧
+    var comp = Math.min(0.75, fn / 1400);
+    var sh = 24 * (1 - comp * 0.65);
+    var plateY = 194 - sh;
+    ctx.strokeStyle = fg; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var k = 0; k <= 6; k++) {
+      var sx = 70 + (k > 0 && k < 6 ? (k % 2 ? -12 : 12) : 0);
+      var sy = 194 - sh * (k / 6);
+      if (k === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.fillStyle = acc;
+    ctx.fillRect(42, plateY - 5, 56, 5);
+
+    // 小人
+    var floatOff = fn <= 0.5 ? 6 : 0;
+    var py = plateY - 5 - floatOff;
+    ctx.fillStyle = warn;
+    ctx.beginPath(); ctx.arc(70, py - 76, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = fg; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(70, py - 63); ctx.lineTo(70, py - 30);
+    ctx.moveTo(52, py - 48); ctx.lineTo(70, py - 58); ctx.lineTo(88, py - 48);
+    ctx.moveTo(70, py - 30); ctx.lineTo(58, py - 3);
+    ctx.moveTo(70, py - 30); ctx.lineTo(82, py - 3);
+    ctx.stroke();
+
+    // 右侧受力对比箭头
+    var rx = 176, cy = 118, sc = 0.068;
+    ctx.fillStyle = line;
+    ctx.beginPath(); ctx.roundRect(rx - 14, cy - 14, 28, 28, 6); ctx.fill();
+    function arrow(x1, y1, x2, y2, col) {
+      var dy = y2 - y1; if (Math.abs(dy) < 4) return;
+      var s = dy > 0 ? 1 : -1;
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2 - s * 8); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 6, y2 - s * 10); ctx.lineTo(x2 + 6, y2 - s * 10); ctx.closePath(); ctx.fill();
+    }
+    if (fn > 1) arrow(rx, cy - 15, rx, Math.max(12, cy - 15 - fn * sc), a > 0 ? warn : acc);
+    arrow(rx, cy + 15, rx, Math.min(h - 12, cy + 15 + mg * sc), danger);
+  }
+
+  $('dir-up').onclick = function () {
+    state.dir = 1;
+    if (state.stage === 'start' || state.stage === 'cruise' || state.stage === 'brake') applyStage(state.stage);
+    else { state.v = Math.abs(state.v) || 1.5; persist(true); renderUI(); }
+  };
+  $('dir-down').onclick = function () {
+    state.dir = -1;
+    if (state.stage === 'start' || state.stage === 'cruise' || state.stage === 'brake') applyStage(state.stage);
+    else { state.v = -(Math.abs(state.v) || 1.5); persist(true); renderUI(); }
+  };
+  $('toggle-run').onclick = function () {
+    state.running = !state.running;
+    persist(true);
+    renderUI();
+  };
+
+  stageBtns.forEach(function (btn) {
+    btn.onclick = function () { applyStage(btn.getAttribute('data-stage')); };
+  });
+
+  $('sl-a').addEventListener('input', function () {
+    state.a = Number($('sl-a').value);
+    state.stage = state.a <= -G + 1e-6 ? 'fall' : 'custom';
+    state.running = true;
+    persist(false);
+    renderUI();
+  });
+  $('sl-a').addEventListener('change', function () { persist(true); });
+
+  $('sl-m').addEventListener('input', function () {
+    state.m = Number($('sl-m').value);
+    persist(false);
+    renderUI();
+  });
+  $('sl-m').addEventListener('change', function () { persist(true); });
+
+  $('btn-present').onclick = function () {
+    if (!window.cs || !cs.present) return;
+    cs.present.open('screen.html', { title: '电梯体重秤 · 超重与失重' }).then(function () {
+      persist(true);
+      setTip('已投到学生画面：拖滑块或切换阶段，学生端同步变化。');
+    }).catch(function (e) { setTip('投屏失败：' + e.message); });
+  };
+
+  $('btn-board').onclick = function () {
+    if (!window.cs || !cs.board) return;
+    var fn = Math.max(0, Math.round(state.m * (G + state.a)));
+    var st = statusInfo(state.a).short;
+    var line = '【电梯体重秤】m=' + state.m + ' kg，a=' + fmtSign(state.a, 1) + ' m/s² → F_N=' + fn + ' N（视重 ' + (fn / G).toFixed(1) + ' kg，' + st + '）';
+    cs.board.addText(line, { size: 'm', color: 'ink' }).then(function () {
+      setTip('已把当前受力与示数写到黑板。');
+      if (cs.ui && cs.ui.toast) cs.ui.toast('已写到黑板').catch(function () {});
+    }).catch(function (e) { setTip('写黑板失败：' + e.message); });
+  };
+
+  var lastTs = performance.now();
+  function tick(ts) {
+    var dt = Math.min(0.05, (ts - lastTs) / 1000);
+    lastTs = ts;
+    if (state.running) {
+      state.v = Math.max(-12, Math.min(12, state.v + state.a * dt));
+      state.y += state.v * dt;
+      $('vv').textContent = fmtSign(state.v, 1) + ' m/s';
+    }
+    drawMini();
+    requestAnimationFrame(tick);
+  }
+
+  if (window.cs && cs.storage) {
+    cs.storage.get('state').then(function (saved) {
+      if (saved && typeof saved === 'object') {
+        state = Object.assign(state, saved);
+        $('sl-a').value = String(state.a);
+        $('sl-m').value = String(state.m);
+      } else {
+        persist(true);
+      }
+      renderUI();
+    }).catch(function () { renderUI(); });
+  } else {
+    renderUI();
+  }
+  requestAnimationFrame(tick);
+
+  window.__elevatorPanel = {
+    getState: function () { return state; },
+    setStage: applyStage,
+    setDirection: function (d) { state.dir = d >= 0 ? 1 : -1; applyStage(state.stage === 'custom' ? 'start' : state.stage); },
+    setAccel: function (a) { state.a = a; $('sl-a').value = String(a); state.stage = a <= -G + 1e-6 ? 'fall' : 'custom'; persist(true); renderUI(); },
+    setMass: function (m) { state.m = m; $('sl-m').value = String(m); persist(true); renderUI(); }
+  };
+})();
+</script>
+</body>
+</html>

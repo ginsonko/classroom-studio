@@ -76,7 +76,7 @@ export function lessonFrom(a: LessonArgs, students: Student[], base?: LessonSlot
   const repeat = a.repeat_weekly === undefined ? base?.repeat ?? false : a.repeat_weekly === true || a.repeat_weekly === 'true';
   const topic = a.topic !== undefined ? String(a.topic).trim().slice(0, 60) : base?.topic ?? '';
   const g = students.find((s) => s.id === studentId && isGroup(s));
-  return { id: base?.id ?? newId(), studentId, date, day: (localDate(date).getDay() + 6) % 7, start: Math.round(start * 4) / 4, len: Math.round(len * 4) / 4, topic: topic || defaultTopic(g), repeat };
+  return { id: base?.id ?? newId(), studentId, date, day: (localDate(date).getDay() + 6) % 7, start: Math.round(start * 60) / 60, len: Math.round(len * 60) / 60, topic: topic || defaultTopic(g), repeat };
 }
 
 export function lessonText(s: LessonSlot, students: Student[]) {
@@ -167,4 +167,55 @@ export function signature(tools: unknown[]): string {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36) + '-' + tools.length;
+}
+
+export interface ExampleFilterable {
+  id: string;
+  skill?: string;
+  label: string;
+  one?: string;
+  formats?: string;
+  when?: string[];
+}
+
+const EXAMPLE_ALIASES: Record<string, string[]> = {
+  html: ['互动课件', '网页课件', 'h5', '动画', '仿真', '网页'],
+  ppt: ['讲课ppt', '幻灯片', '演示文稿'],
+  quiz: ['练习题', '练习', '刷题', '题库'],
+  homework: ['分层作业', '作业', '课后作业'],
+  test: ['测验卷', '测验', '试卷', '卷子', '小测', '考试'],
+  notes: ['课堂讲义', '讲义', '学案', '笔记'],
+  plan: ['教案', '教学设计', '备课流程'],
+  plugin: ['做插件', '插件', '小工具'],
+  free: ['自定义', '长图', '小游戏', '闯关'],
+};
+
+/** 按类型 id / 技能名 / 中文关键词过滤内置示例；无过滤条件或未命中具体类别时返回全部 */
+export function filterExamples<T extends ExampleFilterable>(items: T[], types?: unknown, kind?: unknown): T[] {
+  const raw: string[] = [];
+  if (Array.isArray(types)) raw.push(...types.map((x) => String(x ?? '')));
+  else if (types !== undefined && types !== null && types !== '') raw.push(...String(types).split(/[,，、\s]+/));
+  if (kind !== undefined && kind !== null && kind !== '') raw.push(...String(kind).split(/[,，、\s]+/));
+  const tokens = raw.map((s) => s.trim().toLowerCase()).filter((s) => s && s !== 'all' && s !== '全部' && s !== '所有');
+  if (!tokens.length) return items;
+  if (tokens.length === 1 && tokens[0] === '课件') {
+    const cw = items.filter((it) => ['html', 'ppt', 'notes'].includes(it.id));
+    if (cw.length) return cw;
+  }
+  const hit = items.filter((it) => {
+    const id = it.id.toLowerCase();
+    const skill = (it.skill ?? '').toLowerCase();
+    const label = it.label.toLowerCase().replace(/\s+/g, '');
+    const aliases = EXAMPLE_ALIASES[id] ?? [];
+    const hay = `${label} ${(it.one ?? '').toLowerCase()} ${(it.formats ?? '').toLowerCase()} ${(it.when ?? []).join(' ').toLowerCase()}`;
+    return tokens.some((q) =>
+      q === id ||
+      (skill && q === skill) ||
+      label.includes(q) ||
+      q.includes(label) ||
+      aliases.some((a) => a.includes(q) || q.includes(a)) ||
+      (q.length >= 2 && hay.includes(q))
+    );
+  });
+  return hit.length ? hit : items;
 }

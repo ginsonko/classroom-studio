@@ -48,6 +48,10 @@ export interface Host {
   onBus(handler: (message: unknown) => void): () => void;
   call<T = unknown>(method: string, value?: unknown): Promise<T>;
   onEvent(handler: (event: any) => void): () => void;
+  showcase?: {
+    manifest(): Promise<unknown>;
+    open(id: string | { id: string; index?: number }, index?: number): Promise<unknown>;
+  };
 }
 
 declare global { interface Window { csHost?: Host } }

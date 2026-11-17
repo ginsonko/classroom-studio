@@ -24,18 +24,22 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const WIDE = { w: 1600, h: 900 };
 
 // ── 主进程 AI 桥（Key 只存在主进程，用系统加密保存）──────────────────────
-export interface AiConfig { baseUrl: string; model: string; visionModel: string; hasKey: boolean; keyHint: string; encrypted: boolean }
-export interface ChatResult { content: string; model: string; ms: number; sawImage: boolean; finish?: string }
+export interface AiConfig { baseUrl: string; model: string; visionModel: string; hasKey: boolean; keyHint: string; encrypted: boolean; account?: { kind: string; site: string; name: string; username: string } | null; tested?: boolean; tierSite?: boolean }
+export interface ChatResult { content: string; model: string; ms: number; sawImage: boolean; finish?: string; tier?: string; lowRoute?: boolean; weakModel?: boolean }
+/** 「变笨了」的迹象（设计稿 D.3）：用的档位不是质量优先，并且站点回执说走了低评级线路，或者用的是已知偏弱的模型 */
+export const weakSign = (r: ChatResult) => (!r.tier || r.tier === 'quality' ? undefined : r.lowRoute ? '站点这次走的是低评级线路' : r.weakModel ? `这次用的是偏弱的模型 ${r.model}` : undefined);
 type Msg = { role: 'system' | 'user' | 'assistant'; content: string };
 
 export const ai = {
   config: () => host.call<AiConfig>('ai.getConfig'),
   save: (p: Partial<{ baseUrl: string; model: string; visionModel: string; key: string }>) => host.call<AiConfig>('ai.setConfig', p),
   models: () => host.call<string[]>('ai.models'),
-  test: (model?: string) => host.call<{ ok: boolean; model: string; ms: number; reply: string }>('ai.test', { model }),
+  /** 同时测 Codex（小羽、AI 工坊）要用的 /v1/responses；agentModel 不给时用 AI 工坊记住的 Codex 模型或文本模型 */
+  test: (model?: string, agentModel?: string) => host.call<{ ok: boolean; model: string; ms: number; reply: string; agent: { ok: boolean; model: string; ms?: number; message?: string } | null }>('ai.test', { model, agentModel: agentModel || localStorage.getItem('cs.agent.model.codex') || localStorage.getItem('cs.agent.model') || undefined }),
   screen: () => host.call<string>('ai.screen'),
   // feature 用于 AI 账本按用途分类。image / images 都是图片：学生画面 + 老师附上的照片、截图
-  chat: (messages: (Msg | AgentMsg)[], o: { image?: string; images?: string[]; json?: boolean; maxTokens?: number; temperature?: number; feature?: string; model?: string; timeout?: number } = {}) => host.call<ChatResult>('ai.chat', { messages, ...o }),
+  chat: (messages: (Msg | AgentMsg)[], o: { image?: string; images?: string[]; json?: boolean; maxTokens?: number; temperature?: number; feature?: string; model?: string; timeout?: number; reqId?: string } = {}) => host.call<ChatResult>('ai.chat', { messages, ...o }),
+  cancel: (reqId: string) => host.call<boolean>('ai.cancel', { reqId }),
 };
 
 /** 当前学生的学科（没选学生按物理） */
@@ -53,7 +57,7 @@ export interface AnimOut { kind: 'anim'; data: Explain; video: ManimResult }
 /** 课堂动画：本机动画引擎的片子规格（实时播放、导出 MP4） */
 export interface MotionOut { kind: 'motion'; spec: FilmSpec; sheet?: string; note: string; issues: string[]; checked: boolean; steps?: string[] }
 export type AiOut = DemoOut | ExplainOut | DrawOut | AskOut | AnimOut | MotionOut;
-export interface RunMeta { model?: string; ms?: number; image?: string; /** 附件文件名，存档和卡片上显示用 */ attach?: string[] }
+export interface RunMeta { model?: string; ms?: number; image?: string; /** 附件文件名，存档和卡片上显示用 */ attach?: string[]; /** 效果可能不好的原因：卡片下面提醒切到质量优先 */ weak?: string }
 export interface DemoGuess { preset: string; title: string; src: string }
 /** AI 没搭出可用演示。guess 是规则识别的猜测，只作为老师可选的备选项，不自动替换。 */
 export class DemoError extends Error {
@@ -94,7 +98,7 @@ function userMsg(prompt: string, subject: SubjectId): Msg[] { return [{ role: 's
 
 /** 跑一个动作。cfg 为空或没有 Key 时，只有「做成演示」能用规则兜底。
  *  image = 学生画面；images = 老师附上的图片；attach = 附件里文档抽出来的文字。 */
-export async function runAction(action: Action, text: string, o: { cfg: AiConfig | null; image?: string; images?: string[]; attach?: string; history?: Msg[]; onStep?: (t: string) => void; subject?: SubjectId; engine?: DemoEngine }): Promise<{ out: AiOut; meta: RunMeta }> {
+export async function runAction(action: Action, text: string, o: { cfg: AiConfig | null; image?: string; images?: string[]; attach?: string; history?: Msg[]; onStep?: (t: string) => void; subject?: SubjectId; engine?: DemoEngine; reqId?: string }): Promise<{ out: AiOut; meta: RunMeta }> {
   const subj = o.subject ?? subjectNow();
   const online = !!o.cfg?.hasKey && !!(o.cfg.model || o.cfg.visionModel);
   // 学生画面（image，卡片上做缩略图）+ 附件图片，一起发（顺序：学生画面在前，附件按老师给的顺序）
@@ -138,24 +142,24 @@ export async function runAction(action: Action, text: string, o: { cfg: AiConfig
 
   if (action === 'explain') {
     const subject = subj;
-    const r = await ai.chat(userMsg(explainPrompt(full, !!images.length, subject), subject), { images, json: true, maxTokens: 8000, temperature: 0.2, feature: 'AI 讲题', timeout: 8 * 60000 });
+    const r = await ai.chat(userMsg(explainPrompt(full, !!images.length, subject), subject), { images, json: true, maxTokens: 8000, temperature: 0.2, feature: 'AI 讲题', timeout: 8 * 60000, reqId: o.reqId });
     const data = parseExplain(r.content);
     if (!data) throw new Error('模型的讲解格式不对，请重试一次');
-    return { out: { kind: 'explain', data }, meta: { model: r.model, ms: r.ms, image } };
+    return { out: { kind: 'explain', data }, meta: { model: r.model, ms: r.ms, image, weak: weakSign(r) } };
   }
 
   if (action === 'draw') {
     const subject = subj;
-    const r = await ai.chat(userMsg(drawPrompt(full || packOf(subject).prompt.draw, !!images.length, subject), subject), { images, json: true, maxTokens: 10000, temperature: 0.2, feature: 'AI 画图', timeout: 8 * 60000 });
+    const r = await ai.chat(userMsg(drawPrompt(full || packOf(subject).prompt.draw, !!images.length, subject), subject), { images, json: true, maxTokens: 10000, temperature: 0.2, feature: 'AI 画图', timeout: 8 * 60000, reqId: o.reqId });
     const d = parseDraw(r.content, uid);
     if (!d) throw new Error('模型没有给出可以画的图元，请换个说法再试');
     const mat: Material = { id: 'board-ai-' + uid(), kind: 'board', title: 'AI 板书 · ' + d.title, pages: [{ ...WIDE }], total: 1 };
-    return { out: { kind: 'draw', mat, strokes: d.strokes, issues: d.issues }, meta: { model: r.model, ms: r.ms, image } };
+    return { out: { kind: 'draw', mat, strokes: d.strokes, issues: d.issues }, meta: { model: r.model, ms: r.ms, image, weak: weakSign(r) } };
   }
 
   const msgs: Msg[] = [{ role: 'system', content: systemOf(subj) }, ...(o.history ?? []).slice(-8), { role: 'user', content: full || '请看学生当前的画面，告诉我这是什么题，关键点在哪里。' }];
-  const r = await ai.chat(msgs, { images, maxTokens: 6000, temperature: 0.4, feature: 'AI 问答', timeout: 5 * 60000 });
-  return { out: { kind: 'ask', text: r.content }, meta: { model: r.model, ms: r.ms, image } };
+  const r = await ai.chat(msgs, { images, maxTokens: 6000, temperature: 0.4, feature: 'AI 问答', timeout: 5 * 60000, reqId: o.reqId });
+  return { out: { kind: 'ask', text: r.content }, meta: { model: r.model, ms: r.ms, image, weak: weakSign(r) } };
 }
 
 /** 数学 / 化学：从演示目录里挑一个并填参数（模型优先，失败或没配模型时按关键词）。shot = 学生画面（卡片缩略图用） */

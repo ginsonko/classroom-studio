@@ -115,6 +115,7 @@ ${o.mastery || '（还没有记录）'}
 1. segments：把整节课切成几段，kind 只能是 lecture（讲解）/ example（例题讲解）/ practice（学生做题）/ explain（学生讲思路）/ qa（答疑）/ chat（闲聊、调试设备），每段有起止秒数 t0、t1、一句话 title 和涉及的知识点 points。
 2. questions：每道出现过的题（屏幕上的题，或者老师口头出的题）一项：
    - ref：对应上面的 Q 编号或 A 编号，都对不上填 null；对不上时 stem 写题目内容（尽量完整，公式用 LaTeX，$...$ 包起来）。
+   - tag：一句话说这道题练什么（6~16 个字，说考点和做法，不抄题干，比如「电梯超重失重判断」）。
    - t0、t1：这道题从出现到讲完的秒数。
    - mode：student_solo = 学生自己做（老师没给关键提示）；guided = 老师提示、追问下学生做出来；teacher_demo = 老师讲 / 演示，学生只是听、或跟着答一两个字。
    - result：right / wrong / half / none（看不出来就 none）。
@@ -125,12 +126,12 @@ ${o.mastery || '（还没有记录）'}
    - evidence：1–3 句原话作为证据，t 是秒数，who 是 teacher / student，text 照抄原话。没有原话证据就别下结论（result 填 none，conf 填 0）。
    - who：${o.group ? `原话里点名了是哪位同学（比如“${o.members[0] ?? '小李'}你来说”）就写名字，否则写 null，不要猜` : '写 null'}。
    - points：知识点 key（只能从下面的清单里选，最多 3 个）。
-3. 汇总：points 给出这节课涉及的每个知识点 key、学生这节课的 level（0–10）、和课前比的 trend（up / down / same），why 一句话理由；summary 用两三句话说这节课讲了什么、学生表现怎样；stuck 列出学生卡住的地方（每条一句话）；todo 列出老师课上口头布置、要下次做的事（比如“这个下节课再练一次”），每条有 text 和 t；quotes 摘两三句最能体现学生掌握情况的学生原话（t、text）。
+3. 汇总：points 给出这节课涉及的每个知识点 key、学生这节课的 level（0–10）、和课前比的 trend（up / down / same），why 一句话理由；summary 用两三句话积极、具体地说这节课讲了哪些题和内容（讲了几道就写几道，不要只挑一两道）、学生做到了什么、哪里有进步（不要写「不能证明」「无法判断」「证据不足」这类话，拿不准的放到 stuck 或不写）；stuck 列出学生卡住的地方（每条一句话）；todo 列出老师课上口头布置、要下次做的事（比如“这个下节课再练一次”），每条有 text 和 t；quotes 摘两三句最能体现学生掌握情况的学生原话（t、text）。
 
 知识点清单（key 名称）：
 ${o.points}
 
-只输出 JSON：{"segments":[{"t0":0,"t1":300,"kind":"lecture","title":"…","points":["…"]}],"questions":[{"ref":"Q1","stem":"","t0":0,"t1":0,"mode":"guided","who":null,"result":"right","level":6,"conf":0.8,"hints":1,"selfFixed":false,"misconception":"","evidence":[{"t":0,"who":"student","text":"…"}],"points":["…"]}],"points":[{"key":"…","level":6,"trend":"up","why":"…"}],"summary":"…","stuck":["…"],"todo":[{"text":"…","t":0}],"quotes":[{"t":0,"text":"…"}]}`;
+只输出 JSON：{"segments":[{"t0":0,"t1":300,"kind":"lecture","title":"…","points":["…"]}],"questions":[{"ref":"Q1","stem":"","tag":"…","t0":0,"t1":0,"mode":"guided","who":null,"result":"right","level":6,"conf":0.8,"hints":1,"selfFixed":false,"misconception":"","evidence":[{"t":0,"who":"student","text":"…"}],"points":["…"]}],"points":[{"key":"…","level":6,"trend":"up","why":"…"}],"summary":"…","stuck":["…"],"todo":[{"text":"…","t":0}],"quotes":[{"t":0,"text":"…"}]}`;
 }
 
 export type Mode = 'student_solo' | 'guided' | 'teacher_demo';
@@ -139,7 +140,7 @@ export const SEG_NAME: Record<SegKind, string> = { lecture: '讲解', example: '
 export const MODE_NAME: Record<Mode, string> = { student_solo: '自己做的', guided: '提示下做的', teacher_demo: '老师讲的' };
 export interface FineSeg { t0: number; t1: number; kind: SegKind; title: string; points: string[] }
 export interface FineItem {
-  ref: string | null; stem: string; t0: number; t1: number; mode: Mode; who: string | null;
+  ref: string | null; stem: string; tag?: string; t0: number; t1: number; mode: Mode; who: string | null;
   result: Result | null; level: number | null; conf: number; hints: number | null; selfFixed: boolean;
   misconception: string; evidence: Evidence[]; points: string[];
 }
@@ -173,7 +174,7 @@ export function parseFine(v: unknown, o: { duration: number; valid: Set<string>;
     const evidence = arr(x.evidence).slice(0, 3).map((e0) => { const e = obj(e0); return { t: T(e.t), who: e.who === 'teacher' || e.who === 'student' ? String(e.who) : 'unknown', text: str(e.text, 120) }; }).filter((e) => e.text);
     const conf = Math.max(0, Math.min(1, num(x.conf) ?? 0)), hints = num(x.hints);
     items.push({
-      ref, stem, t0, t1, mode, who: typeof x.who === 'string' && x.who.trim() && !/^(null|无|没有)$/i.test(x.who.trim()) ? str(x.who, 20) : null,
+      ref, stem, tag: str(x.tag, 24) || undefined, t0, t1, mode, who: typeof x.who === 'string' && x.who.trim() && !/^(null|无|没有)$/i.test(x.who.trim()) ? str(x.who, 20) : null,
       result: res === 'right' || res === 'wrong' || res === 'half' ? res : null, level: mode === 'teacher_demo' ? null : lvl(x.level),
       conf: evidence.length ? conf : Math.min(conf, 0.4), hints: hints === null ? null : Math.max(0, Math.min(20, Math.round(hints))), selfFixed: x.selfFixed === true,
       misconception: str(x.misconception, 120), evidence, points: keys(x.points),

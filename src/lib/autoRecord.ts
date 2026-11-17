@@ -5,24 +5,37 @@ import { isDefaultTopic } from './groups';
 import type { LessonSlot, Student } from './types';
 
 export interface AutoRecordSettings {
-  start: boolean;       // 到上课时间自动开始录像
-  lead: number;         // 提前几分钟开始（0 / 2 / 5 / 10）
-  stopAfter: number;    // 下课后多少分钟还在录就自动下课；0 = 不自动下课
+  /** 设置的版本：2 = 1.7.0 起「到点提醒、不自动开」 */
+  v: number;
+  start: boolean;       // 按课表提醒上课（autoStart 打开时直接倒计时开始）
+  /** 1.7.0：到点直接 10 秒倒计时开始录像（原来的做法），默认关 = 只弹「要开始上课吗？」 */
+  autoStart: boolean;
+  lead: number;         // 提前几分钟提醒 / 开始（0–10，默认 0 = 准时）
+  stopAfter: number;    // 自动下课：下课后多少分钟还在录就自动下课（只在 autoStop 打开时用）
+  /** 1.7.0：到点自动下课（原来的做法），默认关 = 到下课时间只提醒 */
+  autoStop: boolean;
   idle: boolean;        // 长时间没声音也没操作时提醒下课
   idleMinutes: number;
   adhoc: boolean;       // 没排课时，老师在学生画面上连续操作也提示录像
   sound: boolean;       // 提醒时响一声
+  /** 学生窗口角落显示「开始上课 / 下课」按钮和课堂计时 */
+  stageButton: boolean;
 }
-// 默认提前 5 分钟：课表按刻钟对齐，实际上课常比课表早几分钟
-export const DEFAULT_AUTO_RECORD: AutoRecordSettings = { start: true, lead: 5, stopAfter: 15, idle: true, idleMinutes: 20, adhoc: false, sound: false };
-export const LEADS = [0, 2, 5, 10], STOP_AFTER = [0, 15, 30, 45, 60], IDLE_MINUTES = [10, 20, 30, 45];
+// 1.7.0：默认准时提醒、不自动开也不自动下课（王老师：提前自动开课不准时，要问一声，不点就不开始）
+export const DEFAULT_AUTO_RECORD: AutoRecordSettings = { v: 2, start: true, autoStart: false, lead: 0, stopAfter: 15, autoStop: false, idle: true, idleMinutes: 20, adhoc: false, sound: false, stageButton: true };
+export const LEADS = [0, 1, 2, 3, 5, 10], STOP_AFTER = [0, 15, 30, 45, 60], IDLE_MINUTES = [10, 20, 30, 45];
+/** 「稍后再提醒」 */
+export const SNOOZE = 5 * 60000;
 export function cleanAutoRecord(v: unknown): AutoRecordSettings {
   const o = (v && typeof v === 'object' ? v : {}) as Partial<AutoRecordSettings>, d = DEFAULT_AUTO_RECORD;
-  const b = (k: 'start' | 'idle' | 'adhoc' | 'sound') => (typeof o[k] === 'boolean' ? o[k] as boolean : d[k]);
-  const pick = (k: 'lead' | 'stopAfter' | 'idleMinutes', list: number[]) => (list.includes(Number(o[k])) ? Number(o[k]) : d[k]);
+  const b = (k: 'start' | 'idle' | 'adhoc' | 'sound' | 'autoStart' | 'autoStop' | 'stageButton') => (typeof o[k] === 'boolean' ? o[k] as boolean : d[k]);
+  const pick = (k: 'idleMinutes', list: number[]) => (list.includes(Number(o[k])) ? Number(o[k]) : d[k]);
   // 下课后多久自动关也可以自定义：5–240 分钟
   const stop = Number(o.stopAfter), stopAfter = Number.isInteger(stop) && (stop === 0 || (stop >= 5 && stop <= 240)) ? stop : d.stopAfter;
-  return { start: b('start'), lead: pick('lead', LEADS), stopAfter, idle: b('idle'), idleMinutes: pick('idleMinutes', IDLE_MINUTES), adhoc: b('adhoc'), sound: b('sound') };
+  // 1.6.0 存下的设置（没有 v）：当时默认提前 5 分钟自动开、下课 15 分钟自动关；按 1.7.0 的新默认改成准时提醒
+  if (o.v !== 2) return { ...d, start: b('start'), stopAfter, idle: b('idle'), idleMinutes: pick('idleMinutes', IDLE_MINUTES), adhoc: b('adhoc'), sound: b('sound') };
+  const lead = Math.round(Number(o.lead));
+  return { v: 2, start: b('start'), autoStart: b('autoStart'), lead: lead >= 0 && lead <= 10 ? lead : d.lead, stopAfter, autoStop: b('autoStop'), idle: b('idle'), idleMinutes: pick('idleMinutes', IDLE_MINUTES), adhoc: b('adhoc'), sound: b('sound'), stageButton: b('stageButton') };
 }
 
 /** 课表上具体的一次课（某一天的那一节），时间是毫秒时间戳 */
@@ -62,8 +75,10 @@ export function lessonsAround(now: number, slots: LessonSlot[], students: Studen
 export interface AutoRecordState {
   /** 老师点了「这节不录」、或者这节已经录过下课了的课：不再自动开 */
   skipped: string[];
-  /** 正在倒计时的那节课和倒计时开始的时刻 */
+  /** 正在倒计时（或正在问「要开始上课吗？」）的那节课和开始的时刻 */
   armed?: { key: string; at: number; mode: 'start' | 'next' };
+  /** 「稍后 5 分钟再提醒」：这件事（某节课的开始，或 stop:<课> 的下课提醒）到这个时刻前不再提醒 */
+  snooze?: { key: string; until: number };
   /** 已经发出开始 / 换下一节的指令，等录像状态跟上（免得每秒发一次） */
   pending?: { key: string; at: number; mode: 'start' | 'stop' };
   /** 正在录的这段录像对应的课（没对上课表就是空） */
@@ -102,10 +117,11 @@ export interface AutoRecordInput {
   activeSince: number;
 }
 
+/** deadline 为空 = 只是提醒，老师不点就不动（1.7.0 默认）；有 deadline = 倒计时到了自动做 */
 export type AutoCard =
-  | { kind: 'start'; lesson: Lesson; deadline: number; late: boolean }
-  | { kind: 'next'; lesson: Lesson; from?: Lesson; deadline: number }
-  | { kind: 'stop'; reason: 'schedule' | 'idle'; deadline: number; lesson?: Lesson }
+  | { kind: 'start'; lesson: Lesson; deadline?: number; late: boolean }
+  | { kind: 'next'; lesson: Lesson; from?: Lesson; deadline?: number }
+  | { kind: 'stop'; reason: 'schedule' | 'idle'; deadline?: number; lesson?: Lesson }
   | { kind: 'adhoc' };
 export type AutoAction =
   | { type: 'start'; lesson: Lesson }
@@ -134,13 +150,15 @@ export function stepAutoRecord(prev: AutoRecordState, i: AutoRecordInput): { sta
   if (s.wasLive && !i.live) {
     if (s.current) s.skipped = keep(s.skipped, s.current);
     // 连堂换下一节时中间会有一下「已保存」：开下一节的指令还在路上，留着它，免得又倒计时开一次
-    s = { skipped: s.skipped, wasLive: false, adhocDone: s.adhocDone, pending: s.pending?.mode === 'start' ? s.pending : undefined };
+    s = { skipped: s.skipped, wasLive: false, adhocDone: s.adhocDone, pending: s.pending?.mode === 'start' ? s.pending : undefined, snooze: s.snooze && !s.snooze.key.startsWith('stop:') ? s.snooze : undefined };
   }
   s.wasLive = i.live;
   // 自动开始（含连堂换下一节）的录像本来就知道是哪节课，不必再按开始时间去对
   const startedFor = s.pending?.mode === 'start' && i.live && s.recStartedAt !== i.recStartedAt && find(s.pending.key)?.studentId === i.recStudentId ? s.pending.key : undefined;
   if (s.pending && (now - s.pending.at > 30000 || (i.live && s.recStartedAt !== i.recStartedAt))) s.pending = undefined;
   if (s.pending) return { state: s, card: null, actions };
+  if (s.snooze && now >= s.snooze.until) s.snooze = undefined;
+  const snoozed = (key: string) => s.snooze?.key === key && now < s.snooze.until;
 
   if (i.live) {
     s.armed = s.armed?.mode === 'next' ? s.armed : undefined;
@@ -155,11 +173,17 @@ export function stepAutoRecord(prev: AutoRecordState, i: AutoRecordInput): { sta
       const c = cur, after = lessons.find((l) => l.key !== c.key && l.studentId === c.studentId && l.start >= c.end - 5 * MIN && l.start <= c.end + 5 * MIN && now >= l.start - set.lead * MIN);
       if (after && !s.skipped.includes(after.key)) { s.skipped = keep(s.skipped, c.key); s.current = after.key; s.extendTo = undefined; s.ended = undefined; s.warned = undefined; cur = after; }
     }
-    const stopAt = s.extendTo ?? (cur && set.stopAfter > 0 ? cur.end + set.stopAfter * MIN : Infinity);
+    // 自动下课：下课后 stopAfter 分钟；只提醒（默认）：准时在下课时间提醒
+    const stopAt = s.extendTo ?? (cur ? (set.autoStop ? (set.stopAfter > 0 ? cur.end + set.stopAfter * MIN : Infinity) : cur.end) : Infinity);
 
     // 连堂：下一位学生的课到点了，先存这一节再开下一节
     if (cur && set.start) {
-      const c = cur, next = lessons.find((l) => l.key !== c.key && l.studentId !== c.studentId && l.start >= c.end - 10 * MIN && l.start < stopAt && now >= l.start && now < l.end - TOO_LATE && !s.skipped.includes(l.key));
+      const c = cur, nextBy = set.autoStop ? stopAt : Infinity, next = lessons.find((l) => l.key !== c.key && l.studentId !== c.studentId && l.start >= c.end - 10 * MIN && l.start < nextBy && now >= l.start && now < l.end - TOO_LATE && !s.skipped.includes(l.key));
+      if (next && !set.autoStart) {
+        if (snoozed(next.key)) return { state: s, card: null, actions };
+        if (s.armed?.key !== next.key) { s.armed = { key: next.key, at: now, mode: 'next' }; actions.push({ type: 'notice', text: `「${next.name}」到上课时间了：要保存这一节、开始上「${next.name}」的课吗？`, os: true }); }
+        return { state: s, card: { kind: 'next', lesson: next, from: c }, actions };
+      }
       if (next) {
         if (s.armed?.key !== next.key) { s.armed = { key: next.key, at: now, mode: 'next' }; actions.push({ type: 'notice', text: `连堂：${COUNTDOWN / 1000} 秒后保存这一节，开始录「${next.name}」`, os: true }); }
         const deadline = s.armed.at + COUNTDOWN;
@@ -169,12 +193,19 @@ export function stepAutoRecord(prev: AutoRecordState, i: AutoRecordInput): { sta
     }
     s.armed = undefined;
 
-    if (cur && now >= cur.end && s.ended !== cur.key) { s.ended = cur.key; actions.push({ type: 'notice', text: `已到「${cur.name}」的下课时间，录像还在继续` }); }
+    if (cur && now >= cur.end && s.ended !== cur.key && set.autoStop) { s.ended = cur.key; actions.push({ type: 'notice', text: `已到「${cur.name}」的下课时间，录像还在继续` }); }
 
     // 冷场：麦克风和系统声音都几乎没声音，学生画面上也没操作
     const idleAt = set.idle && i.hasAudio ? Math.max(i.recStartedAt ?? 0, i.lastSound, i.lastActivity, s.idleBase ?? 0) + set.idleMinutes * MIN : Infinity;
     const reason: 'schedule' | 'idle' = idleAt < stopAt ? 'idle' : 'schedule', at = Math.min(stopAt, idleAt);
     if (at === Infinity) return { state: s, card: null, actions };
+    // 只提醒：到点弹「要下课吗？」，不点就一直录（可以稍后再提醒、再上 15 分钟）
+    if (!set.autoStop) {
+      const sk = 'stop:' + (s.current ?? '') + ':' + reason;
+      if (now < at || snoozed(sk)) return { state: s, card: null, actions };
+      if (s.warned !== at) { s.warned = at; actions.push({ type: 'notice', text: reason === 'idle' ? `已经 ${set.idleMinutes} 分钟没有声音和操作了，要下课吗？` : `${cur ? `「${cur.name}」` : ''}到下课时间了，要下课并保存录像吗？`, os: true }); }
+      return { state: s, card: { kind: 'stop', reason, lesson: cur }, actions };
+    }
     if (now >= at) {
       s.pending = { key: s.current ?? '', at: now, mode: 'stop' };
       actions.push({ type: 'stop', reason });
@@ -190,8 +221,14 @@ export function stepAutoRecord(prev: AutoRecordState, i: AutoRecordInput): { sta
   // 没在录：到点了就倒计时开始
   s.current = undefined; s.recStartedAt = undefined;
   if (set.start) {
+    // 「课前在学生画面上写字就提前开」只在自动开始时用；只提醒时严格按设的时间（准时），免得提前弹
     const due = lessons.find((l) => !s.skipped.includes(l.key) && now < l.end - TOO_LATE
-      && (now >= l.start - set.lead * MIN || (now >= l.start - EARLY_ACTIVITY && i.lastActivity >= l.start - EARLY_ACTIVITY && now - i.lastActivity < MIN)));
+      && (now >= l.start - set.lead * MIN || (set.autoStart && now >= l.start - EARLY_ACTIVITY && i.lastActivity >= l.start - EARLY_ACTIVITY && now - i.lastActivity < MIN)));
+    if (due && !set.autoStart) {
+      if (snoozed(due.key)) return { state: s, card: null, actions };
+      if (s.armed?.key !== due.key) { s.armed = { key: due.key, at: now, mode: 'start' }; actions.push({ type: 'notice', text: `「${due.name}」到上课时间了，要开始上课吗？`, os: true }); }
+      return { state: s, card: { kind: 'start', lesson: due, late: now > due.start + MIN }, actions };
+    }
     if (due) {
       if (s.armed?.key !== due.key) { s.armed = { key: due.key, at: now, mode: 'start' }; actions.push({ type: 'notice', text: `${COUNTDOWN / 1000} 秒后开始为「${due.name}」录像`, os: true }); }
       const deadline = s.armed.at + COUNTDOWN;
@@ -211,11 +248,16 @@ export function stepAutoRecord(prev: AutoRecordState, i: AutoRecordInput): { sta
   return { state: s, card: null, actions };
 }
 
+/** 「稍后 5 分钟再提醒」：开始上课的提醒按这节课记，下课提醒按 stop:<课>:<原因> 记 */
+export function snoozeCard(s: AutoRecordState, now: number, card: AutoCard): AutoRecordState {
+  const key = card.kind === 'stop' ? 'stop:' + (s.current ?? '') + ':' + card.reason : card.kind === 'adhoc' ? 'adhoc' : card.lesson.key;
+  return { ...s, snooze: { key, until: now + SNOOZE }, armed: undefined, warned: undefined };
+}
 /** 「这节不录」：倒计时取消，这节课不再提示 */
 export function skipLesson(s: AutoRecordState, key: string): AutoRecordState { return { ...s, skipped: keep(s.skipped, key), armed: undefined }; }
 /** 「再录 15 分钟」：按课表的自动下课往后推；冷场的话从现在重新计时（不动课表的下课时间） */
-export function extendStop(s: AutoRecordState, now: number, card: { reason: 'schedule' | 'idle'; deadline: number }): AutoRecordState {
-  return { ...s, ...(card.reason === 'schedule' ? { extendTo: Math.max(card.deadline, now) + EXTEND } : {}), idleBase: now, warned: undefined };
+export function extendStop(s: AutoRecordState, now: number, card: { reason: 'schedule' | 'idle'; deadline?: number }): AutoRecordState {
+  return { ...s, ...(card.reason === 'schedule' ? { extendTo: Math.max(card.deadline ?? now, now) + EXTEND } : {}), idleBase: now, warned: undefined, snooze: undefined };
 }
 /** 没排课的提示点了「不用」或「开始」 */
 export function dismissAdhoc(s: AutoRecordState, now: number): AutoRecordState { return { ...s, adhocAt: undefined, adhocDone: now }; }

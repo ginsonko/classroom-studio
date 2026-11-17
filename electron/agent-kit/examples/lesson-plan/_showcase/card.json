@@ -1,0 +1,30 @@
+{
+  "id": "plan",
+  "skill": "lesson-plan",
+  "label": "教案",
+  "one": "60 分钟一对一网课逐环节实战教案：带比例时间轴、提问与追问原话、导播台切换节点和三栏板书设计图。",
+  "highlights": [
+    "60 分钟拆成 6 个严丝合缝的课堂环节并绘出彩色比例时间轴，告别笼统的「新授 30 分钟」套话",
+    "每一步都写好老师怎么提问、学生直觉会怎么错（如「往上升就超重」）、用哪句话追问点醒、第几分钟切仿真插件",
+    "附结构树与 16:9 课堂黑板三栏板书布局图，外加学得快拔高临界、学得慢保底单体的双套应变预案，拿来就能照着上"
+  ],
+  "when": ["一对一新课备课", "公开课与试听课打磨", "青年教师教研说课"],
+  "formats": "A4 PDF + 可编辑 Word（含时间轴图与三栏板书布局图）",
+  "cost": "约 5 分钟 · 约 ¥0.5 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "lesson-plan/_showcase/shot-1.webp",
+      "lesson-plan/_showcase/shot-2.webp",
+      "lesson-plan/_showcase/shot-3.webp",
+      "lesson-plan/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    { "label": "60 分钟一对一实战教案（PDF）", "file": "lesson-plan/_showcase/超重与失重-教案.pdf", "kind": "pdf" },
+    { "label": "60 分钟一对一实战教案（Word 可改）", "file": "lesson-plan/_showcase/超重与失重-教案.docx", "kind": "docx" }
+  ],
+  "styleRef": [
+    "lesson-plan/超重与失重-教案.md"
+  ]
+}

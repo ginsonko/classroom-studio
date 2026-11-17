@@ -1,0 +1,44 @@
+{
+  "id": "free",
+  "skill": "custom",
+  "label": "自定义",
+  "one": "不止上面八种固定模板：考后错题诊断长图、经典模型速查网、物理闯关小游戏，直接说想法就能做。",
+  "highlights": [
+    "学情诊断信息长图：五维能力雷达 + 失分归因环 + 三周提分路线，排版精致，发给家长一眼看懂",
+    "学科模型速查网页：12 个高一力学必考模型配离线公式、受力图解、分类搜索与「遮住公式自测」",
+    "知识点闯关小游戏：太空电梯三关特训（状态快判、推力控重、软着陆驾驶），把易错点变成学生抢着玩的实验"
+  ],
+  "when": ["月考后一对一学情诊断发家长", "章节公式模型速查整理", "公开课互动闯关与课后拓展"],
+  "formats": "高清长图 PNG / 单文件互动 HTML / 可玩小游戏",
+  "cost": "约 5～8 分钟 · 约 ¥0.6～1.2 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "custom/_showcase/shot-1.webp",
+      "custom/_showcase/shot-2.webp",
+      "custom/_showcase/shot-3.webp"
+    ]
+  },
+  "full": [
+    {
+      "label": "月考错题归因与提分路线分析长图",
+      "file": "custom/_showcase/月考错题归因与提分路线分析长图.png",
+      "kind": "png"
+    },
+    {
+      "label": "高一力学经典模型速查网页",
+      "file": "custom/_showcase/高一力学经典模型速查网页.html",
+      "kind": "html"
+    },
+    {
+      "label": "超重与失重·太空电梯闯关小游戏",
+      "file": "custom/_showcase/超重与失重·太空电梯闯关小游戏.html",
+      "kind": "html"
+    }
+  ],
+  "styleRef": [
+    "custom/月考错题归因与提分路线分析长图.html",
+    "custom/高一力学经典模型速查网页.html",
+    "custom/超重与失重·太空电梯闯关小游戏.html"
+  ]
+}

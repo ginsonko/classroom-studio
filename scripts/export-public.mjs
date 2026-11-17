@@ -36,7 +36,7 @@ const copy = (rel) => {
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.copyFileSync(src, dst);
   count++;
-  if (st.size < 4 * 1048576 && !/\.(png|jpe?g|ico|icns|woff2?|ttf|wasm)$/i.test(rel)) {
+  if (st.size < 4 * 1048576 && !/\.(png|jpe?g|webp|gif|mp4|webm|pdf|pptx|docx|zip|ico|icns|woff2?|ttf|wasm)$/i.test(rel)) {
     const text = fs.readFileSync(src, 'utf8');
     for (const [re, what] of LEAKS) if (re.test(text)) found.push(`${rel}：${what}（${text.match(re)[0].slice(0, 40)}）`);
   }
@@ -44,11 +44,11 @@ const copy = (rel) => {
 for (const rel of INCLUDE) copy(rel);
 // 软件读 raw.githubusercontent.com/…/main/mirrors.json 作为加速代理名单的备用源
 const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const mirrors = path.resolve(root, '../release/dist-' + version, 'mirrors.json');
+const mirrors = path.resolve(process.env.CS_RELEASE_OUT || path.join(root, '../release/dist-' + version), 'mirrors.json');
 if (fs.existsSync(mirrors)) { fs.copyFileSync(mirrors, path.join(target, 'mirrors.json')); count++; }
 else console.warn('没找到 ' + mirrors + '，公开仓库的 mirrors.json 不会更新');
 fs.writeFileSync(path.join(target, '.gitignore'), GITIGNORE);
-fs.writeFileSync(path.join(target, '.gitattributes'), '* text=auto eol=lf\n*.png binary\n*.ico binary\n*.icns binary\n*.wasm binary\n');
+fs.writeFileSync(path.join(target, '.gitattributes'), '* text=auto eol=lf\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.webp binary\n*.mp4 binary\n*.webm binary\n*.pdf binary\n*.pptx binary\n*.docx binary\n*.zip binary\n*.ico binary\n*.icns binary\n*.wasm binary\n');
 
 console.log(`已复制 ${count} 个文件到 ${target}`);
 if (found.length) { console.error('发现疑似泄露，请处理后再公开：\n  ' + found.join('\n  ')); process.exit(1); }

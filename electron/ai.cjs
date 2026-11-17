@@ -5,12 +5,15 @@ const fs = require('fs');
 const path = require('path');
 const { safeStorage, shell, clipboard, dialog, BrowserWindow } = require('electron');
 const { receive, ImportError } = require('./importLink.cjs');
+const tier = require('./tier.cjs');
+const netRetry = require('./netRetry.cjs');
 
 const DEFAULT_BASE = 'https://api.yinziapi.top/v1';
 const SITE = 'https://yinziapi.top/';
 const TIMEOUT = 120000;
 const MAX_TIMEOUT = 15 * 60000;
 const modelCache = new Map();
+const CLASS_AI = /^(课堂 AI|AI 讲题|AI 画图|AI 问答|AI 演示|AI 立体演示|课堂动画|manim|手写公式)/;
 
 /** 每次调用的超时：页面可以指定（夹在 10 秒 ~ 15 分钟）；没指定时按输出上限估（推理模型写长内容要好几分钟） */
 function timeoutOf(value) {
@@ -55,9 +58,55 @@ function publicConfig(cfg) {
     visionModel: cfg.visionModel || '',
     imageModel: cfg.imageModel || '',
     hasKey: !!cfg.key && !!readKey(cfg),
-    keyHint: cfg.hint || '',
+    // 玲珑账号 / 合作站账号登录后自动建的专用 Key：页面上不显示尾号，只显示是哪个账号管的
+    keyHint: cfg.account ? '' : cfg.hint || '',
     encrypted: cfg.enc === 'safe',
+    account: cfg.account || null,
+    tested: !!cfg.key && cfg.tested === cfg.hint,
+    tierSite: tier.applies(cfg.baseUrl || DEFAULT_BASE),
   };
+}
+
+/** 这把 Key 测通过了：记下尾号，换了 Key 就不算 */
+function markTested(dataDir, cfg = load(dataDir)) { if (cfg.key && cfg.tested !== cfg.hint) { cfg.tested = cfg.hint; save(dataDir, cfg); } }
+
+/** 账号登录后：专用 Key 写进 AI 设置（Key 只在主进程），记下是哪个账号管的 */
+function setAccountKey(dataDir, { baseUrl, key, account }) {
+  const cfg = load(dataDir);
+  // 老师原来自己配的连接（一键导入、手填）先收起来，退出账号时原样放回去
+  if (!cfg.account && cfg.key) cfg.prev = Object.fromEntries(['baseUrl', 'key', 'enc', 'hint', 'model', 'visionModel', 'imageModel', 'tested'].filter((k) => cfg[k] !== undefined).map((k) => [k, cfg[k]]));
+  const sameSite = cfg.baseUrl && cleanBase(cfg.baseUrl) === cleanBase(baseUrl);
+  cfg.baseUrl = cleanBase(baseUrl);
+  writeKey(cfg, key);
+  cfg.account = account;
+  delete cfg.tested;
+  // 换了站点：原来的模型名多半对不上，清掉让页面按新 Key 的模型列表重新挑
+  if (!sameSite) { cfg.model = ''; cfg.visionModel = ''; cfg.imageModel = ''; }
+  save(dataDir, cfg);
+  modelCache.delete(cfg.baseUrl);
+  return publicConfig(cfg);
+}
+/** 退出账号：账号管的那把 Key 从 AI 设置里拿掉（站点上的 Key 不动），登录前老师自己配的连接放回去 */
+function clearAccountKey(dataDir) {
+  const cfg = load(dataDir);
+  if (!cfg.account) return publicConfig(cfg);
+  writeKey(cfg, ''); delete cfg.account; delete cfg.tested;
+  const prev = cfg.prev; delete cfg.prev;
+  if (prev) Object.assign(cfg, prev);
+  save(dataDir, cfg);
+  modelCache.clear();
+  return publicConfig(cfg);
+}
+/**
+ * 启动时判断「有没有一把测通过的 Key」：测过的直接算；1.7.0 以前配的 Key 没测过记录，免费读一次模型列表（不扣费），
+ * 读通了就补记。Key 无效（401/403）算没有；网络不通时不知道，按有算（别在断网时拦老师）。
+ */
+async function keyUsable(dataDir) {
+  const cfg = load(dataDir);
+  if (!cfg.key || !readKey(cfg)) return false;
+  if (cfg.tested === cfg.hint) return true;
+  try { await request(cfg, '/models', { method: 'GET' }, 8000); markTested(dataDir, cfg); return true; }
+  catch (e) { return !(e.status === 401 || e.status === 403); }
 }
 
 function cleanBase(u) {
@@ -71,6 +120,8 @@ function explain(status, body) {
   let msg = '';
   try { const j = JSON.parse(body); msg = j?.error?.message || j?.message || j?.msg || ''; } catch { msg = String(body || '').slice(0, 200); }
   const tail = msg ? `（服务返回：${String(msg).slice(0, 200)}）` : '';
+  if (/no eligible|未包含可用线路|没有可用线路|无可用渠道|no available channel|没有分组/i.test(msg)) return '这把 Key 的分组里没有这个模型能用的线路（请在站点给 Key 勾上对应分组，或重新点「站点一键导入」）' + tail;
+  if (/insufficient|余额不足|额度不足|quota|欠费/i.test(msg) || status === 402) return '账户余额或额度不足，请到站点充值' + tail;
   if (status === 401 || status === 403) return 'API Key 无效、过期或没有这个模型的权限' + tail;
   if (status === 404) return '接口地址或模型名不对' + tail;
   if (status === 429) return '请求太频繁或额度不足，稍后再试' + tail;
@@ -79,33 +130,46 @@ function explain(status, body) {
   return 'AI 请求失败（' + status + '）' + tail;
 }
 
+/**
+ * init.tier：这次请求的档位（只有银子 API 系站点的文字接口会带上 X-Route-Scope）。档位里没有能用的线路时站点不扣费，
+ * 这里按 Key 自己的范围再发一次：档位是偏好，不能因为它让请求失败。抛出的错误带 status / body，收费闸要看。
+ */
 async function request(cfg, pathname, init = {}, timeout = TIMEOUT) {
   const key = readKey(cfg);
   if (!key) throw new Error('还没有填写 API Key：在 AI 面板右上角的「设置」里填写');
+  const { tier: tierId, signal, ...rest } = init;
+  const url = cleanBase(cfg.baseUrl) + pathname;
+  // 站点请求头（来源 + 档位）统一由 tier.siteHeaders 判断：我们站点和合作站带，第三方不带
+  const scoped = tier.siteHeaders(url, tierId);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
+  // 老师点了停止 / 关掉了面板：外面的 signal 一取消，这次请求立刻断开，也不再重试
+  const cancel = () => ctl.abort();
+  if (signal?.aborted) throw netRetry.abortErrorOf();
+  signal?.addEventListener?.('abort', cancel, { once: true });
+  const go = (extra) => fetch(url, { ...rest, signal: ctl.signal, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', ...extra, ...(rest.headers || {}) } });
   try {
-    const res = await fetch(cleanBase(cfg.baseUrl) + pathname, {
-      ...init,
-      signal: ctl.signal,
-      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', ...(init.headers || {}) },
+    const res = await tier.sendWithScopeFallback((extra) => go(extra), {
+      scoped, url, who: 'classroom-ai', allow503: true, log: rest.log,
     });
-    // 中转站（new-api）的请求 ID：对账时用它在站点消费记录里找到这一笔
+    // 中转站（new-api）的请求 ID：对账时用它在站点消费记录里找到这一笔；X-Route-Scope-Applied：站点这次实际用的线路范围
     const rid = res.headers.get('x-oneapi-request-id') || res.headers.get('x-request-id') || '';
-    const tag = (j) => { if (rid && j && typeof j === 'object') Object.defineProperty(j, '__rid', { value: rid, enumerable: false }); return j; };
+    const applied = res.headers.get(tier.APPLIED) || '';
+    const tag = (j) => { if (j && typeof j === 'object') { if (rid) Object.defineProperty(j, '__rid', { value: rid, enumerable: false }); if (applied) Object.defineProperty(j, '__applied', { value: applied, enumerable: false }); } return j; };
     if (res.ok && /event-stream/i.test(res.headers.get('content-type') || '')) return tag(await readStream(res));
     const text = await res.text();
-    if (!res.ok) throw new Error(explain(res.status, text));
+    if (!res.ok) throw Object.assign(new Error(explain(res.status, text)), { status: res.status, body: text.slice(0, 2000) });
     let j;
     try { j = JSON.parse(text); } catch { throw new Error('AI 服务返回的不是 JSON：' + text.slice(0, 120)); }
     return tag(j);
   } catch (e) {
+    if (signal?.aborted) throw netRetry.abortErrorOf();
     if (e && e.name === 'AbortError') throw new Error('AI 响应超时（' + Math.round(timeout / 1000) + ' 秒），可以换个更快的模型或稍后重试');
-    if (e instanceof TypeError || /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|UND_ERR/i.test(String(e && (e.cause?.code || e.message)))) {
-      throw new Error('连不上 AI 服务：' + (e.cause?.code || e.message) + '。请检查网络和接口地址');
+    if (e instanceof TypeError || /fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ECONNABORTED|EAI_AGAIN|EPIPE|socket hang up|terminated|UND_ERR/i.test(String(e && (e.cause?.code || e.code || e.message)))) {
+      throw Object.assign(new Error('连不上 AI 服务：' + (e.cause?.code || e.code || e.message) + '。请检查网络和接口地址'), { code: e.cause?.code || e.code || '' });
     }
     throw e;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); signal?.removeEventListener?.('abort', cancel); }
 }
 
 /** 流式回复（SSE）拼回和非流式一样的结构：{ model, choices:[{ message, finish_reason }], usage } */
@@ -166,7 +230,7 @@ function sanitizeMessages(list) {
   });
 }
 
-async function chat(cfg, value, windows) {
+async function chat(cfg, value, windows, tierId = '', opts = {}) {
   const messages = sanitizeMessages(value?.messages);
   // 一次可以带多张图：学生画面 + 老师粘进来的题目照片 / 截图（顺序按老师给的来）
   const images = [];
@@ -190,15 +254,12 @@ async function chat(cfg, value, windows) {
   // 长调用用流式：中转站 / CDN 对长时间没有数据的连接会断开（常见 100 秒），流式时推理过程也在持续传数据
   if (value?.stream ?? timeout > TIMEOUT) { body.stream = true; body.stream_options = { include_usage: true }; }
   const t0 = Date.now();
-  // 网关偶尔断连（实测见过 UND_ERR_SOCKET）或 502/503/504：隔两秒重试一次，老师不用自己再点
-  const post = async () => {
-    try { return await request(cfg, '/chat/completions', { method: 'POST', body: JSON.stringify(body) }, timeout); }
-    catch (e) {
-      if (!/连不上 AI 服务|暂时出错（50[234]）/.test(String(e.message))) throw e;
-      await new Promise((ok) => setTimeout(ok, 2000));
-      return request(cfg, '/chat/completions', { method: 'POST', body: JSON.stringify(body) }, timeout);
-    }
-  };
+  // 网关偶尔断连（实测见过 UND_ERR_SOCKET）、DNS 抖动、流中途断开或 502/503/504：按 1s、2s、4s、8s、15s 递增等待自动重试，最多 5 次；
+  // 「没有可用分组 / 渠道」不在这里重试（request 里已经去掉档位头重发过一次），余额不足、Key 不对、内容拦截这些确定性错误也不重试
+  const post = () => netRetry.retry(
+    () => request(cfg, '/chat/completions', { method: 'POST', body: JSON.stringify(body), tier: tierId, signal: opts.signal }, timeout),
+    { signal: opts.signal, delays: opts.delays, onRetry: opts.onRetry },
+  );
   let r;
   try { r = await post(); }
   catch (e) {
@@ -216,7 +277,17 @@ async function chat(cfg, value, windows) {
     : Array.isArray(choice?.message?.content) ? choice.message.content.map((c) => c.text || '').join('') : '';
   if (process.env.CS_AI_DUMP) dump(body, choice, r.usage, Date.now() - t0);
   if (!content) throw new Error(choice?.finish_reason === 'length' ? '模型的回答太长被截断了（还没写出内容就到了长度上限），请重试' : '模型没有返回内容' + (choice?.finish_reason ? '（' + choice.finish_reason + '）' : ''));
-  return { content, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, sawImage: shots.length > 0, finish: choice?.finish_reason || '', rid: r.__rid || '' };
+  const applied = r.__applied || '';
+  return { content, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, sawImage: shots.length > 0, finish: choice?.finish_reason || '', rid: r.__rid || '', tier: tierId && tier.applies(cfg.baseUrl || DEFAULT_BASE) ? tierId : '', lowRoute: tier.lowRoute(applied), weakModel: tier.weakModel(r.model || model) };
+}
+
+/** 试一次 Codex 实际用的接口（/responses，同一模型），只要几个字的回答 */
+async function probeResponses(cfg, model) {
+  const t0 = Date.now();
+  const r = await request(cfg, '/responses', { method: 'POST', body: JSON.stringify({ model, input: '只回复两个字：在线', max_output_tokens: 16, store: false }) }, 60000);
+  if (r?.error) throw new Error('AI 服务出错：' + String(r.error.message || JSON.stringify(r.error)).slice(0, 300));
+  const text = typeof r?.output_text === 'string' ? r.output_text : (Array.isArray(r?.output) ? r.output : []).flatMap((o) => (Array.isArray(o?.content) ? o.content : [])).map((c) => c?.text || '').join('');
+  return { content: text, model: r?.model || model, ms: Date.now() - t0, usage: r?.usage || null, rid: r?.__rid || '' };
 }
 
 // 没指定生图模型时，从服务的模型列表里按这个顺序挑第一个有的
@@ -236,14 +307,25 @@ async function pickImageModel(cfg) {
 }
 
 /** 文生图（OpenAI 兼容 /images/generations）。结果统一成 data: 地址，插件页面和黑板都能直接用 */
-async function image(cfg, value) {
+async function image(cfg, value, gate) {
   const prompt = String(value?.prompt || '').trim().slice(0, 4000);
   if (!prompt) throw new Error('请写清楚要画什么');
   const model = String(value?.model || cfg.imageModel || await pickImageModel(cfg)).trim();
   if (!model) throw new Error('当前 AI 服务里没有找到生图模型。可以在 AI 设置里填写生图模型名');
   const size = /^\d{3,4}x\d{3,4}$/.test(String(value?.size || '')) ? value.size : '1024x1024';
   const t0 = Date.now();
-  const r = await request(cfg, '/images/generations', { method: 'POST', body: JSON.stringify({ model, prompt, size, n: 1 }) }, 5 * 60000);
+  const body = { model, prompt, size, n: 1 };
+  const send = (headers) => request(cfg, '/images/generations', { method: 'POST', body: JSON.stringify(body), headers }, 5 * 60000);
+  let r, quoted = null;
+  // 玲珑商业账号：先报价、老师确认（工坊任务在自己的上限内不问），再带着报价提交
+  if (gate?.covers(cfg.baseUrl || DEFAULT_BASE)) {
+    const out = await gate.run({ mode: 'images', fields: body, ctx: { feature: String(value?.feature || ''), taskId: value?.taskId || '' } }, async (headers) => {
+      try { return { status: 200, value: await send(headers) }; }
+      catch (e) { if (e.status) return { status: e.status, text: e.body, error: e }; throw e; }
+    });
+    if (out.value.error) throw out.value.error;
+    r = out.value.value; quoted = out.cny;
+  } else r = await send({});
   const d = Array.isArray(r?.data) ? r.data[0] : null;
   let url = d?.b64_json ? 'data:image/png;base64,' + d.b64_json : String(d?.url || '');
   if (/^https?:/i.test(url)) {
@@ -254,7 +336,7 @@ async function image(cfg, value) {
     url = 'data:' + (res.headers.get('content-type') || 'image/png').split(';')[0] + ';base64,' + buf.toString('base64');
   }
   if (!url.startsWith('data:image/')) throw new Error('生图服务没有返回图片');
-  return { image: url, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, content: '', rid: r.__rid || '', revised: String(d?.revised_prompt || '') };
+  return { image: url, model: r.model || model, ms: Date.now() - t0, usage: r.usage || null, content: '', rid: r.__rid || '', revised: String(d?.revised_prompt || ''), quoted };
 }
 
 /** 实测用：CS_AI_DUMP=目录 时把请求（图片换成占位）和回复原文存下来，方便核对提示词效果。不含 Key。 */
@@ -273,18 +355,21 @@ function usageOf(u) {
   return { input: Math.max(0, prompt - cached), cached, output: Number(u.completion_tokens ?? u.output_tokens) || 0 };
 }
 
-async function metered(ledger, feature, fn, reconciler) {
+async function metered(ledger, feature, fn, reconciler, extra = {}) {
   ledger?.check();
   const r = await fn();
   if (ledger) {
     const u = usageOf(r.usage);
-    // 网关没返回用量时按字数粗估，宁可多记不漏记
-    const e = ledger.record({ source: 'chat', feature, model: r.model, usage: u ?? { input: 1500, output: Math.ceil(String(r.content || '').length * 1.2) }, rid: r.rid });
+    // 网关没返回用量时按字数粗估，宁可多记不漏记；玲珑账号画图按站点报价（就是实扣）记
+    const e = ledger.record({ source: 'chat', feature, model: r.model, usage: u ?? { input: 1500, output: Math.ceil(String(r.content || '').length * 1.2) }, rid: r.rid, ...(r.quoted != null ? { cny: r.quoted } : {}), ...(extra.taskId ? { taskId: extra.taskId } : {}) });
     r.cny = e.cny;
     if (r.rid) reconciler?.soon();
   }
   return r;
 }
+
+// 正在进行的课堂 AI 请求：reqId → AbortController
+const running = new Map();
 
 async function handle(method, value, ctx) {
   const { dataDir, windows, ledger, reconciler } = ctx;
@@ -298,6 +383,8 @@ async function handle(method, value, ctx) {
       if (v.visionModel !== undefined) cfg.visionModel = String(v.visionModel).trim().slice(0, 120);
       if (v.imageModel !== undefined) cfg.imageModel = String(v.imageModel).trim().slice(0, 120);
       if (v.key !== undefined) writeKey(cfg, String(v.key).trim());
+      // 老师自己改了地址或 Key：这个连接就归老师自己管了，不再算账号的
+      if ((v.key !== undefined && String(v.key).trim()) || (v.baseUrl !== undefined && cfg.account && !tier.applies(cfg.baseUrl))) { delete cfg.account; delete cfg.prev; }
       save(dataDir, cfg);
       return publicConfig(cfg);
     }
@@ -323,7 +410,7 @@ async function handle(method, value, ctx) {
       }
       if (!p.key && !cfg.key) throw new Error('这个导入只包含模型设置，但本机还没有 Key。请在网站勾选「同时导入密钥」后重新导入。');
       if (p.baseUrl) cfg.baseUrl = cleanBase(p.baseUrl);
-      if (p.key) writeKey(cfg, p.key);
+      if (p.key) { writeKey(cfg, p.key); delete cfg.account; delete cfg.prev; }
       // 覆盖模式：没勾选的项目清空；合并模式：只改勾选的
       if (p.mode === 'replace') { cfg.model = p.text || ''; cfg.visionModel = p.vision && p.vision !== p.text ? p.vision : ''; }
       else {
@@ -353,10 +440,40 @@ async function handle(method, value, ctx) {
     }
     case 'ai.test': {
       const r = await metered(ledger, '连接测试', () => chat(cfg, { messages: [{ role: 'user', content: '只回复两个字：在线' }], maxTokens: 20, model: value?.model }, windows), reconciler);
-      return { ok: true, model: r.model, ms: r.ms, reply: r.content.slice(0, 40) };
+      // 小羽和 AI 工坊（Codex）走的是 /v1/responses：同一把 Key 聊天通、这条不通的情况很常见（Key 的分组里没有对应线路），一起测
+      const agentModel = String(value?.agentModel || value?.model || cfg.model || '').trim();
+      let agent = null;
+      if (value?.agent !== false && agentModel) {
+        try { const a = await metered(ledger, '连接测试', () => probeResponses(cfg, agentModel), reconciler); agent = { ok: true, model: a.model, ms: a.ms }; }
+        catch (e) { agent = { ok: false, model: agentModel, message: String(e.message || e).slice(0, 600) }; }
+      }
+      markTested(dataDir);
+      return { ok: true, model: r.model, ms: r.ms, reply: r.content.slice(0, 40), agent };
     }
-    case 'ai.chat': return metered(ledger, String(value?.feature || '课堂 AI').slice(0, 40), () => chat(cfg, value, windows), reconciler);
-    case 'ai.image': return metered(ledger, String(value?.feature || 'AI 生图').slice(0, 40), () => image(cfg, value), reconciler);
+    // use：chat（小羽和课堂 AI）/ workshop / background（课后总结、录像分析这些软件自己在后台发的）；value.tier 可以临时指定。
+    // 没说用途时按功能名分：课堂上老师当场点的 AI（讲题、画板书、问答、演示、动画、公式识别）算课堂 AI，其余算后台
+    case 'ai.chat': {
+      const use = tier.USES[value?.use] ? value.use : CLASS_AI.test(String(value?.feature || '课堂 AI')) ? 'chat' : 'background';
+      const t = ctx.tiers ? (tier.IDS.includes(value?.tier) ? value.tier : ctx.tiers.get(use)) : '';
+      // reqId：页面可以用 ai.cancel 取消这次请求（连同还在等的自动重试）；重试时发 aiRetry 事件，页面显示「网络波动，正在自动重连（第 n/5 次）…」
+      const reqId = String(value?.reqId || '').slice(0, 80);
+      const ctl = new AbortController();
+      if (reqId) running.set(reqId, ctl);
+      const feature = String(value?.feature || '课堂 AI').slice(0, 40);
+      const onRetry = ({ attempt, max, wait, error }) => {
+        ctx.log?.info?.('课堂 AI 自动重连', feature, attempt + '/' + max, String(error?.message || '').slice(0, 120));
+        ctx.emit?.('aiRetry', { reqId, feature, attempt, max, wait, message: netRetry.retryText(attempt, max) });
+      };
+      try { return await metered(ledger, feature, () => chat(cfg, value, windows, t, { signal: ctl.signal, onRetry }), reconciler); }
+      catch (e) { if (ctl.signal.aborted) throw new Error('已取消'); throw e; }
+      finally { if (reqId) running.delete(reqId); }
+    }
+    case 'ai.cancel': { const c = running.get(String(value?.reqId ?? value ?? '')); if (c) c.abort(); return !!c; }
+    // 「帮我查查」：免费自检，不调用任何付费模型
+    case 'ai.diagnose': return require('./diagnose.cjs').diagnose({ cfg: { ...publicConfig(cfg), keyHint: cfg.hint || '' }, key: readKey(cfg), account: ctx.account, tiers: ctx.tiers, codexHome: ctx.codexHome, fetch: ctx.fetch });
+    case 'ai.image': return metered(ledger, String(value?.feature || 'AI 生图').slice(0, 40), () => image(cfg, value, ctx.gate), reconciler, { taskId: value?.taskId });
+    case 'ai.tiers': return ctx.tiers ? ctx.tiers.view(cfg.baseUrl || DEFAULT_BASE) : null;
+    case 'ai.setTier': if (!ctx.tiers) throw new Error('档位不可用'); ctx.tiers.set(String(value?.use || ''), String(value?.tier || '')); ctx.onTier?.(value); return ctx.tiers.view(cfg.baseUrl || DEFAULT_BASE);
     case 'ai.ledger': return ledger ? ledger.summary() : null;
     // 动手前估个价：看图的部分按看图模型、文字部分按文字模型，套账本里的价格表
     case 'ai.estimate': {
@@ -408,8 +525,10 @@ async function offerImport(input, dataDir) {
 
 /** 只给主进程里的后台任务用：Key 不经过任何页面 */
 function credentials(dataDir) {
+  // 真实 AI 测试：Key 由测试进程在内存里读出后经环境变量给进来，测试数据目录里不放含 Key 的 ai.json
+  if (process.env.CS_TEST === '1' && process.env.CS_TEST_RELAY_KEY) return { baseUrl: cleanBase(process.env.CS_TEST_RELAY_BASE), model: process.env.CS_TEST_RELAY_MODEL || '', key: process.env.CS_TEST_RELAY_KEY };
   const cfg = load(dataDir);
   return { baseUrl: cleanBase(cfg.baseUrl), model: cfg.model || '', key: readKey(cfg) };
 }
 
-module.exports = { handle, credentials, offerImport, DEFAULT_BASE };
+module.exports = { handle, credentials, offerImport, setAccountKey, clearAccountKey, keyUsable, markTested, publicConfig: (dataDir) => publicConfig(load(dataDir)), DEFAULT_BASE, load, readKey, explain, _test: { chat, request } };

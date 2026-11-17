@@ -1,0 +1,191 @@
+/* 最强网课教辅系统 · 课件设计包 cs-deck 1.0
+   页面按 1280×720 设计，横屏时整体等比缩放铺满窗口；手机竖屏自动改成上下滑动的长页。
+   三套风格：<body data-style="clean | dark | hand">，主题色 <body style="--accent:#2f6fd6">。 */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  --accent: #2f6fd6; --accent-2: #e07a2e; --ok: #1f9d55; --bad: #d64545; --warn: #c27a12;
+  --bg: #f4f6fb; --page: #ffffff; --ink: #1c2433; --ink-2: #4a5568; --ink-3: #8a94a6; --line: #dde3ee;
+  --soft: color-mix(in srgb, var(--accent) 9%, var(--page)); --soft-2: color-mix(in srgb, var(--accent-2) 12%, var(--page));
+  --radius: 18px; --shadow: 0 10px 30px rgba(30, 50, 90, .10);
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-title: var(--font);
+  background: var(--bg); color: var(--ink); font-family: var(--font); -webkit-text-size-adjust: 100%;
+}
+body[data-style="dark"] {
+  --accent: #5ab0ff; --accent-2: #ffb454; --ok: #3ddc84; --bad: #ff6b6b; --warn: #ffc857;
+  --bg: #070b14; --page: #0f1626; --ink: #eef3ff; --ink-2: #b7c3da; --ink-3: #7d8aa5; --line: #25324d;
+  --soft: color-mix(in srgb, var(--accent) 14%, var(--page)); --soft-2: color-mix(in srgb, var(--accent-2) 14%, var(--page));
+  --shadow: 0 12px 36px rgba(0, 0, 0, .45);
+}
+body[data-style="hand"] {
+  --accent: #2b59c3; --accent-2: #d9480f; --ok: #2b8a3e; --bad: #c92a2a; --warn: #e67700;
+  --bg: #e9e4d8; --page: #fffdf6; --ink: #22252b; --ink-2: #4b4f58; --ink-3: #8d8a80; --line: #d8d1bf;
+  --radius: 14px; --shadow: 3px 4px 0 rgba(40, 40, 40, .18);
+  --font-title: "Kaiti SC", "STKaiti", "KaiTi", "楷体", var(--font);
+}
+
+/* ── 舞台与页面 ── */
+.cs-deck { position: fixed; inset: 0; overflow: hidden; }
+.cs-stage { position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px; transform-origin: 0 0; }
+.cs-page {
+  position: absolute; inset: 0; display: none; flex-direction: column; overflow: hidden;
+  padding: 56px 72px 64px; background: var(--page); border-radius: 0; font-size: 26px; line-height: 1.6;
+}
+.cs-page.on { display: flex; animation: cs-in .35s ease both; }
+@keyframes cs-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+body[data-style="hand"] .cs-page {
+  background-color: var(--page);
+  background-image: linear-gradient(rgba(60, 90, 160, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 90, 160, .07) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+body[data-style="dark"] .cs-page { background: radial-gradient(1200px 600px at 85% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%), var(--page); }
+.cs-page h1, .cs-page h2, .cs-page h3 { font-family: var(--font-title); margin: 0; line-height: 1.25; }
+.cs-page h2 { flex: none; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; font-size: 42px; color: var(--ink); }
+.cs-page h2::before { content: ''; flex: none; width: 10px; height: 38px; border-radius: 5px; background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+body[data-style="hand"] .cs-page h2::before { width: 26px; height: 26px; border-radius: 50%; background: none; border: 4px solid var(--accent-2); }
+.cs-page h3 { font-size: 30px; margin: 10px 0 8px; color: var(--accent); }
+.cs-page p { margin: 8px 0; }
+.cs-page b, .cs-page strong { color: var(--accent); }
+.cs-page .cs-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+
+/* 封面 */
+.cs-cover { justify-content: center; align-items: flex-start; padding: 80px 110px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #0b1630)); color: #fff; }
+.cs-cover h1 { font-size: 76px; letter-spacing: .03em; margin-bottom: 18px; }
+.cs-cover .cs-sub { font-size: 30px; opacity: .88; }
+.cs-cover .cs-meta { margin-top: 40px; display: flex; gap: 12px; flex-wrap: wrap; }
+.cs-cover .cs-meta span { padding: 6px 18px; border-radius: 999px; background: rgba(255, 255, 255, .16); font-size: 22px; }
+.cs-cover::after { content: ''; position: absolute; right: -140px; bottom: -180px; width: 560px; height: 560px; border-radius: 50%; background: rgba(255, 255, 255, .08); }
+.cs-cover b, .cs-cover strong { color: #fff; }
+body[data-style="hand"] .cs-cover { background: var(--page); color: var(--ink); background-image: linear-gradient(rgba(60, 90, 160, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(60, 90, 160, .07) 1px, transparent 1px); background-size: 32px 32px; }
+body[data-style="hand"] .cs-cover h1 { color: var(--accent); }
+body[data-style="hand"] .cs-cover .cs-meta span { background: var(--soft-2); }
+body[data-style="dark"] .cs-cover { background: radial-gradient(900px 500px at 80% 20%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), #060a12; }
+
+/* ── 排版组件 ── */
+.cs-cols { display: grid; grid-template-columns: var(--cols, 1fr 1fr); gap: 28px; flex: 1; min-height: 0; align-items: start; }
+.cs-cols.wide-left { grid-template-columns: 1.4fr 1fr; } .cs-cols.wide-right { grid-template-columns: 1fr 1.4fr; }
+.cs-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.cs-card { padding: 20px 24px; border-radius: var(--radius); background: var(--page); border: 2px solid var(--line); box-shadow: var(--shadow); }
+.cs-card > h3:first-child { margin-top: 0; }
+.cs-key { padding: 16px 22px; border-radius: var(--radius); background: var(--soft); border-left: 8px solid var(--accent); }
+.cs-note { padding: 12px 18px; border-radius: 12px; background: var(--soft-2); color: var(--ink); }
+.cs-warn { padding: 12px 18px; border-radius: 12px; background: color-mix(in srgb, var(--bad) 10%, var(--page)); border-left: 8px solid var(--bad); }
+.cs-warn::before { content: '易错'; margin-right: 10px; padding: 2px 10px; border-radius: 6px; background: var(--bad); color: #fff; font-size: .78em; font-weight: 700; }
+.cs-formula { align-self: center; margin: 6px auto; padding: 10px 28px; border-radius: var(--radius); background: var(--page); border: 2px solid color-mix(in srgb, var(--accent) 40%, var(--line)); font-size: 1.15em; box-shadow: var(--shadow); max-width: 100%; overflow-x: auto; }
+.cs-tag { display: inline-block; padding: 2px 14px; border-radius: 999px; background: var(--soft); color: var(--accent); font-size: .8em; font-weight: 700; }
+.cs-big { font-size: 1.4em; font-weight: 700; }
+.cs-muted { color: var(--ink-3); }
+.cs-figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.cs-figure img, .cs-figure svg, .cs-figure canvas { max-width: 100%; border-radius: 12px; }
+.cs-figure figcaption { font-size: .78em; color: var(--ink-3); }
+.cs-list { margin: 6px 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.cs-list > li { position: relative; padding-left: 34px; }
+.cs-list > li::before { content: ''; position: absolute; left: 6px; top: .55em; width: 14px; height: 14px; border-radius: 4px; background: var(--accent); transform: rotate(45deg); }
+.cs-table { border-collapse: collapse; font-size: .9em; margin: 6px 0; }
+.cs-table th, .cs-table td { padding: 8px 16px; border: 2px solid var(--line); text-align: center; }
+.cs-table th { background: var(--soft); color: var(--accent); }
+body[data-style="hand"] .cs-card, body[data-style="hand"] .cs-formula, body[data-style="hand"] .cs-key { border: 2.5px solid var(--ink); border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
+
+/* ── 分步出现：.cs-step 一次点击出现一个（同页顺序 = 文档顺序，或 data-step 指定次序） ── */
+.cs-step { transition: opacity .35s ease, transform .35s ease; }
+.cs-step.cs-hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
+
+/* ── 控件：按钮、滑块、仿真面板 ── */
+.cs-btn { appearance: none; border: 0; cursor: pointer; padding: 10px 22px; border-radius: 12px; background: var(--accent); color: #fff; font: 600 22px/1.2 var(--font); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); }
+.cs-btn.ghost { background: var(--soft); color: var(--accent); box-shadow: none; }
+.cs-btn:active { transform: translateY(1px); }
+.cs-btn:disabled { opacity: .45; cursor: default; }
+.cs-controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; padding: 14px 18px; border-radius: var(--radius); background: var(--soft); }
+.cs-slider { display: grid; grid-template-columns: auto minmax(160px, 1fr) auto; align-items: center; gap: 12px; min-width: 320px; font-size: 22px; }
+.cs-slider input[type="range"] { width: 100%; accent-color: var(--accent); height: 30px; }
+.cs-slider output { min-width: 5.5em; padding: 2px 10px; border-radius: 8px; background: var(--page); color: var(--accent); font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.cs-readout { display: inline-flex; gap: 8px; align-items: baseline; padding: 6px 14px; border-radius: 10px; background: var(--page); border: 2px solid var(--line); font-variant-numeric: tabular-nums; }
+.cs-readout b { font-size: 1.15em; }
+.cs-sim { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.cs-sim canvas { flex: 1; min-height: 0; width: 100%; border-radius: var(--radius); background: color-mix(in srgb, var(--page) 92%, var(--accent)); touch-action: none; }
+body[data-style="dark"] .cs-sim canvas { background: #0a101d; }
+
+/* ── 点选题 ── */
+.cs-quiz { padding: 16px 22px; border-radius: var(--radius); border: 2px solid var(--line); background: var(--page); }
+.cs-quiz .cs-q { margin: 0 0 10px; font-weight: 600; }
+.cs-quiz .cs-opts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cs-quiz .cs-opts.one-col { grid-template-columns: 1fr; }
+.cs-quiz .cs-opts li { position: relative; cursor: pointer; padding: 10px 16px 10px 58px; border-radius: 12px; border: 2px solid var(--line); background: var(--page); transition: border-color .2s, background .2s; }
+.cs-quiz .cs-opts li::before { content: attr(data-key); position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); color: var(--accent); font-weight: 700; font-size: 20px; }
+.cs-quiz .cs-opts li:hover { border-color: var(--accent); }
+.cs-quiz .cs-opts li.picked { border-color: var(--accent); background: var(--soft); }
+.cs-quiz .cs-opts li.right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--page)); }
+.cs-quiz .cs-opts li.right::before { content: '✓'; background: var(--ok); color: #fff; }
+.cs-quiz .cs-opts li.wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--page)); }
+.cs-quiz .cs-opts li.wrong::before { content: '✗'; background: var(--bad); color: #fff; }
+.cs-quiz .cs-explain { display: none; margin: 12px 0 0; padding: 10px 16px; border-radius: 12px; background: var(--soft); font-size: .9em; }
+.cs-quiz.done .cs-explain { display: block; animation: cs-in .3s ease both; }
+.cs-quiz .cs-verdict { font-weight: 700; margin-right: 8px; }
+.cs-quiz .cs-verdict.ok { color: var(--ok); } .cs-quiz .cs-verdict.no { color: var(--bad); }
+.cs-quiz .cs-submit { margin-top: 10px; }
+.cs-score { font-size: 1.2em; font-weight: 700; color: var(--accent); }
+
+/* ── 时间轴：<ol class="cs-timeline"><li data-time="0–5′"><b>回顾</b> …</li></ol> ── */
+.cs-timeline { list-style: none; margin: 0; padding: 0 0 0 150px; position: relative; display: flex; flex-direction: column; gap: 14px; }
+.cs-timeline::before { content: ''; position: absolute; left: 128px; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+.cs-timeline li { position: relative; }
+.cs-timeline li::before { content: attr(data-time); position: absolute; left: -150px; width: 110px; text-align: right; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cs-timeline li::after { content: ''; position: absolute; left: -30px; top: .45em; width: 16px; height: 16px; border-radius: 50%; background: var(--page); border: 4px solid var(--accent); }
+/* 比例时间条：<div class="cs-timebar"><span data-min="5">回顾</span>…</div>，宽度按分钟数自动分配 */
+.cs-timebar { display: flex; width: 100%; height: 64px; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.cs-timebar span { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 0 6px; color: #fff; font-size: 18px; line-height: 1.2; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cs-timebar span small { font-size: 14px; opacity: .85; }
+
+/* ── 结构图：嵌套列表画成从左到右的树  <ul class="cs-tree"><li>超重与失重<ul><li>…</li></ul></li></ul> ── */
+.cs-tree, .cs-tree ul { list-style: none; margin: 0; padding: 0; }
+.cs-tree { display: flex; font-size: 22px; }
+.cs-tree li { display: flex; align-items: center; position: relative; }
+.cs-tree li > span, .cs-tree li > b { display: inline-block; padding: 8px 16px; margin: 6px 0; border-radius: 12px; background: var(--page); border: 2px solid var(--accent); white-space: nowrap; color: var(--ink); }
+.cs-tree > li > span, .cs-tree > li > b { background: var(--accent); color: #fff; font-size: 1.1em; }
+.cs-tree ul { display: flex; flex-direction: column; padding-left: 36px; position: relative; }
+.cs-tree ul::before { content: ''; position: absolute; left: 0; top: 50%; width: 18px; border-top: 2px solid var(--accent); }
+.cs-tree ul > li { padding-left: 18px; }
+.cs-tree ul > li::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--accent); }
+.cs-tree ul > li:first-child::before { top: 50%; } .cs-tree ul > li:last-child::before { bottom: 50%; }
+.cs-tree ul > li:only-child::before { display: none; }
+.cs-tree ul > li::after { content: ''; position: absolute; left: 0; top: 50%; width: 18px; border-top: 2px solid var(--accent); }
+
+/* ── 导航条 ── */
+.cs-nav { position: fixed; right: 18px; bottom: 14px; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 999px; background: color-mix(in srgb, var(--page) 88%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(6px); font: 600 16px/1 var(--font); color: var(--ink-2); }
+.cs-nav button { appearance: none; border: 0; cursor: pointer; width: 40px; height: 40px; border-radius: 50%; background: var(--soft); color: var(--accent); font-size: 20px; }
+.cs-nav button:disabled { opacity: .35; cursor: default; }
+.cs-nav .cs-count { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.cs-progress { position: fixed; left: 0; top: 0; height: 4px; z-index: 20; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s ease; }
+
+/* ── 手机竖屏：不缩放，改成上下滑动的长页，分步内容全部显示 ── */
+body.cs-scroll { overflow: auto; height: auto; }
+body.cs-scroll .cs-deck { position: static; overflow: visible; }
+body.cs-scroll .cs-stage { position: static; width: auto; height: auto; transform: none !important; }
+body.cs-scroll .cs-page { position: relative; display: flex; inset: auto; min-height: 0; margin: 0 0 14px; padding: 28px 20px 30px; font-size: 17px; animation: none; border-radius: 0; }
+body.cs-scroll .cs-page h2 { font-size: 24px; margin-bottom: 12px; } body.cs-scroll .cs-page h2::before { height: 24px; width: 7px; }
+body.cs-scroll .cs-page h3 { font-size: 19px; }
+body.cs-scroll .cs-cover { min-height: 60vh; padding: 48px 24px; } body.cs-scroll .cs-cover h1 { font-size: 40px; } body.cs-scroll .cs-cover .cs-sub { font-size: 19px; }
+body.cs-scroll .cs-cover .cs-meta span { font-size: 15px; }
+body.cs-scroll .cs-cols, body.cs-scroll .cs-grid-3 { grid-template-columns: 1fr !important; gap: 14px; }
+body.cs-scroll .cs-page { overflow: visible; } body.cs-scroll .cs-cover { overflow: hidden; } body.cs-scroll .cs-page * { max-width: 100%; }
+body.cs-scroll .cs-table { display: block; overflow-x: auto; }
+body.cs-scroll .cs-quiz .cs-opts { grid-template-columns: 1fr; }
+body.cs-scroll .cs-step.cs-hidden { opacity: 1; transform: none; pointer-events: auto; }
+body.cs-scroll .cs-nav { display: none; }
+body.cs-scroll .cs-sim canvas { flex: none; height: 62vw; }
+body.cs-scroll .cs-slider { min-width: 0; grid-template-columns: 1fr; font-size: 16px; gap: 4px; }
+body.cs-scroll .cs-btn { font-size: 16px; padding: 8px 16px; }
+body.cs-scroll .cs-timeline { padding-left: 86px; } body.cs-scroll .cs-timeline::before { left: 70px; } body.cs-scroll .cs-timeline li::before { left: -86px; width: 60px; } body.cs-scroll .cs-timeline li::after { left: -22px; }
+body.cs-scroll .cs-tree { overflow-x: auto; font-size: 15px; }
+body.cs-scroll .cs-quiz .cs-opts li { padding-left: 50px; } body.cs-scroll .cs-quiz .cs-opts li::before { width: 26px; height: 26px; font-size: 15px; }
+
+/* 打印：每页一张 A4 横向 */
+@media print {
+  @page { size: 297mm 167mm; margin: 0; }
+  body { background: #fff; }
+  .cs-deck { position: static; } .cs-stage { position: static; transform: none !important; width: auto; height: auto; }
+  .cs-page { position: relative; display: flex !important; width: 1280px; height: 720px; page-break-after: always; break-after: page; animation: none; }
+  .cs-step.cs-hidden { opacity: 1; transform: none; }
+  .cs-nav, .cs-progress { display: none; }
+}

@@ -14,7 +14,8 @@ const at = (h: number, m = 0, s = 0, d = 21) => new Date(2026, 9, d, h, m, s).ge
 
 /** 一台假机器：按秒推进时间，模拟录像状态跟着动作变 */
 function machine(slots: LessonSlot[], settings: Partial<AutoRecordSettings> = {}, opts: { hasAudio?: boolean } = {}) {
-  const set = { ...DEFAULT_AUTO_RECORD, lead: 2, ...settings };
+  // 1.7.0 默认只提醒；这里验 1.6.0 的倒计时自动开 / 自动下课（提醒模式见 v170-class-logic）
+  const set = { ...DEFAULT_AUTO_RECORD, autoStart: true, autoStop: true, lead: 2, ...settings };
   const m = {
     now: 0, state: initialAutoRecord() as AutoRecordState, live: false, busy: false, recStudentId: null as string | null, recStartedAt: null as number | null,
     lastSound: 0, lastActivity: 0, activeSince: 0, log: [] as string[], card: null as ReturnType<typeof stepAutoRecord>['card'],
@@ -41,9 +42,9 @@ function machine(slots: LessonSlot[], settings: Partial<AutoRecordSettings> = {}
 
 ok('设置：缺的、不合法的用默认；自定义自动下课 5–240 分钟', () => {
   assert.deepEqual(cleanAutoRecord(null), DEFAULT_AUTO_RECORD);
-  assert.deepEqual(DEFAULT_AUTO_RECORD, { start: true, lead: 5, stopAfter: 15, idle: true, idleMinutes: 20, adhoc: false, sound: false });
-  const c = cleanAutoRecord({ start: false, lead: 7, stopAfter: 90, idle: 'yes', idleMinutes: 30, adhoc: true, sound: true });
-  assert.deepEqual(c, { start: false, lead: 5, stopAfter: 90, idle: true, idleMinutes: 30, adhoc: true, sound: true });
+  assert.deepEqual(DEFAULT_AUTO_RECORD, { v: 2, start: true, autoStart: false, lead: 0, stopAfter: 15, autoStop: false, idle: true, idleMinutes: 20, adhoc: false, sound: false, stageButton: true });
+  const c = cleanAutoRecord({ v: 2, start: false, lead: 17, stopAfter: 90, idle: 'yes', idleMinutes: 30, adhoc: true, sound: true, autoStart: true });
+  assert.deepEqual(c, { v: 2, start: false, autoStart: true, lead: 0, stopAfter: 90, autoStop: false, idle: true, idleMinutes: 30, adhoc: true, sound: true, stageButton: true });
   assert.equal(cleanAutoRecord({ stopAfter: 0 }).stopAfter, 0);
   assert.equal(cleanAutoRecord({ stopAfter: 3 }).stopAfter, 15);
   assert.equal(cleanAutoRecord({ stopAfter: 241 }).stopAfter, 15);

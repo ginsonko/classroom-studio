@@ -79,7 +79,7 @@ function QRow({ q, onOpen, extra, pick }: { q: Question; onOpen: () => void; ext
     <QImage path={q.image} />
     <button className="sd-q-main" onClick={onOpen}>
       {reading || !q.stem ? <p className={q.stem ? '' : 'empty'}>{reading ? '正在识题…' : q.needsAi ? '（拍照的卷子，配置 AI 后自动拆成一道道题）' : '（只有截图，点开整理或让 AI 识题）'}</p> : <TexText as="p" text={clipTex(q.stem, 220)} />}
-      <div className="sd-q-meta"><Chips keys={q.points} /><span className="sd-tag">{q.qtype}</span><span className="sd-tag">{q.difficulty} {DIFF_NAME[q.difficulty]}</span>{q.check === 'mismatch' && <span className="sd-tag warn" data-tip={q.checkNote}>AI 自检未通过</span>}{q.check === 'ok' && <span className="sd-tag ok">AI 自检通过</span>}{q.source && <i>{q.source}</i>}</div>
+      <div className="sd-q-meta"><Chips keys={q.points} /><span className="sd-tag">{q.qtype}</span><span className="sd-tag">{q.difficulty} {DIFF_NAME[q.difficulty]}</span>{q.check === 'mismatch' && <span className="sd-tag warn" data-tip={q.checkNote}>AI 自检未通过</span>}{q.check === 'ok' && <span className="sd-tag ok">AI 自检通过</span>}{q.cite && q.cite.kind !== '原创' && <span className={'sd-tag ' + (q.cite.status === 'verified' ? 'ok' : 'warn')} data-tip={q.cite.url}>{q.cite.status === 'verified' ? q.cite.kind + ' · 来源已核对' : '来源未核实'}</span>}{q.source && <i>{q.source}</i>}</div>
       {err && <span className="sd-err">{err}</span>}
     </button>
     {extra && <div className="sd-q-act">{extra}</div>}

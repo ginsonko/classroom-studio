@@ -21,6 +21,8 @@ function runProcess(command,args,{timeout=300000,onOutput,lowPriority=false}={})
 const LIVE=['starting','recording','stopping'];
 /** 微信发不了超过 1 小时的视频；每段按 59 分钟算，关键帧对齐后多出几秒也不会到 1 小时 */
 const PART_MAX=59*60,PART_LIMIT=3600,PARTS_DIR='微信分段';
+/** 丢弃短录像前给老师撤销的时间 */
+const DROP_UNDO=10000;
 const safeName=s=>String(s||'').replace(/[\\/:*?"<>|\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60);
 /** 读视频时长（秒）：ffmpeg 只给输入不给输出时会报错退出，时长在它打印的信息里 */
 async function probeSeconds(ffmpeg,file){
@@ -36,7 +38,7 @@ const partCount=(seconds,max=PART_MAX)=>seconds>max?Math.ceil(seconds/max):1;
  * 转码不算「忙」：老师可以马上关学生窗口、开始下一节课，顶部显示回放生成进度。
  */
 class Recording {
- constructor({directory,ffmpeg,onChange,send,onSaved,split,label,onSplit,partLimits}){this.directory=directory;this.ffmpeg=ffmpeg;this.onChange=onChange;this.send=send;this.onSaved=onSaved;this.split=split;this.label=label;this.onSplit=onSplit;this.splitting=new Set();this.partLimits=partLimits;this.current=null;this.queue=Promise.resolve();this.metaQueue=Promise.resolve();this.jobs=[];this.jobRun=Promise.resolve();this.status={phase:'idle',bytes:0,micLevel:0,systemLevel:0,jobs:[]};}
+ constructor({directory,ffmpeg,onChange,send,onSaved,split,label,onSplit,partLimits,shortLimit,onStopped,undoMs}){this.directory=directory;this.ffmpeg=ffmpeg;this.onChange=onChange;this.send=send;this.onSaved=onSaved;this.split=split;this.label=label;this.onSplit=onSplit;this.shortLimit=shortLimit;this.onStopped=onStopped;this.undoMs=undoMs??DROP_UNDO;this.dropping=new Map();this.splitting=new Set();this.partLimits=partLimits;this.current=null;this.queue=Promise.resolve();this.metaQueue=Promise.resolve();this.jobs=[];this.jobRun=Promise.resolve();this.status={phase:'idle',bytes:0,micLevel:0,systemLevel:0,jobs:[]};}
  async disk(directory=this.directory){let target=directory;while(target){try{const v=await fsp.statfs(target);return {free:Number(v.bavail)*Number(v.bsize),total:Number(v.blocks)*Number(v.bsize)};}catch{const parent=path.dirname(target);if(parent===target)break;target=parent;}}return {free:null,total:null};}
  update(p){this.status={...this.status,...p,jobs:this.jobs.map(j=>({id:j.id,title:j.title,progress:j.progress}))};this.onChange(this.status);}
  get live(){return LIVE.includes(this.status.phase);}
@@ -90,9 +92,11 @@ class Recording {
  chapter(v){
   const c=this.current;if(!c||this.status.phase!=='recording'||!c.startedAt)return false;
   const title=String(v?.title||'').replace(/\s+/g,' ').trim().slice(0,120);if(!title)return false;
-  const kind=['material','page','board','attempt','question','note'].includes(v?.kind)?v.kind:'note';
+  const kind=['material','page','board','attempt','question','note','ink'].includes(v?.kind)?v.kind:'note';
   const t=Math.max(0,Math.round((Date.now()-c.startedAt)/100)/10),list=c.chapters||(c.chapters=[]);
   const last=list[list.length-1];
+  // 1.7.0 书写：同一页一直在写只留一条，时间挪到最后一笔（下课分析取「最后一笔之后」的画面）
+  if(kind==='ink'){const ref=typeof v?.ref==='string'?v.ref.slice(0,200):'';const prev=[...list].reverse().find(x=>x.kind!=='ink'||x.ref===ref);if(prev&&prev.kind==='ink'&&prev.ref===ref){prev.t=t;prev.n=(prev.n||1)+1;return true;}list.push({t,kind,title,ref,n:1});if(list.length>600)list.splice(0,list.length-600);return true;}
   // 连着翻页只留停下来的那一页
   if(last&&kind==='page'&&last.kind==='page'&&t-last.t<8)list.pop();
   else if(last&&last.kind===kind&&last.title===title)return true;
@@ -100,15 +104,30 @@ class Recording {
   if(list.length>600)list.splice(0,list.length-600);
   return true;
  }
- /** 下课分析用：在给定的秒数截帧（最多 24 张，1280 宽 JPEG），返回 data URL */
+ /** 1.7.0 下课时把这节课写过的黑板页按原始笔迹画成 PNG，存进这段录像的 boards 文件夹（下课分析直接看它，比录像截帧清楚、也不用跑 ffmpeg） */
+ async saveBoards(rid,items){
+  const list=Array.isArray(items)?items.slice(0,80):[];if(!list.length)return [];
+  const cur=this.current?.id===rid?this.current:null,folder=cur?cur.folder:(await this.list()).find(x=>x.id===rid)?.folder;if(!folder)throw new Error('找不到这段录像');
+  const dir=path.join(folder,'boards');await fsp.mkdir(dir,{recursive:true});const out=[];
+  for(const [i,it] of list.entries()){const m=/^data:image\/png;base64,(.+)$/.exec(String(it?.png||''));if(!m)continue;const file=`b${String(i).padStart(2,'0')}.png`,buf=Buffer.from(m[1],'base64');if(buf.length>12*1024*1024)continue;await fsp.writeFile(path.join(dir,file),buf);out.push({file,ref:String(it.ref||'').slice(0,200),title:String(it.title||'').replace(/\s+/g,' ').slice(0,120),t:Math.max(0,Number(it.t)||0),strokes:Math.max(0,Math.round(Number(it.strokes)||0))});}
+  if(cur){cur.boards=out;await this.save(cur);}else await this.mergeMeta(folder,{boards:out});
+  return out;
+ }
+ /** 下课分析用：板书原图（data URL） */
+ async boardImages(rid){
+  const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
+  const out=[];for(const b of Array.isArray(item.boards)?item.boards:[]){try{out.push({...b,url:'data:image/png;base64,'+(await fsp.readFile(path.join(item.folder,'boards',path.basename(b.file)))).toString('base64')});}catch{}}
+  return out;
+ }
+ /** 下课分析用：在给定的秒数截帧（1.7.0 起最多 160 张，1280 宽 JPEG），返回 data URL */
  async frames(rid,times){
   const item=(await this.list()).find(x=>x.id===rid);if(!item)throw new Error('找不到这段录像');
   if(this.current?.id===rid)throw new Error('这节课还在录');
   const src=fs.existsSync(item.mp4)?item.mp4:item.raw;if(!fs.existsSync(src))throw new Error('录像文件不在了');
   const dir=path.join(item.folder,'frames');await fsp.mkdir(dir,{recursive:true});
   const out=[];
-  for(const [i,t0] of (Array.isArray(times)?times:[]).slice(0,24).entries()){
-   const t=Math.max(0,Number(t0)||0),file=path.join(dir,`f${String(i).padStart(2,'0')}-${Math.round(t)}.jpg`);
+  for(const [i,t0] of (Array.isArray(times)?times:[]).slice(0,160).entries()){
+   const t=Math.max(0,Number(t0)||0),file=path.join(dir,`f${String(i).padStart(3,'0')}-${Math.round(t)}.jpg`);
    try{await runProcess(this.ffmpeg,['-hide_banner','-y','-ss',t.toFixed(2),'-i',src,'-frames:v','1','-vf','scale=1280:-2','-q:v','4',file],{timeout:90000,lowPriority:true});out.push({t,url:'data:image/jpeg;base64,'+(await fsp.readFile(file)).toString('base64')});}catch{}
   }
   return out;
@@ -135,9 +154,43 @@ class Recording {
   clearTimeout(this.startTimeout);await this.queue;
   const c=this.current;if(c.handle){await c.handle.close();c.handle=null;}await this.closeVoice(c);c.phase='recoverable';c.endedAt=Date.now();
   if(!c.bytes){c.phase='cancelled';await this.save(c);this.current=null;this.update({phase:'idle',error:null,bytes:0});return;}
-  c.pending=true;await this.save(c);this.current=null;
-  this.update({phase:'saved',id:c.id,studentId:c.studentId,folder:c.folder,path:null,error:null});
-  this.enqueue(c.folder,{id:c.id,title:c.title,studentId:c.studentId,seconds:(c.endedAt-(c.startedAt||c.endedAt))/1000});
+  const seconds=(c.endedAt-(c.startedAt||c.endedAt))/1000,limit=Number(this.shortLimit?.())||0;
+  // 1.7.0：短于设定时长（默认 1 分钟）的录像不算上课：不转码、不分析、不进课后流水线；给老师 10 秒撤销，之后只删这一段的文件夹
+  if(limit>0&&seconds<limit){
+   c.phase='discarding';c.pending=false;c.discardAt=Date.now()+this.undoMs;await this.save(c);this.current=null;
+   const timer=setTimeout(()=>void this.dropNow(c.id).catch(()=>{}),this.undoMs);timer.unref?.();
+   this.dropping.set(c.id,{c,timer,seconds});
+   this.update({phase:'idle',id:c.id,studentId:c.studentId,folder:null,path:null,error:null,bytes:0,discarded:{id:c.id,seconds:Math.round(seconds),until:c.discardAt,limit}});
+   this.onStopped?.({id:c.id,studentId:c.studentId,startedAt:c.startedAt,seconds,kept:false,undoMs:this.undoMs});
+   return;
+  }
+  await this.keepStopped(c,seconds);
+ }
+ async keepStopped(c,seconds){
+  c.pending=true;c.phase='recoverable';if(this.current===c)this.current=null;await this.save(c);
+  this.update({phase:'saved',id:c.id,studentId:c.studentId,folder:c.folder,path:null,error:null,discarded:null});
+  this.onStopped?.({id:c.id,studentId:c.studentId,startedAt:c.startedAt,seconds,kept:true});
+  this.enqueue(c.folder,{id:c.id,title:c.title,studentId:c.studentId,seconds});
+ }
+ /** 「撤销」：短录像留下来，照常生成回放、算课次、进课后流水线 */
+ async keepShort(rid){
+  const d=this.dropping.get(rid);if(!d)throw new Error('这段录像已经删掉了，撤销不了');
+  clearTimeout(d.timer);this.dropping.delete(rid);d.c.discardAt=undefined;
+  if(this.live){d.c.pending=true;d.c.phase='recoverable';await this.save(d.c);this.update({discarded:null});this.onStopped?.({id:d.c.id,studentId:d.c.studentId,startedAt:d.c.startedAt,seconds:d.seconds,kept:true});this.enqueue(d.c.folder,{id:d.c.id,title:d.c.title,studentId:d.c.studentId,seconds:d.seconds});return this.status;}
+  await this.keepStopped(d.c,d.seconds);return this.status;
+ }
+ /** 真正删除被丢弃的短录像：只删这一段自己的文件夹，并再核对一遍是不是它（id 对得上、确实标成了丢弃、确实很短） */
+ async dropNow(rid){
+  const d=this.dropping.get(rid);if(!d)return false;this.dropping.delete(rid);clearTimeout(d.timer);
+  const ok=await this.dropFolder(d.c.folder,rid);
+  if(this.status.discarded?.id===rid)this.update({discarded:null});
+  return ok;
+ }
+ async dropFolder(folder,rid){
+  const rel=path.relative(this.directory,folder);if(!rel||rel.startsWith('..')||path.isAbsolute(rel)||rel.includes(path.sep))return false;
+  const m=await readJSON(path.join(folder,'recording.json'),null);
+  if(!m||m.id!==rid||m.phase!=='discarding'||!(m.endedAt-(m.startedAt||m.endedAt)<10*60*1000))return false;
+  await fsp.rm(folder,{recursive:true,force:true});return true;
  }
  /** 后台转 MP4：一次一个，按下课顺序 */
  enqueue(folder,{id:rid,title,studentId,seconds}){
@@ -237,6 +290,8 @@ class Recording {
  }
  /** 上次退出时还没生成完的回放：启动后接着排队 */
  async resume(){
+  // 上次关软件时还在 10 秒撤销期里的短录像：没人撤销，按原来的意思删掉
+  try{for(const e of await fsp.readdir(this.directory,{withFileTypes:true})){if(!e.isDirectory())continue;const folder=path.join(this.directory,e.name),m=await readJSON(path.join(folder,'recording.json'),null);if(m?.phase==='discarding'&&!this.dropping.has(m.id))await this.dropFolder(folder,m.id).catch(()=>{});}}catch{}
   for(const r of await this.list().catch(()=>[]))if(r.pending&&r.phase==='recoverable'&&!r.error&&fs.existsSync(r.raw))this.enqueue(r.folder,{id:r.id,title:r.title,studentId:r.studentId});
  }
  async remove(rid){
@@ -250,7 +305,7 @@ class Recording {
   await fsp.mkdir(this.directory,{recursive:true});const rows=[];
   for(const e of await fsp.readdir(this.directory,{withFileTypes:true})){if(!e.isDirectory())continue;const folder=path.join(this.directory,e.name);const m=await readJSON(path.join(folder,'recording.json'),null);if(!m)continue;
     const live=this.current?.id===m.id&&this.live;const job=this.jobs.find(j=>j.id===m.id);
-    if(m.phase==='cancelled')continue;const ready=fs.existsSync(path.join(folder,'课堂回放.mp4'));
+    if(m.phase==='cancelled'||m.phase==='discarding')continue;const ready=fs.existsSync(path.join(folder,'课堂回放.mp4'));
     let bytes=0;for(const f of ['capture.webm','课堂回放.mp4','voice.webm'])try{bytes+=(await fsp.stat(path.join(folder,f))).size;}catch{}
     const parts=[];for(const p of Array.isArray(m.parts)?m.parts:[])try{const s=await fsp.stat(path.join(folder,PARTS_DIR,p.file));bytes+=s.size;parts.push({...p,path:path.join(folder,PARTS_DIR,p.file)});}catch{}
     rows.push({...m,folder,bytes,parts,splitting:this.splitting.has(m.id),mp4:path.join(folder,'课堂回放.mp4'),raw:path.join(folder,'capture.webm'),phase:live?this.status.phase:job?'converting':ready?'complete':'recoverable',progress:job?.progress});

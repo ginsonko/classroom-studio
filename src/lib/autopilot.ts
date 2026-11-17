@@ -22,6 +22,8 @@ import { cleanSettings, dueLessons, jobsToday, parsePrep, prepByRules, prepMarkd
 import type { Student } from './types';
 import { isDefaultTopic, isGroup, membersOf } from './groups';
 import { linkFiles } from './studentFiles';
+import { prepLine } from './prepRecord';
+import { warmPrep } from './prepWarm';
 
 export interface LogItem { id: string; at: string; kind: 'lesson' | 'homework' | 'prep' | 'catalog' | 'note' | 'error'; text: string; studentId?: string; files?: string[]; ai?: boolean }
 interface AutoState { settings: AutoSettings; log: LogItem[]; done: string[]; loaded: boolean; running: string; lastRun: number }
@@ -199,7 +201,10 @@ export async function makePrep(o: { studentId: string; topic: string; date: stri
     materials: plan.materials.map((k) => materials[k]?.path).filter(Boolean) as string[], questionIds: plan.questions.map((k) => questions[k]?.q.id).filter(Boolean) as string[],
     plan: md, files: doc.out, courseware: courseware.length ? courseware : undefined, via, auto: o.auto,
   };
+  prep.summary = (plan.goals[0] ? `讲「${o.topic || '本节课'}」：${plan.goals[0]}` : prepLine(prep)).slice(0, 80);
   useStudy.getState().update((d) => ({ ...d, preps: [...(d.preps ?? []), prep].slice(-500) }));
+  // 1.7.0 备课一完成就在后台把用到的 PPT / Word 转好，上课点了直接能用
+  warmPrep(prep);
   linkFiles(st.id, [...doc.out, ...courseware], { kind: 'prep', via: 'assistant', note: `${o.date} 备课：${o.topic || '本节课'}` });
   return prep;
 }

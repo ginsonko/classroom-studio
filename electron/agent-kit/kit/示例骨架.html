@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>超重与失重</title>
+<link rel="stylesheet" href="vendor/katex.min.css">
+<link rel="stylesheet" href="cs-deck.css">
+<style>
+  /* 本课自己的样式写在这里；整体风格用 body 的 data-style（clean / dark / hand）和 --accent 换 */
+  .right-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .right-col .cs-sim { flex: 1; }
+  .reads { display: flex; gap: 12px; flex-wrap: wrap; font-size: 22px; }
+</style>
+</head>
+<body data-style="clean">
+<main class="cs-deck">
+
+  <section class="cs-page cs-cover">
+    <h1>超重与失重</h1>
+    <p class="cs-sub">站在电梯里的体重秤上，示数为什么会变？</p>
+    <div class="cs-meta"><span>高一物理</span><span>人教版 必修第一册 第四章</span><span>约 15 分钟</span></div>
+  </section>
+
+  <section class="cs-page">
+    <h2>先看一个现象</h2>
+    <div class="cs-cols wide-left">
+      <div class="cs-body">
+        <p>小明（$m = 50\ \mathrm{kg}$）站在电梯里的体重秤上，电梯从 1 楼到 10 楼：</p>
+        <ul class="cs-list">
+          <li class="cs-step">刚启动时，示数 <b>大于</b> 50 kg</li>
+          <li class="cs-step">匀速上升时，示数 <b>等于</b> 50 kg</li>
+          <li class="cs-step">快到 10 楼减速时，示数 <b>小于</b> 50 kg</li>
+        </ul>
+        <p class="cs-key cs-step">小明的体重（重力）变了吗？秤为什么"说谎"？</p>
+      </div>
+      <figure class="cs-figure"><canvas id="intro" width="360" height="420" style="width:360px;height:420px"></canvas><figcaption>示数随电梯运动状态变化</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="cs-page">
+    <h2>受力分析：秤的示数 = 支持力</h2>
+    <div class="cs-cols">
+      <div class="cs-sim"><canvas id="fbd"></canvas></div>
+      <div class="cs-body">
+        <p class="cs-step">取向上为正，对人用牛顿第二定律：</p>
+        <div class="cs-formula cs-step">$$F_N - mg = ma$$</div>
+        <div class="cs-formula cs-step">$$F_N = m(g + a)$$</div>
+        <p class="cs-step">由牛顿第三定律，秤的示数 $F_N' = F_N$。</p>
+        <p class="cs-warn cs-step">重力 $mg$ 始终不变，变的是支持力。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cs-page">
+    <h2>动手试：画加速度，看秤怎么变</h2>
+    <div class="cs-cols" style="--cols: 360px 1fr; align-items: stretch">
+      <div class="cs-sim"><canvas id="lift"></canvas></div>
+      <div class="right-col">
+        <p class="cs-muted" style="margin:0;font-size:20px">在下面的 $a$–$t$ 图上按住拖动，画出电梯的加速度（向上为正），再点「播放」。</p>
+        <div class="cs-sim"><canvas id="at"></canvas></div>
+        <div class="reads"><span class="cs-readout">时间 <b id="rt">0</b> s</span><span class="cs-readout">速度 <b id="rv">0</b> m/s</span><span class="cs-readout">秤示数 <b id="rn">50</b> kg</span><span class="cs-readout" id="rs">平衡</span></div>
+        <div class="cs-controls" id="ctl"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cs-page">
+    <h2>归纳：看加速度方向，不看速度方向</h2>
+    <table class="cs-table" style="margin:0 auto">
+      <tr><th>运动情况</th><th>加速度方向</th><th>示数与 $mg$</th><th>状态</th></tr>
+      <tr class="cs-step"><td>加速上升</td><td>向上</td><td>$F_N > mg$</td><td><b>超重</b></td></tr>
+      <tr class="cs-step"><td>减速下降</td><td>向上</td><td>$F_N > mg$</td><td><b>超重</b></td></tr>
+      <tr class="cs-step"><td>减速上升</td><td>向下</td><td>$F_N < mg$</td><td>失重</td></tr>
+      <tr class="cs-step"><td>加速下降</td><td>向下</td><td>$F_N < mg$</td><td>失重</td></tr>
+      <tr class="cs-step"><td>自由落体</td><td>向下，$a = g$</td><td>$F_N = 0$</td><td>完全失重</td></tr>
+    </table>
+  </section>
+
+  <section class="cs-page">
+    <h2>例题</h2>
+    <p class="cs-key">质量 $60\ \mathrm{kg}$ 的人站在电梯里的秤上，电梯以 $2\ \mathrm{m/s^2}$ 的加速度减速下降，$g$ 取 $10\ \mathrm{m/s^2}$，求秤的示数。</p>
+    <p class="cs-step">① 减速下降 → 加速度方向<b>向上</b>，$a = 2\ \mathrm{m/s^2}$</p>
+    <p class="cs-step">② 取向上为正：$F_N - mg = ma$</p>
+    <p class="cs-step">③ $F_N = m(g + a) = 60 \times (10 + 2)\ \mathrm{N} = 720\ \mathrm{N}$</p>
+    <p class="cs-step">④ 示数 $720\ \mathrm{N}$，相当于 $72\ \mathrm{kg}$ —— <b>超重</b></p>
+  </section>
+
+  <section class="cs-page">
+    <h2>随堂小测 <span class="cs-score" style="margin-left:auto;font-size:24px"></span></h2>
+    <div class="cs-body" style="gap:12px">
+      <div class="cs-quiz" data-answer="C">
+        <p class="cs-q">1. 电梯减速上升时，站在秤上的人处于</p>
+        <ol class="cs-opts"><li>超重状态</li><li>平衡状态</li><li>失重状态</li><li>完全失重状态</li></ol>
+        <p class="cs-explain">减速上升，加速度向下，$F_N = m(g-a) < mg$，失重。</p>
+      </div>
+      <div class="cs-quiz" data-answer="B">
+        <p class="cs-q">2. 处于失重状态的物体，它受到的重力</p>
+        <ol class="cs-opts"><li>变小了</li><li>不变</li><li>变大了</li><li>变为零</li></ol>
+        <p class="cs-explain">失重是"视重"变小，重力 $mg$ 不变。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cs-page">
+    <h2>小结</h2>
+    <ul class="cs-tree" style="margin:auto">
+      <li><b>超重与失重</b>
+        <ul>
+          <li><span>超重：$a$ 向上，$F_N = m(g+a)$</span></li>
+          <li><span>失重：$a$ 向下，$F_N = m(g-a)$</span></li>
+          <li><span>完全失重：$a = g$，$F_N = 0$</span></li>
+          <li><span>重力始终不变</span></li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+
+</main>
+<script src="vendor/katex.min.js"></script>
+<script src="vendor/auto-render.min.js"></script>
+<script src="cs-deck.js"></script>
+<script>
+CS.ready(function () {
+  var g = 10, m = 50;
+
+  // 引入页：三个阶段的小秤（静态示意）
+  // 静态图也用 CS.sim（不给 step）：翻到这一页、窗口缩放时自动按新尺寸重画
+  CS.sim({ canvas: CS.$('#intro'), draw: function (x, s, w, h) {
+    [['启动', 60, '--accent-2'], ['匀速', 50, '--accent'], ['减速', 40, '--ok']].forEach(function (r, k) {
+      var y = 70 + k * 130;
+      x.fillStyle = CS.alpha(CS.color(r[2]), 0.15); CS.roundRect(x, 30, y - 40, w - 60, 100, 16); x.fill();
+      CS.label(x, r[0], 90, y + 10, { size: 26, upright: true });
+      x.font = '700 40px ' + CS.color('--font'); x.fillStyle = CS.color(r[2]); x.textAlign = 'right'; x.fillText(r[1] + ' kg', w - 60, y + 22);
+    });
+  } });
+
+  // 受力图页
+  CS.sim({ canvas: CS.$('#fbd'), draw: function (ctx, s, w, h) {
+    CS.force(ctx, { x: w / 2, y: h / 2, w: 120, h: 120, label: '人', scale: 0.25, forces: [
+      { name: 'F_N', value: 600, angle: 90, from: 'top' },
+      { name: 'mg', value: 500, angle: -90, from: 'bottom' }] });
+    CS.arrow(ctx, w / 2 + 150, h / 2 + 40, w / 2 + 150, h / 2 - 60, { color: CS.color('--ok'), width: 3, label: 'a' });
+  } });
+
+  // 仿真页：a–t 图手画 + 电梯
+  var atc = CS.canvas('#at');
+  var plot = CS.plot(atc, { x: [0, 10], y: [-5, 5], xLabel: 't/s', yLabel: 'a/(m·s^{-2})', yStep: 1 });
+  var curve = CS.drawable(atc, plot, { n: 100, snap: 0.5, init: function (t) { return t < 2 ? 2 : t < 7 ? 0 : t < 9 ? -2 : 0; }, onChange: function () { lift.reset(); drawAt(); } });
+  function drawAt() { atc.resize(); var c = atc.ctx; c.clearRect(0, 0, atc.w, atc.h); plot = CS.plot(atc, { x: [0, 10], y: [-5, 5], xLabel: 't/s', yLabel: 'a/(m·s^{-2})', yStep: 1 }).axes(); curve.draw({ width: 4 }); if (lift) plot.line([[lift.state.t, -5], [lift.state.t, 5]], { color: CS.color('--accent-2'), width: 2, dash: [6, 6] }); }
+  var lift = CS.sim({
+    canvas: CS.$('#lift'), controls: '#ctl',
+    init: function (s) { s.t = 0; s.v = 0; s.y = 0; },
+    step: function (s, dt) { var a = curve.at(s.t); s.v += a * dt; s.y += s.v * dt; s.t += dt; },
+    until: function (s) { return s.t >= 10; },
+    draw: function (ctx, s, w, h) {
+      var a = curve.at(s.t), N = m * (g + a);
+      var top = 30, bottom = h - 30, floorH = 40, span = 30; // 井道可显示 30 m
+      var cy = bottom - CS.clamp(s.y / span, 0, 1) * (bottom - top - 160) - 150;
+      ctx.strokeStyle = CS.color('--line'); ctx.lineWidth = 2;
+      for (var f = 0; f <= 10; f++) { var yy = bottom - f / 10 * (bottom - top); ctx.beginPath(); ctx.moveTo(20, yy); ctx.lineTo(50, yy); ctx.stroke(); }
+      ctx.fillStyle = CS.alpha(CS.color('--accent'), 0.12); ctx.strokeStyle = CS.color('--accent'); ctx.lineWidth = 4;
+      CS.roundRect(ctx, 80, cy, w - 120, 150, 12); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = CS.color('--ink-2'); ctx.fillRect(130, cy + 132, w - 220, 10);
+      CS.force(ctx, { x: w / 2 + 20, y: cy + 92, w: 46, h: 70, label: '', scale: 0.09, forces: [
+        { name: 'F_N', value: N, angle: 90, from: 'top' }, { name: 'mg', value: m * g, angle: -90, from: 'bottom' }] });
+      document.getElementById('rt').textContent = CS.fmt(s.t, 1);
+      document.getElementById('rv').textContent = CS.fmt(s.v, 1);
+      document.getElementById('rn').textContent = CS.fmt(N / g, 1);
+      document.getElementById('rs').textContent = a > 0.01 ? '超重' : a < -0.01 ? '失重' : '平衡';
+      drawAt();
+    },
+  });
+});
+</script>
+</body>
+</html>

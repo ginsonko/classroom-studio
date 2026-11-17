@@ -9,6 +9,10 @@ const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { locate } = require('./agents.cjs');
 const kit = require('./agentKit.cjs');
+const csTools = require('./csToolsMcp.cjs');
+const tier = require('./tier.cjs');
+const netRetry = require('./netRetry.cjs');
+const { ensureCodexConfig } = require('./codexHome.cjs');
 
 const KEY_ENV = 'CS_RELAY_API_KEY';
 const ASK_MS = 30 * 60 * 1000;
@@ -84,13 +88,22 @@ function approvalReply(method, p, v) {
 }
 
 class Assistant {
-  constructor({ dir, toolsDir, ledger, credentials, log, emit, onCharge, fetch: fetchFn }) {
+  constructor({ dir, toolsDir, ledger, credentials, log, emit, onCharge, fetch: fetchFn, tools, tierOf, codexHome, retryDelays }) {
+    /** AI 工具（toolHost.cjs）：小羽一个会话「assistant」，工作区是助教的 workspace */
+    this.tools = tools || null;
+    this.tierOf = tierOf || (() => tier.USES.chat);
     this.dir = dir; this.toolsDir = toolsDir || ''; this.ledger = ledger; this.credentials = credentials; this.log = log;
     this.emit = emit || (() => {}); this.onCharge = onCharge || (() => {}); this.fetch = fetchFn;
-    this.chatDir = path.join(dir, 'chats'); this.work = path.join(dir, 'workspace'); this.home = path.join(dir, 'home');
+    this.chatDir = path.join(dir, 'chats'); this.work = path.join(dir, 'workspace');
+    this.codexHome = codexHome || null;
+    this.home = typeof codexHome === 'string' && codexHome ? codexHome : codexHome?.dir || path.join(dir, 'home');
     for (const d of [this.chatDir, this.work, this.home]) fs.mkdirSync(d, { recursive: true });
+    ensureCodexConfig(this.home);
     this.chats = new Map(); this.asks = new Map(); this.timers = new Map();
     this.server = null; this.byThread = new Map();
+    // 网络波动自动重连（设计稿 E.3）：每段对话记住上一句话的发送参数和已经重连了几次；等待默认 1s、2s、4s、8s、15s
+    this.lastOpts = new Map(); this.retries = new Map();
+    this.retryDelays = Array.isArray(retryDelays) ? retryDelays : null;
     for (const n of fs.readdirSync(this.chatDir)) {
       if (!n.endsWith('.json')) continue;
       try {
@@ -105,7 +118,7 @@ class Assistant {
   }
 
   // ── 对话 ─────────────────────────────────────────
-  meta(c) { return { id: c.id, title: c.title, created: c.created, updated: c.updated, running: !!c.running, cny: c.cny || 0, source: c.source || '', persona: c.persona || '', count: c.items.filter((x) => x.kind === 'user').length }; }
+  meta(c) { return { id: c.id, title: c.title, created: c.created, updated: c.updated, running: !!c.running, retrying: !!this.retries?.get(c.id)?.timer, cny: c.cny || 0, source: c.source || '', persona: c.persona || '', count: c.items.filter((x) => x.kind === 'user').length }; }
   list() { return [...this.chats.values()].sort((a, b) => b.updated - a.updated).map((c) => this.meta(c)); }
   get(id) { const c = this.chats.get(id); if (!c) throw new Error('找不到这段对话'); return c; }
   create({ title, source, persona } = {}) {
@@ -148,28 +161,53 @@ class Assistant {
     const cred = this.credentials ? this.credentials() : {};
     const useStudio = studio !== false && !!cred.key;
     if (studio === true && !cred.key) throw new Error('还没有配置导播台的 AI 接口：先在右侧「AI」面板的设置里导入银子 API 密钥，或在助教设置里改用自己的 Codex 登录');
-    return { useStudio, cred, sig: useStudio ? 'studio:' + cred.baseUrl : 'own' };
+    // base：接口地址 + Key 指纹（登录玲珑账号换了 Key 也要重启）；sig 再加上档位。只有档位变了时，原来的会话照样续接
+    const base = useStudio ? 'studio:' + cred.baseUrl + '#' + crypto.createHash('sha256').update(String(cred.key)).digest('hex').slice(0, 12) : 'own';
+    const t = useStudio && tier.applies(cred.baseUrl) ? tier.clean(this.tierOf(), 'chat') : '';
+    return { useStudio, cred, base, tier: t, sig: base + '|' + tier.scopeOf(t) };
   }
   async ensureServer(studio) {
     const p = this.plan(studio);
     if (this.server && !this.server.dead && this.server.sig === p.sig) { await this.server.ready; return this.server; }
-    if (this.server) this.shutdown('切换 AI 接口');
+    // 只换了档位、别的对话还在跑：先不重启（会打断它），等它这一轮做完再换
+    if (this.server && !this.server.dead && this.server.base === p.base && [...this.chats.values()].some((c) => c.running)) { await this.server.ready; return this.server; }
+    if (this.server) this.shutdown(this.server.base === p.base ? '切换档位' : '切换 AI 接口');
     const spec = locate('codex', this.toolsDir);
     if (!spec) throw new Error('没有找到 Codex（AI 助教的内核）。请在「备课」页的任务中心点「安装」');
-    const args = [...spec.pre, 'app-server'], env = { ...process.env, ...spec.env };
+    await tier.ensureSiteRelay();
+    ensureCodexConfig(this.home);
+    const args = [...spec.pre, 'app-server'], env = { ...process.env, ...spec.env, CODEX_HOME: this.home };
     if (p.useStudio) {
-      env.CODEX_HOME = this.home;
-      env.OPENAI_BASE_URL = p.cred.baseUrl; env.OPENAI_API_KEY = p.cred.key; env.CODEX_API_KEY = p.cred.key; env[KEY_ENV] = p.cred.key;
-      args.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('最强网课教辅系统')}`, '-c', `model_providers.classroom.base_url=${toml(p.cred.baseUrl)}`,
+      const baseUrl = tier.relayBaseUrl(p.cred.baseUrl, {
+        who: 'assistant',
+        key: 'assistant:' + p.base,
+        log: this.log,
+        onFallback: () => {
+          const runChat = [...this.chats.values()].find((c) => c.running);
+          if (runChat && !runChat.noRouteFallbackNoted) {
+            runChat.noRouteFallbackNoted = true;
+            const name = tier.TIERS[p.tier]?.name || p.tier;
+            this.put(runChat, { id: 'n-' + rid(), kind: 'note', turn: runChat.running || '', text: `「${name}」档位没有可用分组，已自动去掉档位头、按令牌自己的范围重发一次` }, false);
+          }
+        },
+      });
+      env.OPENAI_BASE_URL = baseUrl; env.OPENAI_API_KEY = p.cred.key; env.CODEX_API_KEY = p.cred.key; env[KEY_ENV] = p.cred.key;
+      args.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('最强网课教辅系统')}`, '-c', `model_providers.classroom.base_url=${toml(baseUrl)}`,
         '-c', `model_providers.classroom.env_key=${toml(KEY_ENV)}`, '-c', 'model_providers.classroom.wire_api="responses"');
-    } else {
-      const home = process.env.CODEX_HOME || path.join(require('node:os').homedir(), '.codex');
-      for (const n of userMcpNames(home)) args.push('-c', `mcp_servers.${n}.enabled=false`);
+      // 档位：常驻进程启动时定下，换档后下一句话重启进程，再用 thread/resume 接回原来的会话
+      args.push(...tier.codexArgs(p.cred.baseUrl, p.tier));
     }
     args.push('-c', 'suppress_unstable_features_warning=true');
+    // cs_tools 和 Codex 自带的网页搜索：工具清单按「常用权限」列出，每次调用再按这一轮的权限检查
+    if (this.tools) {
+      this.tools.register('assistant', { title: '小羽', work: this.work, perm: 'common', source: 'assistant' });
+      const m = this.tools.codexArgs('assistant');
+      args.push(...m.args, '-c', `web_search=${this.tools.nativeSearch('common') ? '"live"' : '"disabled"'}`);
+      Object.assign(env, m.env);
+    }
     try { kit.installKit(this.work, 'codex'); } catch (e) { this.log?.warn('助教技能文件写入失败', e); }
     const child = spawn(spec.cmd, args, { cwd: this.work, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    const s = { child, sig: p.sig, studio: p.useStudio, next: 0, wait: new Map(), dead: false, loaded: new Set(), errTail: '' };
+    const s = { child, sig: p.sig, base: p.base, tier: p.tier, studio: p.useStudio, next: 0, wait: new Map(), dead: false, loaded: new Set(), errTail: '' };
     this.server = s;
     let buf = '';
     child.stdout.setEncoding('utf8');
@@ -244,17 +282,34 @@ class Assistant {
       await this.rpc(s, 'turn/steer', { threadId: c.threadId, expectedTurnId: c.running, input });
       return this.meta(c);
     }
-    if (c.items.every((x) => x.kind !== 'user') && (!c.title || c.title === '新对话')) c.title = clip(text.replace(/\s+/g, ' '), 24);
+    const resume = o.resume === true;
+    if (!resume) {
+      // 老师自己说了新的一句：之前的自动重连计数清零，等着的重连也取消
+      this.cancelRetry(c);
+      this.lastOpts.set(c.id, { ...o, resume: false });
+      if (c.items.every((x) => x.kind !== 'user') && (!c.title || c.title === '新对话')) c.title = clip(text.replace(/\s+/g, ' '), 24);
+      // 老师连着两次说「不对」「重做」「太笨」：这一轮答完，在回复下面提醒一次切到质量优先
+      c.complaints = tier.complaint(text) ? (c.complaints || 0) + 1 : 0;
+      if (c.complaints >= 2) c.pendingSuggest = '你连着两次说做得不对';
+    }
     const local = 'u-' + rid();
     c.access = ACCESS.includes(o.access) ? o.access : 'common';
     const pol = accessPolicy(c.access, this.work);
-    this.put(c, { id: local, kind: 'user', turn: '', text: clip(text, 8000), files });
+    this.tools?.register('assistant', { title: '小羽', work: this.work, perm: c.access, source: 'assistant', chatId: c.id });
+    if (this.tools) o = { ...o, developer: (o.developer ? o.developer + '\n\n' : '') + this.tools.note(c.access) };
+    // 自动重连发的那句「接着做」不算老师说的话，显示成一条提示
+    this.put(c, resume ? { id: local, kind: 'note', turn: '', text: '已重新连上，接着刚才的进度继续…' } : { id: local, kind: 'user', turn: '', text: clip(text, 8000), files });
     let s;
     try {
       s = await this.ensureServer(o.studio);
+      // 走导播台的中转站又没选模型时，用 AI 设置里的模型（一键导入给的推荐模型），不让 Codex 落到它自己的默认模型（Key 的分组里常常没有）
+      if (!o.model && s.studio) { const m = this.credentials?.().model; if (m) o = { ...o, model: m }; }
       const sig = String(o.toolsSig || '');
       let seed = '';
-      if (c.threadId && c.toolsSig === sig && c.serverSig === s.sig) {
+      // 1.7.0 以前存的 serverSig 是「studio:地址」：同一个地址也算同一个接口，会话照样续接
+      const same = c.serverSig === s.base || (s.studio && c.serverSig === s.base.split('#')[0]);
+      if (c.threadId && c.toolsSig === sig && same) {
+        if (resume) s.loaded.delete(c.threadId);
         if (!s.loaded.has(c.threadId)) {
           try {
             await this.rpc(s, 'thread/resume', { threadId: c.threadId, cwd: this.work, baseInstructions: o.base || null, developerInstructions: o.developer || null, approvalPolicy: pol.approval, sandbox: pol.sandbox, excludeTurns: true });
@@ -270,9 +325,11 @@ class Assistant {
           baseInstructions: o.base || null, developerInstructions: o.developer || null, dynamicTools: Array.isArray(o.tools) ? o.tools : [],
           serviceName: 'classroom-studio',
         });
-        c.threadId = r.thread.id; c.toolsSig = sig; c.serverSig = s.sig; c.model = r.model || r.thread?.model || o.model || ''; c.usageSeen = null;
+        c.threadId = r.thread.id; c.toolsSig = sig; c.serverSig = s.base; c.model = r.model || r.thread?.model || o.model || ''; c.usageSeen = null;
         s.loaded.add(c.threadId); this.byThread.set(c.threadId, c.id);
       }
+      if (tier.weakModel(o.model || c.model)) c.pendingSuggest = c.pendingSuggest || `这次用的是偏弱的模型 ${clip(o.model || c.model, 40)}`;
+      c.tier = s.tier || '';
       if (seed) input[0].text = seed + '\n\n' + input[0].text;
       // 权限每轮都带上：老师中途改了档位，下一句话就按新的来，不用开新会话
       const r = await this.rpc(s, 'turn/start', { threadId: c.threadId, input, approvalPolicy: pol.approval, sandboxPolicy: pol.policy, ...(o.model ? { model: o.model } : {}), ...(EFFORTS.includes(o.effort) ? { effort: o.effort } : {}) });
@@ -287,10 +344,48 @@ class Assistant {
       this.save(c, true);
       return this.meta(c);
     } catch (e) {
+      // 启动阶段或重连时遇到临时网络波动：还有次数就接着按递增等待重连
+      if (this.scheduleRetry(c, e.message || String(e))) { this.save(c, true); return this.meta(c); }
       this.put(c, { id: 'e-' + rid(), kind: 'error', turn: '', text: e.message || String(e) });
       this.save(c, true);
       throw e;
     }
+  }
+  /**
+   * 这一轮因为网络波动失败了：等一会儿用 thread/resume 接回同一个会话，再让它接着做。最多 5 次；
+   * 余额不足、Key 不对、内容拦截这些确定性错误不重试。返回 true 表示已经安排了重连。
+   */
+  scheduleRetry(c, error) {
+    const base = this.lastOpts.get(c.id);
+    if (!base || !netRetry.isTransientText(error) || netRetry.isFatalText(error)) return false;
+    const ds = netRetry.delays(this.retryDelays);
+    const r = this.retries.get(c.id) || { n: 0, timer: null };
+    if (r.n >= ds.length) { this.retries.delete(c.id); return false; }
+    r.n += 1;
+    clearTimeout(r.timer);
+    const n = r.n;
+    this.put(c, { id: 'n-' + rid(), kind: 'note', turn: '', retry: n, retryMax: ds.length, text: netRetry.retryText(n, ds.length) }, false);
+    this.log?.info?.('小羽自动重连', c.id, n + '/' + ds.length, clip(error, 160));
+    r.timer = setTimeout(() => {
+      r.timer = null;
+      if (this.retries.get(c.id) !== r || c.running) return;
+      const nextOpts = c.threadId
+        ? { ...base, id: c.id, text: '刚才网络连接断了。请接着刚才的进度继续回答，已经做好的不用重做，也不用重复已经说过的话。', context: '', images: [], files: [], resume: true }
+        : { ...base, id: c.id, resume: true };
+      void this.send(nextOpts).catch(() => {});
+    }, ds[n - 1]);
+    this.retries.set(c.id, r);
+    this.emit({ ev: 'chat', chat: this.meta(c) });
+    return true;
+  }
+  /** 取消还在等的自动重连；返回 true 表示刚才确实有一个在等 */
+  cancelRetry(c) {
+    const r = this.retries.get(c.id);
+    this.retries.delete(c.id);
+    if (!r) return false;
+    const waiting = !!r.timer;
+    clearTimeout(r.timer);
+    return waiting;
   }
   /** 新会话开头附上的前情：最近几轮老师说的和助教答的 */
   recap(c, skip) {
@@ -300,20 +395,45 @@ class Assistant {
   }
   async stop(id) {
     const c = this.get(id);
-    if (!c.running) return this.meta(c);
+    // 正在等自动重连：停掉，不再重试
+    if (!c.running) { if (this.cancelRetry(c)) { this.put(c, { id: 'n-' + rid(), kind: 'note', turn: '', text: '已停止，不再自动重连' }, false); this.emit({ ev: 'chat', chat: this.meta(c) }); this.save(c, true); } return this.meta(c); }
+    this.cancelRetry(c);
     const s = this.server, turnId = c.running;
     for (const [k, a] of this.asks) if (a.chatId === id) { this.asks.delete(k); a.resolve({ cancelled: true }); this.emit({ ev: 'askDone', reqId: k }); }
     if (s && !s.dead) { try { await this.rpc(s, 'turn/interrupt', { threadId: c.threadId, turnId }, 15000); } catch { /* 没响应就直接收尾 */ } }
     setTimeout(() => { if (c.running === turnId) this.finishTurn(c, turnId, 'stopped', '已停止'); }, 4000);
     return this.meta(c);
   }
+  /** 「变笨了」提醒（设计稿 D.3）：一段对话只提醒一次；已经是质量优先、或档位不起作用（第三方 Key、自己的 Codex）时不提醒 */
+  suggest(c, why, turnId = '') {
+    if (!c || c.suggested || !c.tier || c.tier === 'quality') return false;
+    c.suggested = true;
+    this.put(c, { id: 's-' + rid(), kind: 'suggest', turn: turnId, text: clip(why, 120) }, false);
+    return true;
+  }
   finishTurn(c, turnId, status, error) {
+    const errMsg = (error && error !== '这一轮失败了') ? error : (c.lastTurnErr?.turn === turnId ? c.lastTurnErr.text : error);
+    c.lastTurnErr = null;
+    // 网络波动导致这一轮失败：不报错，安排自动重连（同一会话 thread/resume 接着做）
+    if (status === 'failed' && c.running === turnId && this.scheduleRetry(c, errMsg)) {
+      const t0 = this.turnOf(c, turnId);
+      if (t0 && t0.status === 'running') t0.status = 'failed';
+      c.running = null;
+      clearTimeout(this.timers.get('turn:' + c.id));
+      for (const it of c.items) if (it.turn === turnId && (it.status === 'run' || it.streaming)) { it.status = it.status === 'run' ? 'stopped' : it.status; it.streaming = false; }
+      this.emit({ ev: 'turn', chatId: c.id, turn: t0 || { id: turnId, status } });
+      this.emit({ ev: 'chat', chat: this.meta(c) });
+      this.save(c, true);
+      return;
+    }
+    if (status === 'completed') this.retries.delete(c.id);
+    if (c.pendingSuggest) { const why = c.pendingSuggest; c.pendingSuggest = ''; if (status === 'completed') this.suggest(c, why, turnId); }
     const t = this.turnOf(c, turnId);
     if (t && t.status === 'running') t.status = status;
     if (c.running === turnId) c.running = null;
     clearTimeout(this.timers.get('turn:' + c.id));
     for (const it of c.items) if (it.turn === turnId && (it.status === 'run' || it.streaming)) { it.status = it.status === 'run' ? (status === 'completed' ? 'done' : 'stopped') : it.status; it.streaming = false; }
-    if (error && status !== 'completed' && status !== 'stopped') this.put(c, { id: 'e-' + rid(), kind: 'error', turn: turnId, text: clip(error, 800) }, false);
+    if (errMsg && status !== 'completed' && status !== 'stopped') this.put(c, { id: 'e-' + rid(), kind: 'error', turn: turnId, text: clip(errMsg, 800) }, false);
     else if (status === 'stopped') this.put(c, { id: 'n-' + rid(), kind: 'note', turn: turnId, text: '已停止' }, false);
     this.emit({ ev: 'turn', chatId: c.id, turn: t || { id: turnId, status } });
     this.emit({ ev: 'chat', chat: this.meta(c) });
@@ -358,7 +478,7 @@ class Assistant {
         break;
       }
       case 'thread/tokenUsage/updated': this.charge(c, p.tokenUsage?.total, turn); break;
-      case 'error': if (!p.willRetry) this.put(c, { id: 'e-' + rid(), kind: 'error', turn, text: clip(p.error?.message || 'AI 出错了', 800) }); break;
+      case 'error': if (!p.willRetry) { const txt = clip(p.error?.message || 'AI 出错了', 800); if (c.running) c.lastTurnErr = { turn, text: txt }; else this.put(c, { id: 'e-' + rid(), kind: 'error', turn, text: txt }); } break;
       case 'turn/completed': {
         const st = p.turn?.status, err = p.turn?.error?.message;
         this.finishTurn(c, p.turn?.id || turn, st === 'completed' ? 'completed' : st === 'interrupted' ? 'stopped' : 'failed', err || (st === 'failed' ? '这一轮失败了' : ''));
@@ -383,8 +503,14 @@ class Assistant {
         this.put(c, { id: it.id, kind: 'file', turn, files: (it.changes || []).slice(0, 20).map((x) => ({ path: String(x.path || ''), kind: x.kind?.type || x.kind || '' })), status: done ? (it.status === 'completed' ? 'done' : 'fail') : 'run' }, done);
         break;
       case 'webSearch':
-        if (done) this.put(c, { id: it.id, kind: 'note', turn, text: '上网查了：' + clip(it.query || '', 200) });
+        if (done) this.put(c, { id: it.id, kind: 'tool', turn, name: 'web_search', label: '联网搜索：' + clip(it.query || it.action?.query || '', 200), args: {}, status: 'done' });
         break;
+      case 'mcpToolCall': {
+        const failed = done && (it.status === 'failed' || it.error || it.result?.isError);
+        const out = done ? clip((it.result?.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('\n') || it.error?.message || '', 1500) : '';
+        this.put(c, { id: it.id, kind: 'tool', turn, name: String(it.tool || ''), server: String(it.server || ''), label: csTools.label(it.tool, it.arguments, it.server), args: it.arguments ?? {}, status: done ? (failed ? 'fail' : 'done') : 'run', ...(done ? { output: out } : {}) }, done);
+        break;
+      }
       case 'dynamicToolCall': {
         const cur = c.items.find((x) => x.id === it.id);
         if (!cur) this.put(c, { id: it.id, kind: 'tool', turn, name: it.tool, args: it.arguments ?? {}, status: done ? (it.success ? 'done' : 'fail') : 'run' }, done);
@@ -467,9 +593,10 @@ class Assistant {
   status() {
     const spec = locate('codex', this.toolsDir);
     let studio = false; try { studio = !!this.credentials?.().key; } catch { /* 没配置 */ }
-    return { found: !!spec, where: spec?.where || '', version: spec?.version || '', studioKey: studio, running: !!this.server && !this.server.dead, workspace: this.work.replace(/\\/g, '/') };
+    const warmup = typeof this.codexHome?.view === 'function' ? this.codexHome.view() : null;
+    return { found: !!spec, where: spec?.where || '', version: spec?.version || '', studioKey: studio, running: !!this.server && !this.server.dead, tier: tier.clean(this.tierOf(), 'chat'), tierSite: (() => { try { return tier.applies(this.credentials?.().baseUrl); } catch { return false; } })(), workspace: this.work.replace(/\\/g, '/'), warmup };
   }
-  stopAll() { this.windowGone(); this.shutdown('导播台关闭'); for (const c of this.chats.values()) this.save(c, true); }
+  stopAll() { for (const c of this.chats.values()) this.cancelRetry(c); this.windowGone(); this.shutdown('导播台关闭'); for (const c of this.chats.values()) this.save(c, true); }
 }
 
 module.exports = { Assistant, usageDelta, describeApproval, approvalReply, userMcpNames, accessPolicy };

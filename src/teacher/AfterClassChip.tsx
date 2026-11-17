@@ -12,6 +12,8 @@ import { summarizeRecord, summaryOn, useAuto } from '../lib/autopilot';
 import { aiConfig } from '../lib/studyActions';
 import { online } from '../lib/studyAi';
 import { toast } from '../lib/toast';
+import { explainAiError } from '../lib/aiErrors';
+import { runFix } from '../ui/AiTrouble';
 import '../styles/after.css';
 
 const ICON: Record<Step['state'], React.ReactNode> = {
@@ -63,7 +65,10 @@ export function AfterClassChip() {
       if (s.retry === 'asr') { await asrApi.transcribe(row.id); await useAsr.getState().load(); }
       else if (s.retry === 'analyze') { setOpen(false); await analyzeRecording(row.id); }
       else if (s.retry === 'summary') { await summarizeRecord(row.id); toast(`「${who}」的课后总结写好了，到「学情 → 课后总结」确认后再发给家长`, { ms: 10000 }); }
-    } catch (e) { toast(`${s.name}没做成：${(e as Error).message}`, { ms: 10000 }); }
+    } catch (e) {
+      const m = (e as Error).message, poor = explainAiError(m)?.action === 'recharge';
+      toast(`${s.name}没做成：${m}`, { ms: 10000, ...(poor ? { action: { label: '去充值', run: () => runFix('recharge') } } : {}) });
+    }
     finally { setDoing(''); useAfter.setState((x) => ({ rev: x.rev + 1 })); }
   };
   const tip = chip.state === 'pending' ? `AI 有 ${pending} 道题拿不准，点开去确认` : '下课后：回放、语音转写、AI 学情分析、课后总结、板书走到哪了，点开看每一步';
@@ -80,6 +85,7 @@ export function AfterClassChip() {
         <ol className="ac-steps">{steps.map((s) => <li key={s.key} className={'ac-s ' + s.state} data-qa={'after-step-' + s.key} data-state={s.state}>
           <i>{ICON[s.state]}</i><b>{s.name}</b>
           <span title={s.text}>{s.text}{s.pct !== undefined ? ` ${s.pct}%` : ''}</span>
+          {s.state === 'error' && explainAiError(s.text)?.action === 'recharge' && <button data-qa="after-recharge" onClick={() => { setOpen(false); runFix('recharge'); }}>去充值</button>}
           {s.retry && <button disabled={!!doing} data-qa={'after-retry-' + s.key} onClick={() => void retry(s)}>{doing === s.key ? <Loader2 size={11} className="spin" /> : null}{retryLabel(s)}</button>}
         </li>)}</ol>
         <footer>

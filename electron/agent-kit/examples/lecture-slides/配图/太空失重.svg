@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 900" width="960" height="900">
+  <defs>
+    <radialGradient id="spaceBg" cx="50%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#172554"/>
+      <stop offset="60%" stop-color="#0b132b"/>
+      <stop offset="100%" stop-color="#050816"/>
+    </radialGradient>
+    <radialGradient id="earthGlow" cx="50%" cy="85%" r="55%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="55%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="waterBall" cx="35%" cy="32%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="28%" stop-color="#bae6fd"/>
+      <stop offset="75%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 深空与空间站舱壁 -->
+  <rect width="960" height="900" fill="#1e293b"/>
+  <rect x="44" y="44" width="872" height="812" rx="48" fill="#334155" stroke="#64748b" stroke-width="6"/>
+  <rect x="76" y="76" width="808" height="748" rx="36" fill="#e2e8f0"/>
+
+  <!-- 空间站超大圆形舷窗 -->
+  <circle cx="480" cy="400" r="275" fill="#475569" stroke="#94a3b8" stroke-width="14"/>
+  <circle cx="480" cy="400" r="250" fill="url(#spaceBg)"/>
+
+  <!-- 舷窗内星空与蓝色地球弧线 -->
+  <g fill="#ffffff" opacity="0.85">
+    <circle cx="310" cy="240" r="2.5"/>
+    <circle cx="380" cy="195" r="3"/>
+    <circle cx="570" cy="215" r="2.2"/>
+    <circle cx="645" cy="275" r="3"/>
+    <circle cx="290" cy="340" r="2"/>
+    <circle cx="660" cy="365" r="2"/>
+  </g>
+  <clipPath id="winClip">
+    <circle cx="480" cy="400" r="250"/>
+  </clipPath>
+  <g clip-path="url(#winClip)">
+    <!-- 大气层辉光与地球蓝色弧面 -->
+    <circle cx="480" cy="790" r="460" fill="url(#earthGlow)" opacity="0.55"/>
+    <circle cx="480" cy="805" r="430" fill="#2563eb"/>
+    <path d="M220 490 Q360 440 500 475 T760 495 L760 660 L220 660 Z" fill="#38bdf8" opacity="0.45"/>
+    <path d="M310 515 Q410 490 480 530 T640 520" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.65"/>
+  </g>
+
+  <!-- 舱内悬浮晶莹水球（太空授课经典实验） -->
+  <g transform="translate(360, 430)">
+    <circle cx="0" cy="0" r="76" fill="url(#waterBall)" opacity="0.92" stroke="#e0f2fe" stroke-width="3"/>
+    <ellipse cx="-24" cy="-26" rx="22" ry="12" transform="rotate(-28 -24 -26)" fill="#ffffff" opacity="0.85"/>
+    <circle cx="18" cy="16" r="20" fill="#e0f2fe" opacity="0.55" stroke="#ffffff" stroke-width="2"/>
+    <!-- 漂浮小水珠 -->
+    <circle cx="-98" cy="-42" r="12" fill="url(#waterBall)"/>
+    <circle cx="96" cy="-54" r="9" fill="url(#waterBall)"/>
+  </g>
+
+  <!-- 悬浮的航天员老师（蓝色舱内工作服） -->
+  <g transform="translate(615, 455) rotate(-14)">
+    <!-- 飘浮双腿 -->
+    <path d="M-28 90 Q-42 145 -68 168" fill="none" stroke="#1d4ed8" stroke-width="26" stroke-linecap="round"/>
+    <path d="M24 90 Q46 142 30 175" fill="none" stroke="#1d4ed8" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="-72" cy="172" r="14" fill="#f8fafc" stroke="#2563eb" stroke-width="3"/>
+    <circle cx="28" cy="180" r="14" fill="#f8fafc" stroke="#2563eb" stroke-width="3"/>
+    <!-- 航天员舱内连体服 -->
+    <rect x="-48" y="-10" width="96" height="112" rx="28" fill="#2563eb" stroke="#93c5fd" stroke-width="3"/>
+    <rect x="-26" y="18" width="52" height="30" rx="8" fill="#eff6ff"/>
+    <circle cx="-10" cy="33" r="6" fill="#ef4444"/>
+    <circle cx="12" cy="33" r="6" fill="#38bdf8"/>
+    <!-- 手臂伸向水球 -->
+    <path d="M-46 12 Q-92 -4 -126 -14" fill="none" stroke="#2563eb" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="-134" cy="-16" r="11" fill="#fed7aa"/>
+    <path d="M46 16 Q88 2 106 -24" fill="none" stroke="#2563eb" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="110" cy="-30" r="11" fill="#fed7aa"/>
+    <!-- 头部微笑 -->
+    <circle cx="0" cy="-54" r="38" fill="#fed7aa"/>
+    <path d="M-38 -58 C-38 -96 38 -96 38 -58 C26 -74 -26 -74 -38 -58 Z" fill="#0f172a"/>
+    <circle cx="-13" cy="-50" r="4" fill="#0f172a"/>
+    <circle cx="13" cy="-50" r="4" fill="#0f172a"/>
+    <path d="M-12 -34 Q0 -24 12 -34" fill="none" stroke="#dc2626" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- 悬浮的失重电子秤（读数 0.0 N） -->
+  <g transform="translate(235, 625) rotate(12)">
+    <rect x="-78" y="-22" width="156" height="44" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+    <text x="0" y="8" text-anchor="middle" font-family="Consolas, Microsoft YaHei, sans-serif" font-size="24" font-weight="700" fill="#38bdf8">0.0 N</text>
+  </g>
+
+  <!-- 底部物理核心判据条：万有引力全部提供向心加速度 a = g，F_N = 0 -->
+  <rect x="116" y="704" width="728" height="92" rx="20" fill="#0f172a" stroke="#38bdf8" stroke-width="3"/>
+  <text x="480" y="742" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#fbbf24">完全失重 ≠ 重力消失！地球引力仍在拉着空间站绕地圆周运动</text>
+  <text x="480" y="778" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="21" font-weight="700" fill="#4ade80">引力完全用来产生向心加速度 a = g  ⇒  支持力 F<tspan baseline-shift="sub" font-size="0.7em">N</tspan> = 0</text>
+</svg>

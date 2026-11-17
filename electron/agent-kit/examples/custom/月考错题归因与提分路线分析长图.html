@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高一物理11月月考 · 错题归因与三周提分路线分析（示例）</title>
+<style>
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --teal: #0f766e;
+    --teal-soft: #ccfbf1;
+    --blue: #1d4ed8;
+    --blue-soft: #dbeafe;
+    --amber: #d97706;
+    --amber-soft: #fef3c7;
+    --rose: #e11d48;
+    --rose-soft: #ffe4e6;
+    --emerald: #059669;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 860px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sheet {
+    width: 860px;
+    padding: 28px 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  /* 顶部横幅 */
+  .hero {
+    background: linear-gradient(135deg, #0b2942 0%, #0f5264 58%, #157575 100%);
+    color: #f8fafc;
+    border-radius: 22px;
+    padding: 26px 30px 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 14px 32px rgba(11, 41, 66, 0.18);
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: -48px;
+    top: -54px;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(94, 234, 212, 0.22) 0%, rgba(94, 234, 212, 0) 70%);
+    pointer-events: none;
+  }
+  .hero-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .badge-demo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: rgba(254, 243, 199, 0.18);
+    border: 1px solid rgba(252, 211, 77, 0.45);
+    color: #fde68a;
+  }
+  .hero-meta {
+    font-size: 13px;
+    color: #bae6fd;
+  }
+  .hero h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+    letter-spacing: 0.01em;
+    line-height: 1.25;
+  }
+  .hero-sub {
+    margin: 0 0 20px;
+    font-size: 14.5px;
+    color: #cbd5e1;
+    line-height: 1.5;
+  }
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .kpi {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .kpi .k-label {
+    font-size: 12px;
+    color: #cbd5e1;
+    margin-bottom: 4px;
+  }
+  .kpi .k-val {
+    font-size: 24px;
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.15;
+  }
+  .kpi .k-val small {
+    font-size: 13px;
+    font-weight: 600;
+    color: #99f6e4;
+    margin-left: 3px;
+  }
+  .kpi .k-note {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: #a7f3d0;
+  }
+
+  /* 通用卡片 */
+  .card {
+    background: var(--card);
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    padding: 22px 24px;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+  }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 10px;
+  }
+  .sec-head h2 {
+    margin: 0;
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink);
+  }
+  .sec-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: #0f766e;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .sec-head span {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  /* 双栏图表 */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1.06fr 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .chart-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .chart-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink-2);
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .legend-inline {
+    display: inline-flex;
+    gap: 10px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: -1px;
+  }
+  .donut-wrap {
+    display: grid;
+    grid-template-columns: 164px 1fr;
+    gap: 12px;
+    align-items: center;
+  }
+  .cause-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .cause-item {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+  }
+  .cause-top {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .cause-desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+
+  /* 错题逐题归因表 */
+  .wrong-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+  .wrong-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 700;
+    font-size: 12.5px;
+  }
+  .wrong-table th:first-child { border-radius: 10px 0 0 10px; width: 92px; }
+  .wrong-table th:last-child { border-radius: 0 10px 10px 0; }
+  .wrong-table td {
+    padding: 12px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  .wrong-table tr:last-child td { border-bottom: none; }
+  .q-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    background: var(--rose-soft);
+    color: var(--rose);
+    margin-bottom: 4px;
+  }
+  .q-type {
+    display: block;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .pill-cause {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .pill-cause.c1 { background: #ffe4e6; color: #be123c; }
+  .pill-cause.c2 { background: #fef3c7; color: #b45309; }
+  .pill-cause.c3 { background: #dbeafe; color: #1d4ed8; }
+  .rx-box {
+    background: #f0fdfa;
+    border-left: 3px solid #0d9488;
+    padding: 6px 10px;
+    border-radius: 0 8px 8px 0;
+    color: #115e59;
+    font-size: 12.5px;
+  }
+  .math {
+    font-family: "Cambria Math", "Times New Roman", Georgia, serif;
+    font-style: italic;
+  }
+  .math sub, .math sup { font-style: normal; font-size: 0.76em; }
+  .math .rm { font-style: normal; }
+
+  /* 三周提分路线 */
+  .roadmap {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .step-card {
+    border-radius: 14px;
+    padding: 16px 16px 14px;
+    border: 1px solid var(--line);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .step-card.w1 { background: linear-gradient(180deg, #fff1f2 0%, #ffffff 42%); border-color: #fecdd3; }
+  .step-card.w2 { background: linear-gradient(180deg, #eff6ff 0%, #ffffff 42%); border-color: #bfdbfe; }
+  .step-card.w3 { background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 42%); border-color: #a7f3d0; }
+  .step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .step-wk {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 3px 9px;
+    border-radius: 99px;
+  }
+  .w1 .step-wk { background: #ffe4e6; color: #be123c; }
+  .w2 .step-wk { background: #dbeafe; color: #1d4ed8; }
+  .w3 .step-wk { background: #d1fae5; color: #047857; }
+  .step-gain {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f766e;
+  }
+  .step-card h3 {
+    margin: 2px 0 0;
+    font-size: 15.5px;
+    color: var(--ink);
+  }
+  .step-list {
+    margin: 0;
+    padding-left: 17px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    line-height: 1.55;
+    flex: 1;
+  }
+  .step-list li { margin-bottom: 4px; }
+  .step-target {
+    font-size: 11.5px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    color: #334155;
+    font-weight: 600;
+  }
+
+  /* 家长沟通卡 */
+  .parent-box {
+    background: linear-gradient(90deg, #f0fdfa 0%, #eff6ff 100%);
+    border: 1px solid #99f6e4;
+    border-radius: 16px;
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: 1fr 240px;
+    gap: 18px;
+    align-items: center;
+  }
+  .parent-box h3 {
+    margin: 0 0 6px;
+    font-size: 15.5px;
+    color: #0f766e;
+  }
+  .parent-box p {
+    margin: 0;
+    font-size: 13px;
+    color: #1e293b;
+    line-height: 1.6;
+  }
+  .habit-box {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 11px 13px;
+    border: 1px solid #cbd5e1;
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.6;
+  }
+  .habit-box b {
+    display: block;
+    color: #0f172a;
+    margin-bottom: 3px;
+    font-size: 12.5px;
+  }
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+    padding-top: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <!-- 顶部总览 -->
+  <header class="hero">
+    <div class="hero-top">
+      <span class="badge-demo">★ 教学诊断长图样板 · 虚构示例数据</span>
+      <span class="hero-meta">高一物理（人教版必修一）· 第四章 牛顿运动定律与超失重专题</span>
+    </div>
+    <h1>月考错题归因与三周 15 分提分路线图</h1>
+    <p class="hero-sub">诊断对象：莫莫同学（示例） ｜ 试卷满分 100 分，难度系数 0.68 ｜ 核心结论：运算功底扎实（86%），26 分失分中有 <b>18 分集中在「超重失重方向判断」与「隔离体漏画/多画力」</b>，短期追分性价比极高。</p>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="k-label">本次卷面得分</div>
+        <div class="k-val">74<small>/ 100 分</small></div>
+        <div class="k-note">班级中上 · 距优秀线差 11 分</div>
+      </div>
+      <div class="kpi">
+        <div class="k-label">超重与失重模块</div>
+        <div class="k-val">13<small>/ 28 分</small></div>
+        <div class="k-note" style="color:#fda4af">失 15 分 · 第一追分突破口</div>
+      </div>
+      <div class="kpi">
+        <div class="k-label">稳拿可追回分值</div>
+        <div class="k-val">+15<small>分</small></div>
+        <div class="k-note">非难题失误占总失分 69%</div>
+      </div>
+      <div class="kpi">
+        <div class="k-label">下次月考目标</div>
+        <div class="k-val">89+<small>分</small></div>
+        <div class="k-note">3 周 6 次微专题闭环</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 一、五维雷达与失分归因 -->
+  <section class="card">
+    <div class="sec-head">
+      <h2><span class="sec-num">1</span>五维能力画像与 26 分失分根因拆解</h2>
+      <span>示例数据：统计自本卷 18 道小题作答痕迹</span>
+    </div>
+    <div class="charts-grid">
+      <!-- SVG 五维雷达图 -->
+      <div class="chart-box">
+        <div class="chart-title">
+          <span>力学五维掌握度雷达</span>
+          <span class="legend-inline">
+            <span><i class="dot" style="background:#0d9488"></i>当前得分率</span>
+            <span><i class="dot" style="background:#f59e0b"></i>目标达标线(85%)</span>
+          </span>
+        </div>
+        <svg viewBox="0 0 420 232" width="100%" style="display:block">
+          <!-- 五边形网格 r=74, 中心 (205, 122) -->
+          <g transform="translate(205,122)" fill="none">
+            <polygon points="0,-74 70.4,-22.9 43.5,59.9 -43.5,59.9 -70.4,-22.9" stroke="#cbd5e1" stroke-width="1.2" fill="#ffffff"/>
+            <polygon points="0,-55.5 52.8,-17.1 32.6,44.9 -32.6,44.9 -52.8,-17.1" stroke="#e2e8f0" stroke-width="1"/>
+            <polygon points="0,-37 35.2,-11.4 21.7,29.9 -21.7,29.9 -35.2,-11.4" stroke="#e2e8f0" stroke-width="1"/>
+            <polygon points="0,-18.5 17.6,-5.7 10.9,15 -10.9,15 -17.6,-5.7" stroke="#f1f5f9" stroke-width="1"/>
+            <line x1="0" y1="0" x2="0" y2="-74" stroke="#e2e8f0"/>
+            <line x1="0" y1="0" x2="70.4" y2="-22.9" stroke="#e2e8f0"/>
+            <line x1="0" y1="0" x2="43.5" y2="59.9" stroke="#e2e8f0"/>
+            <line x1="0" y1="0" x2="-43.5" y2="59.9" stroke="#e2e8f0"/>
+            <line x1="0" y1="0" x2="-70.4" y2="-22.9" stroke="#e2e8f0"/>
+            <!-- 目标线 85% -->
+            <polygon points="0,-62.9 59.8,-19.4 37.0,50.9 -37.0,50.9 -59.8,-19.4" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="5,4" fill="rgba(245,158,11,0.06)"/>
+            <!-- 当前能力: 隔离受力62%, 正方向48%, 图像转化70%, 临界突变55%, 列式运算86% -->
+            <polygon points="0,-45.9 33.8,-11.0 30.5,41.9 -23.9,32.9 -60.5,-19.7" stroke="#0d9488" stroke-width="2.6" fill="rgba(13,148,136,0.22)"/>
+            <circle cx="0" cy="-45.9" r="4" fill="#0d9488"/>
+            <circle cx="33.8" cy="-11.0" r="4.5" fill="#e11d48"/>
+            <circle cx="30.5" cy="41.9" r="4" fill="#0d9488"/>
+            <circle cx="-23.9" cy="32.9" r="4.5" fill="#e11d48"/>
+            <circle cx="-60.5" cy="-19.7" r="4" fill="#0d9488"/>
+          </g>
+          <text x="205" y="28" text-anchor="middle" font-size="12" font-weight="700" fill="#1e293b">隔离受力分析 62%</text>
+          <text x="283" y="96" text-anchor="start" font-size="12" font-weight="700" fill="#be123c">正方向与超失重 48%</text>
+          <text x="256" y="204" text-anchor="start" font-size="12" font-weight="700" fill="#1e293b">图像斜率转化 70%</text>
+          <text x="154" y="204" text-anchor="end" font-size="12" font-weight="700" fill="#be123c">绳簧临界突变 55%</text>
+          <text x="126" y="96" text-anchor="end" font-size="12" font-weight="700" fill="#0f766e">规范列式运算 86%</text>
+        </svg>
+      </div>
+
+      <!-- SVG 失分结构环形图 -->
+      <div class="chart-box">
+        <div class="chart-title">
+          <span>26 分失分四大错因占比</span>
+          <span style="font-size:11.5px;color:#64748b">抓前两项即可追回 18 分</span>
+        </div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 160 160" width="160" height="160">
+            <!-- r=54, C=339.3: 42%(142.5), 27%(91.6), 19%(64.5), 12%(40.7) -->
+            <circle cx="80" cy="80" r="54" fill="none" stroke="#f1f5f9" stroke-width="22"/>
+            <circle cx="80" cy="80" r="54" fill="none" stroke="#e11d48" stroke-width="22" stroke-dasharray="142.5 339.3" transform="rotate(-90 80 80)"/>
+            <circle cx="80" cy="80" r="54" fill="none" stroke="#f59e0b" stroke-width="22" stroke-dasharray="91.6 339.3" stroke-dashoffset="-142.5" transform="rotate(-90 80 80)"/>
+            <circle cx="80" cy="80" r="54" fill="none" stroke="#2563eb" stroke-width="22" stroke-dasharray="64.5 339.3" stroke-dashoffset="-234.1" transform="rotate(-90 80 80)"/>
+            <circle cx="80" cy="80" r="54" fill="none" stroke="#10b981" stroke-width="22" stroke-dasharray="40.7 339.3" stroke-dashoffset="-298.6" transform="rotate(-90 80 80)"/>
+            <text x="80" y="76" text-anchor="middle" font-size="21" font-weight="800" fill="#0f172a">-26分</text>
+            <text x="80" y="95" text-anchor="middle" font-size="11" fill="#64748b">本卷总失分</text>
+          </svg>
+          <div class="cause-list">
+            <div class="cause-item">
+              <div class="cause-top"><span style="color:#be123c">● 方向与超失重混淆</span><span>11分 (42%)</span></div>
+              <div class="cause-desc">凭运动方向猜状态，减速下降误判失重</div>
+            </div>
+            <div class="cause-item">
+              <div class="cause-top"><span style="color:#b45309">● 受力对象串位/突变错</span><span>7分 (27%)</span></div>
+              <div class="cause-desc">把压力画在人身上；弹簧剪断误当突变为零</div>
+            </div>
+            <div class="cause-item">
+              <div class="cause-top"><span style="color:#1d4ed8">● 传感器图像拐点误读</span><span>5分 (19%)</span></div>
+              <div class="cause-desc">下蹲 F–t 图最低点与速度最大点张冠李戴</div>
+            </div>
+            <div class="cause-item">
+              <div class="cause-top"><span style="color:#047857">● 单位标定与跳步</span><span>3分 (12%)</span></div>
+              <div class="cause-desc">台秤 kg 示数与支持力 N 未除以 g 换算</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 二、典型错题逐题归因诊室 -->
+  <section class="card">
+    <div class="sec-head">
+      <h2><span class="sec-num">2</span>高频失分题逐题病灶切片与纠偏处方</h2>
+      <span>聚焦「超重与失重 · 牛顿第二定律」核心失分题</span>
+    </div>
+    <table class="wrong-table">
+      <thead>
+        <tr>
+          <th>题号 / 扣分</th>
+          <th style="width:34%">原题情境与莫莫错解还原</th>
+          <th style="width:24%">深层错因定位</th>
+          <th>课堂一对一纠偏处方</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="q-tag">第 6 题 -4分</span><span class="q-type">单选题 · 基础</span></td>
+          <td><b>情境：</b>电梯以 <span class="math">2 <span class="rm">m/s²</span></span> <b>减速下降</b>，求 <span class="math">50 <span class="rm">kg</span></span> 乘客对秤压力。<br><span style="color:#be123c">错选 B（400 N）</span>：看到“下降”直接列 <span class="math">mg - F<sub>N</sub> = ma</span>。</td>
+          <td><span class="pill-cause c1">凭速度方向猜超失重</span><br>未区分速度 <span class="math">v</span> 向下与加速度 <span class="math">a</span> 向上。</td>
+          <td><div class="rx-box">强制执行<b>两步口诀</b>：减速运动 <span class="math">a</span> 与 <span class="math">v</span> 反向 → <span class="math">a = +2 <span class="rm">m/s²</span></span>（向上）→ <span class="math">F<sub>N</sub> = m(g+a) = 600 <span class="rm">N</span></span>（超重）。</div></td>
+        </tr>
+        <tr>
+          <td><span class="q-tag">第 10 题 -3分</span><span class="q-type">多选题 · 中档</span></td>
+          <td><b>情境：</b>同学站在力传感器上完成一次“下蹲—起立”，读 <span class="math">F–t</span> 双峰曲线。<br><span style="color:#be123c">漏选 C、误选 D</span>：认为只下蹲就一直失重。</td>
+          <td><span class="pill-cause c3">动态全过程拆分缺失</span><br>忽略下蹲后半段必须<b>减速刹停</b>到静止。</td>
+          <td><div class="rx-box">用导播台<b>电梯体重秤插件</b>慢放：下蹲 = 先加速向下（失重谷）+ 后减速向下（超重峰）；起立恰好相反（先超后失）。</div></td>
+        </tr>
+        <tr>
+          <td><span class="q-tag">第 14 题 -4分</span><span class="q-type">实验题 · 中档</span></td>
+          <td><b>情境：</b>电梯内体重秤显示“<span class="math">44.0 <span class="rm">kg</span></span>”（原质量 <span class="math">50.0 <span class="rm">kg</span></span>，<span class="math">g=10</span>）。<br><span style="color:#be123c">填错 a = 6 m/s²</span>：直接拿 50 减 44 算力。</td>
+          <td><span class="pill-cause c2">视重标定原理不清</span><br>混淆台秤刻度值 <span class="math">m' = F<sub>N</sub>/g</span> 与牛顿力值。</td>
+          <td><div class="rx-box">先还原支持力 <span class="math">F<sub>N</sub> = m'g = 440 <span class="rm">N</span></span>，再由 <span class="math">F<sub>N</sub> - mg = ma</span> 解得 <span class="math">a = -1.2 <span class="rm">m/s²</span></span>（方向竖直向下）。</div></td>
+        </tr>
+        <tr>
+          <td><span class="q-tag">第 16(2) -8分</span><span class="q-type">计算压轴 · 拔高</span></td>
+          <td><b>情境：</b>升降机加速上升时剪断天花板轻绳，求弹簧连接双物块瞬时加速度。<br><span style="color:#be123c">受力图多画“惯性力”、弹簧力归零</span>。</td>
+          <td><span class="pill-cause c2">施力物纪律 + 绳簧突变混淆</span><br>找不到施力物的力一律多画；弹簧形变来不及变。</td>
+          <td><div class="rx-box">① 每个力必问“谁给的”；② 剪绳瞬间<b>绳拉力突变为 0，弹簧弹力保持剪断前瞬时值不变</b>，隔离两球秒出答案。</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 三、三周阶梯提分路线图 -->
+  <section class="card">
+    <div class="sec-head">
+      <h2><span class="sec-num">3</span>三周 +15 分靶向提分路线图（一对一课表联动）</h2>
+      <span>先保基础零失误，再攻传感器图像与压轴突变</span>
+    </div>
+    <div class="roadmap">
+      <div class="step-card w1">
+        <div class="step-top"><span class="step-wk">WEEK 1 · 止血筑基</span><span class="step-gain">预计 +6 分</span></div>
+        <h3>超失重方向铁律与隔离受力</h3>
+        <ul class="step-list">
+          <li>建立「向上为正」统一坐标方程 <span class="math">F<sub>N</sub> = m(g+a)</span>，告别分情况死记。</li>
+          <li>专项清理「人对秤压力画进人受力图」顽疾，8 道电梯/吊秤题过关。</li>
+          <li>搞懂台秤读数 <span class="math">F<sub>N</sub>/g</span> 与完全失重（<span class="math">a = -g</span>，重力不变）。</li>
+        </ul>
+        <div class="step-target">验收标准：电梯四阶段快判 10 题全对（限时 4 分钟）</div>
+      </div>
+
+      <div class="step-card w2">
+        <div class="step-top"><span class="step-wk">WEEK 2 · 图像打通</span><span class="step-gain">预计 +5 分</span></div>
+        <h3>传感器 F–t 与 v–t / a–t 互译</h3>
+        <ul class="step-list">
+          <li>在互动课件上手画 <span class="math">a–t</span> 曲线，亲眼对照电梯速度与台秤读数拐点。</li>
+          <li>拆解「下蹲、起立、蹦极、跳水」四大高频传感器双峰真题模型。</li>
+          <li>掌握在 <span class="math">F–t</span> 图上先画 <span class="math">F = mg</span> 水平基准线秒判超失重区间。</li>
+        </ul>
+        <div class="step-target">验收标准：海淀/朝阳期末传感器多选题连续 5 题零漏选</div>
+      </div>
+
+      <div class="step-card w3">
+        <div class="step-top"><span class="step-wk">WEEK 3 · 压轴冲刺</span><span class="step-gain">预计 +4 分</span></div>
+        <h3>绳簧瞬时突变与系统超失重</h3>
+        <ul class="step-list">
+          <li>对比训练「轻绳/轻杆突变 vs 轻弹簧弹力瞬时不变」6 种连接体构型。</li>
+          <li>进阶「系统牛顿第二定律」：斜面滑块加速下滑时台秤示数秒解。</li>
+          <li>40 分钟单元限时仿真小测，规范分步列式抢步骤分。</li>
+        </ul>
+        <div class="step-target">验收标准：单元复测卷冲上 88～92 分区间</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 四、家长沟通与微习惯 -->
+  <section class="parent-box">
+    <div>
+      <h3>给家长的学情反馈摘要（可直接转发微信）</h3>
+      <p>莫莫这次物理 74 分不用焦虑，孩子计算底子很稳（得分率 86%），丢分主要卡在刚学的「超重与失重」爱凭生活直觉猜方向。接下来三周我们按上面三个小台阶逐个清零，每次课后只留 15 分钟靶向微练，把这 15 分稳稳拿回来。</p>
+    </div>
+    <div class="habit-box">
+      <b>本周做题三条铁律（贴书桌）</b>
+      1. 动笔前先圈研究对象，只画它受的力<br>
+      2. 看到“减速”立刻画反向加速度箭头<br>
+      3. 台秤读“kg”先乘 g 变成牛顿再列式
+    </div>
+  </section>
+
+  <div class="footer">
+    说明：本图表中学生姓名、考分与错题统计均为展示排版能力而设定的合理教学示例数据 · 由「最强网课教辅系统」AI 工坊自定义任务生成
+  </div>
+</div>
+</body>
+</html>

@@ -125,8 +125,9 @@ class ManimSetup {
     this.say('解压 Python', 10);
     await fs.promises.rm(py, { recursive: true, force: true, maxRetries: 3 });
     await fs.promises.mkdir(py, { recursive: true });
-    // Windows 10 起自带 tar（bsdtar），能解 zip；-m 不还原文件时间（还原失败会让退出码非 0）
-    const t = await this.exec('tar', ['-xmf', zip, '-C', py], { timeout: 120000 });
+    // Windows 10 起自带 tar（bsdtar），能解 zip；固定用 System32\tar.exe 避开 Git for Windows 的 GNU tar
+    const sysTar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+    const t = await this.exec(fs.existsSync(sysTar) ? sysTar : 'tar', ['-xmf', zip, '-C', py], { timeout: 120000 });
     const exe = path.join(py, 'python.exe');
     if (!fs.existsSync(exe)) throw Error('Python 解压失败：' + t.out.trim().slice(-200));
     const pth = fs.readdirSync(py).find((f) => /^python\d+\._pth$/.test(f));

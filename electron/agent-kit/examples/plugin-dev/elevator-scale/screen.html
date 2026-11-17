@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>电梯体重秤 · 学生画面</title>
+<link rel="stylesheet" href="/__cs/ui.css">
+<style>
+  html, body {
+    margin: 0; width: 100%; height: 100%; overflow: hidden;
+    background: radial-gradient(circle at 18% 15%, #162638 0%, #0b121c 62%, #070b12 100%);
+    color: #eef4fb;
+    font-family: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
+  }
+  .stage {
+    width: 100%; height: 100%; padding: 2.4vh 2.8vw;
+    display: grid; grid-template-rows: auto 1fr; gap: 2vh;
+  }
+  .header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 1.2vh 1.8vw; border-radius: 14px;
+    background: rgba(20, 32, 48, 0.78); border: 1px solid rgba(98, 145, 190, 0.24);
+  }
+  .title-box { display: flex; align-items: baseline; gap: 14px; }
+  .title-box h1 { font-size: clamp(20px, 2.2vw, 30px); margin: 0; letter-spacing: .02em; color: #f6fbff; }
+  .title-box span { font-size: clamp(13px, 1.15vw, 17px); color: #8fa9c4; }
+  .status-pill {
+    padding: 6px 18px; border-radius: 99px; font-weight: 800;
+    font-size: clamp(15px, 1.45vw, 22px); letter-spacing: .03em;
+    border: 1.5px solid rgba(61, 217, 235, .45); background: rgba(61, 217, 235, .14); color: #4ce2f5;
+  }
+  .status-pill.over { border-color: rgba(255, 181, 71, .55); background: rgba(255, 181, 71, .16); color: #ffc15e; }
+  .status-pill.under { border-color: rgba(61, 217, 235, .55); background: rgba(61, 217, 235, .16); color: #4ce2f5; }
+  .status-pill.free { border-color: rgba(255, 96, 88, .6); background: rgba(255, 96, 88, .18); color: #ff766e; }
+  .status-pill.bal { border-color: rgba(60, 207, 145, .55); background: rgba(60, 207, 145, .16); color: #4ee0a3; }
+
+  .main-canvas-wrap {
+    position: relative; width: 100%; height: 100%; min-height: 0;
+    border-radius: 18px; overflow: hidden;
+    background: rgba(13, 21, 33, 0.84);
+    border: 1px solid rgba(98, 145, 190, 0.22);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  }
+  #scene { width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <header class="header">
+    <div class="title-box">
+      <h1>电梯体重秤 · 超重与失重实时探究</h1>
+      <span id="sub-tag">人教版必修一 · 竖直向上为正（g = 10 m/s²）</span>
+    </div>
+    <div id="pill" class="status-pill over">超重状态 · F<sub>N</sub> &gt; mg</div>
+  </header>
+  <div class="main-canvas-wrap">
+    <canvas id="scene" aria-label="电梯升降、弹簧台秤读数、隔离体受力图与实时曲线"></canvas>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var G = 10;
+  var state = { m: 50, a: 2.0, v: 1.5, y: 0, dir: 1, stage: 'start', running: true };
+  // 平滑插值，滑块拖动时指针和箭头丝滑过渡
+  var disp = { m: 50, a: 2.0, v: 1.5, y: 0 };
+  var history = []; // 最近 8 秒的 { a, fn, mg } 轨迹
+  var pill = document.getElementById('pill');
+  var subTag = document.getElementById('sub-tag');
+  var cv = document.getElementById('scene');
+  var ctx = cv.getContext('2d');
+
+  var STAGE_LABEL = {
+    start: '启动加速阶段',
+    cruise: '匀速运行阶段',
+    brake: '到站制动阶段',
+    fall: '自由落体（完全失重）',
+    custom: '自定义加速度调节'
+  };
+
+  function statusOf(a) {
+    if (a <= -G + 1e-6) return { html: '完全失重 · F<sub>N</sub> = 0', cls: 'free', color: '#ff6f66', rel: 'Fₙ = 0 < mg' };
+    if (a < -1e-6) return { html: '失重状态 · F<sub>N</sub> &lt; mg', cls: 'under', color: '#4ce2f5', rel: 'Fₙ < mg' };
+    if (a > 1e-6) return { html: '超重状态 · F<sub>N</sub> &gt; mg', cls: 'over', color: '#ffc15e', rel: 'Fₙ > mg' };
+    return { html: '平衡状态 · F<sub>N</sub> = mg', cls: 'bal', color: '#4ee0a3', rel: 'Fₙ = mg' };
+  }
+
+  function applyState(next) {
+    if (!next || typeof next !== 'object') return;
+    var stageChanged = next.stage !== state.stage || next.dir !== state.dir;
+    state.m = Number.isFinite(Number(next.m)) ? Number(next.m) : state.m;
+    state.a = Number.isFinite(Number(next.a)) ? Number(next.a) : state.a;
+    state.dir = next.dir === -1 ? -1 : 1;
+    state.stage = next.stage || 'custom';
+    state.running = next.running !== false;
+    if (stageChanged && Number.isFinite(Number(next.v))) disp.v = Number(next.v);
+    var st = statusOf(state.a);
+    pill.innerHTML = st.html;
+    pill.className = 'status-pill ' + st.cls;
+    var dirTxt = state.stage === 'fall' ? '仅受重力自由下落' : (state.dir > 0 ? '电梯上行 ↑' : '电梯下行 ↓');
+    subTag.textContent = dirTxt + ' · ' + (STAGE_LABEL[state.stage] || STAGE_LABEL.custom) + ' · g = 10 m/s²';
+  }
+
+  function pull() {
+    if (!window.cs || !cs.storage) return;
+    cs.storage.get('state').then(function (s) { if (s) applyState(s); }).catch(function () {});
+  }
+  pull();
+  setInterval(pull, 220);
+
+  function fmtSign(n, d) {
+    var v = Number(n);
+    if (Math.abs(v) < 0.04) return '0.0';
+    return (v > 0 ? '+' : '−') + Math.abs(v).toFixed(d == null ? 1 : d);
+  }
+
+  function drawArrow(x1, y1, x2, y2, col, lw, label, subLabel, side, sc) {
+    var k = sc || 1;
+    var dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+    if (len < 3) return;
+    var ux = dx / len, uy = dy / len, head = Math.min(18, Math.max(10, lw * 3.0));
+    ctx.save();
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - ux * head * 0.75, y2 - uy * head * 0.75); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - ux * head - uy * head * 0.52, y2 - uy * head + ux * head * 0.52);
+    ctx.lineTo(x2 - ux * head + uy * head * 0.52, y2 - uy * head - ux * head * 0.52);
+    ctx.closePath(); ctx.fill();
+    if (label) {
+      var sx = x2 + (side || 1) * Math.round(13 * k);
+      ctx.font = '700 ' + Math.max(13, Math.round(18 * k)) + 'px "Times New Roman", "PingFang SC", sans-serif';
+      ctx.textAlign = (side || 1) > 0 ? 'left' : 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, sx, y2);
+      if (subLabel) {
+        ctx.font = '600 ' + Math.max(11, Math.round(14 * k)) + 'px "PingFang SC", sans-serif';
+        ctx.fillStyle = '#bcd0e6';
+        ctx.fillText(subLabel, sx, y2 + Math.round(18 * k));
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderFrame(dt) {
+    var dpr = window.devicePixelRatio || 1;
+    var r = cv.getBoundingClientRect();
+    var W = Math.max(320, r.width), H = Math.max(240, r.height);
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // 平滑物理推进
+    disp.m += (state.m - disp.m) * Math.min(1, dt * 12);
+    disp.a += (state.a - disp.a) * Math.min(1, dt * 12);
+    if (state.running) {
+      disp.v = Math.max(-14, Math.min(14, disp.v + disp.a * dt));
+      disp.y += disp.v * dt;
+    }
+
+    var m = disp.m, a = disp.a;
+    var mg = m * G, fn = Math.max(0, m * (G + a));
+    var st = statusOf(a);
+
+    history.push({ a: a, fn: fn, mg: mg });
+    if (history.length > 240) history.shift();
+
+    var sc = Math.max(0.72, Math.min(1, W / 1180));
+    var pad = Math.min(22, W * 0.018);
+    var col1W = W * 0.30, col2W = W * 0.37, col3W = W - col1W - col2W - pad * 4;
+    var x1 = pad, x2 = x1 + col1W + pad, x3 = x2 + col2W + pad;
+    var boxY = pad, boxH = H - pad * 2;
+
+    // ── 第一栏：电梯井道与轿厢 ──
+    ctx.save();
+    ctx.fillStyle = '#0f1a29'; ctx.strokeStyle = 'rgba(110,158,205,0.22)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x1, boxY, col1W, boxH, 14); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x1 + 2, boxY + 2, col1W - 4, boxH - 4, 12); ctx.clip();
+
+    var ppm = boxH / 14;
+    var midY = boxY + boxH * 0.52;
+    for (var f = Math.floor((disp.y - 10) / 3); f <= Math.ceil((disp.y + 10) / 3); f++) {
+      var fy = midY + boxH * 0.22 - (f * 3 - disp.y) * ppm;
+      ctx.strokeStyle = 'rgba(120,165,210,0.16)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x1 + 10, fy); ctx.lineTo(x1 + col1W - 10, fy); ctx.stroke();
+      var flNum = f >= 0 ? (f + 1) + 'F' : 'B' + Math.abs(f);
+      ctx.fillStyle = '#6985a3'; ctx.font = '600 ' + Math.round(13 * sc) + 'px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left'; ctx.fillText(flNum, x1 + 14, fy - 7);
+    }
+
+    var cabW = Math.min(col1W * 0.43, 172), cabH = Math.min(boxH * 0.56, 308);
+    var cabX = x1 + Math.round(36 * sc), cabY = midY - cabH / 2;
+    // 钢缆
+    ctx.strokeStyle = '#5e7e9e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cabX + cabW / 2, boxY); ctx.lineTo(cabX + cabW / 2, cabY); ctx.stroke();
+    // 轿厢体
+    var cabGrad = ctx.createLinearGradient(cabX, cabY, cabX, cabY + cabH);
+    cabGrad.addColorStop(0, 'rgba(32, 54, 80, 0.92)');
+    cabGrad.addColorStop(1, 'rgba(18, 31, 48, 0.95)');
+    ctx.fillStyle = cabGrad; ctx.strokeStyle = st.color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(cabX, cabY, cabW, cabH, 12); ctx.fill(); ctx.stroke();
+
+    // 弹簧台秤
+    var floorY = cabY + cabH - 10;
+    var comp = Math.min(0.82, fn / 1400);
+    var spH = cabH * 0.16 * (1 - comp * 0.72);
+    var plateY = floorY - spH;
+    ctx.strokeStyle = '#90acc8'; ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    for (var j = 0; j <= 8; j++) {
+      var sx = cabX + cabW / 2 + (j > 0 && j < 8 ? (j % 2 ? -1 : 1) * cabW * 0.16 : 0);
+      var sy = floorY - spH * (j / 8);
+      if (j === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.fillStyle = st.color;
+    ctx.beginPath(); ctx.roundRect(cabX + cabW * 0.16, plateY - 8, cabW * 0.68, 8, 4); ctx.fill();
+
+    // 乘客（完全失重时轻微飘离秤盘表面，视觉直观）
+    var floatGap = fn < 0.5 ? 10 : 0;
+    var footY = plateY - 8 - floatGap;
+    var u = cabH / 270, px = cabX + cabW / 2;
+    ctx.fillStyle = '#ffc15e';
+    ctx.beginPath(); ctx.arc(px, footY - 152 * u, 17 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#eaf3fc'; ctx.lineWidth = 9.5 * u; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(px, footY - 130 * u); ctx.lineTo(px, footY - 68 * u);
+    ctx.moveTo(px - 26 * u, footY - 104 * u); ctx.lineTo(px, footY - 122 * u); ctx.lineTo(px + 26 * u, footY - 104 * u);
+    ctx.moveTo(px, footY - 68 * u); ctx.lineTo(px - 17 * u, footY - 4 * u);
+    ctx.moveTo(px, footY - 68 * u); ctx.lineTo(px + 17 * u, footY - 4 * u);
+    ctx.stroke();
+
+    // 轿厢右侧速度 v 与加速度 a 矢量
+    var vecX = cabX + cabW + Math.round(16 * sc);
+    if (Math.abs(disp.v) > 0.08) {
+      var vLen = Math.max(-72, Math.min(72, disp.v * 9));
+      drawArrow(vecX, midY + 52, vecX, midY + 52 - vLen, '#8fb4d8', 3.5, 'v', fmtSign(disp.v, 1) + ' m/s', 1, sc);
+    }
+    if (Math.abs(a) > 0.08) {
+      var aLen = Math.max(-76, Math.min(76, a * 8));
+      drawArrow(vecX, midY - 48, vecX, midY - 48 - aLen, st.color, 4, 'a', fmtSign(a, 1) + ' m/s²', 1, sc);
+    }
+
+    ctx.fillStyle = 'rgba(11,19,30,0.82)';
+    ctx.fillRect(x1 + 12, boxY + 12, Math.round(146 * sc), 28);
+    ctx.fillStyle = '#a8c3de'; ctx.font = '600 ' + Math.max(12, Math.round(14 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'left'; ctx.fillText('镜头跟随电梯轿厢', x1 + 18, boxY + 30);
+    ctx.restore();
+
+    // ── 第二栏：大号双针弹簧秤表盘 + 实时公式核算 ──
+    ctx.save();
+    ctx.fillStyle = '#0f1a29'; ctx.strokeStyle = 'rgba(110,158,205,0.22)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x2, boxY, col2W, boxH, 14); ctx.fill(); ctx.stroke();
+
+    var cx = x2 + col2W / 2;
+    ctx.fillStyle = '#a8c3de'; ctx.font = '600 ' + Math.max(13, Math.round(16 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('弹簧台秤实时读数（灰针 = 静止视重）', cx, boxY + 30, col2W - 24);
+
+    var rad = Math.min(col2W * 0.37, boxH * 0.27);
+    var dy = boxY + 54 + rad;
+    // 表盘外圈
+    var dialGrad = ctx.createRadialGradient(cx, dy, rad * 0.1, cx, dy, rad);
+    dialGrad.addColorStop(0, '#18283e'); dialGrad.addColorStop(1, '#0d1726');
+    ctx.fillStyle = dialGrad; ctx.strokeStyle = 'rgba(130,175,220,0.35)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, dy, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    var A0 = Math.PI * 0.82, span = Math.PI * 1.36, maxKg = 140;
+    for (var kg = 0; kg <= maxKg; kg += 5) {
+      var ang = A0 + span * (kg / maxKg);
+      var major = kg % 20 === 0;
+      var rIn = major ? rad * 0.78 : rad * 0.86;
+      ctx.strokeStyle = major ? '#aac4de' : 'rgba(140,175,210,0.4)';
+      ctx.lineWidth = major ? 2.2 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * rIn, dy + Math.sin(ang) * rIn);
+      ctx.lineTo(cx + Math.cos(ang) * rad * 0.94, dy + Math.sin(ang) * rad * 0.94);
+      ctx.stroke();
+      if (major) {
+        ctx.fillStyle = '#9bb8d4'; ctx.font = '600 13px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(kg), cx + Math.cos(ang) * rad * 0.64, dy + Math.sin(ang) * rad * 0.64);
+      }
+    }
+
+    // 静止基准针（m kg）
+    var refAng = A0 + span * Math.min(m, maxKg) / maxKg;
+    ctx.strokeStyle = 'rgba(180, 205, 230, 0.35)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, dy); ctx.lineTo(cx + Math.cos(refAng) * rad * 0.74, dy + Math.sin(refAng) * rad * 0.74); ctx.stroke();
+
+    // 实时读数针（fn/G kg）
+    var curAng = A0 + span * Math.min(fn / G, maxKg) / maxKg;
+    ctx.strokeStyle = st.color; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(cx, dy); ctx.lineTo(cx + Math.cos(curAng) * rad * 0.82, dy + Math.sin(curAng) * rad * 0.82); ctx.stroke();
+    ctx.fillStyle = '#f4f9ff';
+    ctx.beginPath(); ctx.arc(cx, dy, 7, 0, Math.PI * 2); ctx.fill();
+
+    // 表盘数字窗
+    ctx.fillStyle = st.color;
+    ctx.font = '800 ' + Math.round(rad * 0.26) + 'px "JetBrains Mono", "PingFang SC", sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText((fn / G).toFixed(1) + ' kg', cx, dy + rad * 0.48);
+    ctx.fillStyle = '#b9d0e8';
+    ctx.font = '600 ' + Math.round(rad * 0.135) + 'px "JetBrains Mono", sans-serif';
+    ctx.fillText('秤面压力 Fₙ = ' + Math.round(fn) + ' N', cx, dy + rad * 0.70);
+
+    // 底部公式核算卡
+    var cardPad = Math.round(14 * sc);
+    var cardY = dy + rad + 24, cardH = Math.max(92, boxY + boxH - cardY - 16);
+    var cardInW = col2W - cardPad * 2 - 22;
+    ctx.fillStyle = 'rgba(20, 34, 52, 0.9)'; ctx.strokeStyle = 'rgba(110,158,205,0.25)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x2 + cardPad, cardY, col2W - cardPad * 2, cardH, 12); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#8fa9c4'; ctx.font = '600 ' + Math.max(11.5, Math.round(14 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('牛顿第二定律（向上为正）：Fₙ − mg = ma', x2 + cardPad + 11, cardY + 26, cardInW);
+    var signStr = a >= 0 ? '+ ' + Math.abs(a).toFixed(1) : '− ' + Math.abs(a).toFixed(1);
+    ctx.fillStyle = '#f4f9ff'; ctx.font = '700 ' + Math.max(13, Math.round(17.5 * sc)) + 'px "JetBrains Mono", "PingFang SC", sans-serif';
+    ctx.fillText('Fₙ = m(g+a) = ' + Math.round(m) + '×(10 ' + signStr + ') = ' + Math.round(fn) + ' N', x2 + cardPad + 11, cardY + 55, cardInW);
+    ctx.fillStyle = st.color; ctx.font = '600 ' + Math.max(12, Math.round(14.5 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.fillText('重力 mg = ' + Math.round(mg) + ' N 不变 ｜ 此刻 ' + st.rel, x2 + cardPad + 11, cardY + Math.min(cardH - 14, 83), cardInW);
+    ctx.restore();
+
+    // ── 第三栏：隔离体受力图 + 实时 F_N(t) 示波曲线 ──
+    ctx.save();
+    ctx.fillStyle = '#0f1a29'; ctx.strokeStyle = 'rgba(110,158,205,0.22)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x3, boxY, col3W, boxH, 14); ctx.fill(); ctx.stroke();
+
+    var fbdH = boxH * 0.57, chartY = boxY + fbdH + 8, chartH = boxH - fbdH - 22;
+    var fx = x3 + col3W * 0.37, fyMid = boxY + fbdH * 0.54;
+    ctx.fillStyle = '#a8c3de'; ctx.font = '600 ' + Math.max(13, Math.round(16 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center'; ctx.fillText('隔离体受力分析（研究对象：人）', x3 + col3W / 2, boxY + 30, col3W - 20);
+
+    var maxArrow = Math.max(38, fbdH * 0.40 - 24);
+    var fScale = maxArrow / 1200;
+    var boxR = Math.round(24 * sc);
+    ctx.fillStyle = 'rgba(76, 226, 245, 0.14)'; ctx.strokeStyle = '#4ce2f5'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.roundRect(fx - boxR, fyMid - boxR, boxR * 2, boxR * 2, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f4f9ff'; ctx.font = '700 ' + Math.max(14, Math.round(18 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('人', fx, fyMid);
+
+    if (fn > 1) {
+      var fnLen = Math.min(maxArrow, Math.max(20, fn * fScale));
+      drawArrow(fx, fyMid - boxR, fx, fyMid - boxR - fnLen, st.color, 5 * sc + 0.5, 'Fₙ = ' + Math.round(fn) + ' N', '台秤支持力', 1, sc);
+    } else {
+      ctx.fillStyle = '#ff766e'; ctx.font = '700 ' + Math.max(12, Math.round(15 * sc)) + 'px "PingFang SC", sans-serif';
+      ctx.textAlign = 'left'; ctx.fillText('Fₙ = 0 N（完全失重）', fx + boxR + 8, fyMid - 28, col3W - (fx - x3) - boxR - 14);
+    }
+    var mgLen = Math.min(maxArrow, Math.max(20, mg * fScale));
+    drawArrow(fx, fyMid + boxR, fx, fyMid + boxR + mgLen, '#ff766e', 5 * sc + 0.5, 'mg = ' + Math.round(mg) + ' N', '地球重力（不变）', 1, sc);
+
+    // 底部实时 F_N(t) 与 mg 对照波形
+    var gx = x3 + 16, gw = col3W - 32, gy = chartY + 24, gh = Math.max(60, chartH - 34);
+    ctx.fillStyle = 'rgba(8, 14, 24, 0.72)'; ctx.strokeStyle = 'rgba(110,158,205,0.2)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(gx, gy, gw, gh, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#8fa9c4'; ctx.font = '600 ' + Math.max(11, Math.round(13 * sc)) + 'px "PingFang SC", sans-serif';
+    ctx.textAlign = 'left'; ctx.fillText('支持力 Fₙ(t) 实时曲线（虚线为重力 mg）', gx + 2, gy - 8, gw - 4);
+
+    var fMax = 1400;
+    var yOfF = function (val) { return gy + gh - 10 - (Math.max(0, Math.min(fMax, val)) / fMax) * (gh - 20); };
+    // mg 基准虚线
+    var yMg = yOfF(mg);
+    ctx.save(); ctx.strokeStyle = 'rgba(255, 118, 110, 0.65)'; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(gx + 8, yMg); ctx.lineTo(gx + gw - 8, yMg); ctx.stroke(); ctx.restore();
+
+    if (history.length > 1) {
+      ctx.strokeStyle = st.color; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (var i = 0; i < history.length; i++) {
+        var hx = gx + 10 + (i / 240) * (gw - 20);
+        var hy = yOfF(history[i].fn);
+        if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  var prev = performance.now();
+  function loop(now) {
+    var dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+    renderFrame(dt);
+    requestAnimationFrame(loop);
+  }
+  applyState(state);
+  requestAnimationFrame(loop);
+
+  window.__elevatorScreen = {
+    applyState: applyState,
+    stepFrame: renderFrame
+  };
+})();
+</script>
+</body>
+</html>

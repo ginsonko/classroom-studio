@@ -1,0 +1,17 @@
+.lbrief { margin: 6px 0; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); font-size: 12px; color: var(--fg-1); }
+.lbrief.empty { padding: 8px 10px; color: var(--fg-3); }
+.lbrief-h { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px; text-align: left; color: inherit; }
+.lbrief-h > svg { flex: none; color: var(--fg-3); transition: transform .15s; }
+.lbrief-h > svg.open { transform: rotate(180deg); }
+.lbrief-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lbrief-r { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.lbrief-r svg { flex: none; align-self: center; color: var(--cue); }
+.lbrief-r i { flex: none; font-style: normal; color: var(--fg-3); }
+.lbrief-r b { min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lbrief.compact .lbrief-r b { white-space: normal; }
+.lbrief-body { padding: 0 10px 10px; border-top: 1px solid var(--line); }
+.lbrief-body h5 { margin: 8px 0 4px; font-size: 12px; color: var(--fg-0); }
+.lbrief-note { margin: 4px 0; color: var(--fg-2); }
+.lbrief-md { font-size: 12px; }
+.lbrief-body details summary { cursor: pointer; color: var(--cue); margin: 4px 0; }
+.remind-banner .lbrief { margin: 6px 0 0; background: rgba(255, 255, 255, .06); }

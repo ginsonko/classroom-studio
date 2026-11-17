@@ -1,0 +1,31 @@
+{
+  "id": "plugin",
+  "skill": "plugin-dev",
+  "label": "做插件",
+  "one": "给导播台长出一个专属小工具：老师在自己面板拖滑块切阶段，学生大屏同步看干净的实验演示。",
+  "highlights": [
+    "师生双屏分离：老师端小面板调质量、加速度与运动阶段，学生共享窗口只显示干净漂亮的三栏实验台",
+    "双针弹簧秤表盘 + 隔离体受力箭头 + 支持力实时波形同屏联动，还能一键把当前读数写上黑板",
+    "独立安全沙箱运行，一次做好装进导播台，以后每届讲这节课随手点开就能用"
+  ],
+  "when": ["每届都要讲的经典实验", "课堂随手调参演示", "专属教学小工具沉淀"],
+  "formats": "导播台插件（可一键安装 / 导出分享）",
+  "cost": "约 5 分钟 · 约 ¥0.7 · 质量优先档，仅估算",
+  "preview": {
+    "type": "video",
+    "src": "plugin-dev/_showcase/preview.webm",
+    "poster": "plugin-dev/_showcase/poster.webp"
+  },
+  "full": [
+    {
+      "label": "电梯体重秤 导播台插件",
+      "file": "plugin-dev/_showcase/elevator-scale",
+      "kind": "plugin"
+    }
+  ],
+  "styleRef": [
+    "plugin-dev/elevator-scale/plugin.json",
+    "plugin-dev/elevator-scale/index.html",
+    "plugin-dev/elevator-scale/screen.html"
+  ]
+}

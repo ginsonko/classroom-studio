@@ -1,5 +1,6 @@
 import katex from 'katex';
 import type { ReactNode } from 'react';
+import { cleanPath } from '../lib/pathText';
 
 const tex = (s: string, display = false) => ({ __html: katex.renderToString(s, { throwOnError: false, displayMode: display }) });
 
@@ -17,17 +18,20 @@ const SEG = String.raw`[^\s<>"'|?*()（）\[\]{}，。；、：！？` + '`' + S
 // 盘符前面不能紧挨字母（排除 http://），/Users 前面不能是路径或网址的一部分
 const ROOT = String.raw`(?:(?<![A-Za-z0-9])[A-Za-z]:[\\/]|(?<![\w:/.])\/(?:Users|Volumes|home|tmp|private)\/)`;
 const FILE_PATH = String.raw`${ROOT}(?:${SEG}+[\\/])*${SEG}+\.[A-Za-z0-9]{1,6}`;
-// 链接里的路径可以带空格
-const LINK_PATH = String.raw`${ROOT}[^<>"|?*()\n]+?\.[A-Za-z0-9]{1,6}`;
-const FILE_RE = new RegExp(String.raw`\[([^\]\n]+)\]\(\s*<?(${LINK_PATH})>?\s*\)|(${FILE_PATH})`, 'g');
-export const filePathsIn = (s: string) => [...new Set([...s.matchAll(FILE_RE)].map((m) => (m[2] ?? m[3]).replace(/\\/g, '/')))];
+// 链接里的路径可以带空格；也认 file:///… 网址和 mac 的 ~/…（%20 之类的编码交给主进程还原）
+const ROOT_LINK = String.raw`(?:file:\/\/(?:localhost)?\/?)?(?:[A-Za-z]:[\\/]|\/(?:Users|Volumes|home|tmp|private)\/|~\/)`;
+const LINK_PATH = String.raw`${ROOT_LINK}[^<>"|?*()\n]+?\.[A-Za-z0-9]{1,6}`;
+const FILE_URL = String.raw`(?<![\w/])file:\/\/(?:localhost)?\/?(?:[A-Za-z]:[\\/]|\/(?:Users|Volumes|home|tmp|private)\/)(?:${SEG}+[\\/])*${SEG}+\.[A-Za-z0-9]{1,6}`;
+const FILE_RE = new RegExp(String.raw`\[([^\]\n]+)\]\(\s*<?(${LINK_PATH})>?\s*\)|(${FILE_URL})|(${FILE_PATH})`, 'g');
+const pathOf = (m: RegExpMatchArray) => cleanPath(m[2] ?? m[3] ?? m[4]);
+export const filePathsIn = (s: string) => [...new Set([...s.matchAll(FILE_RE)].map(pathOf))];
 
 function files(s: string, key: string, file?: FileRender): ReactNode[] {
   if (!file) return [<TexText key={key} text={s} as="span" />];
   const out: ReactNode[] = []; let at = 0, n = 0;
   for (const m of s.matchAll(FILE_RE)) {
     if (m.index! > at) out.push(<TexText key={key + 't' + n} text={s.slice(at, m.index)} as="span" />);
-    const p = (m[2] ?? m[3]).replace(/\\/g, '/');
+    const p = pathOf(m);
     out.push(file(p, m[1] ?? '', key + 'f' + n++));
     at = m.index! + m[0].length;
   }

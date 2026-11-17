@@ -146,3 +146,191 @@ body.card figure img { max-width: 100%; }
 body.card footer { margin-top: 26px; text-align: center; font-size: 20px; color: #8a96aa; }
 body.doc .pb { page-break-after: always; break-after: page; height: 0; }
 .sl .pb, body.card .pb { display: none; }
+
+/* ── 1.7.0 家长版课后反馈：每块不同版式和配色，插画头图（长图 750px 宽，A4 PDF 同一套结构） ── */
+body.parent { --pw: #fff; }
+body.card.parent { width: 750px; background:
+  radial-gradient(circle at 8% 22%, rgba(255, 255, 255, .7) 0 60px, transparent 61px),
+  radial-gradient(circle at 92% 46%, rgba(255, 255, 255, .55) 0 90px, transparent 91px),
+  radial-gradient(circle at 12% 78%, rgba(255, 255, 255, .5) 0 70px, transparent 71px),
+  linear-gradient(180deg, var(--c4) 0%, #fff8ef 55%, #f3f7ff 100%); }
+.pr { position: relative; font-size: 26px; line-height: 1.72; color: #1f2735; }
+.pr-card { width: 750px; padding-bottom: 0; }
+.ph { position: relative; overflow: hidden; color: #fff; }
+.pr-card .ph { min-height: 300px; border-radius: 0 0 46px 46px; box-shadow: 0 14px 34px rgba(20, 40, 90, .18); }
+.ph-art { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ph-in { position: relative; padding: 52px 48px 30px; }
+.ph-tag { display: inline-block; padding: 4px 16px; border-radius: 18px; background: rgba(255, 255, 255, .22); font-size: 22px; font-weight: 600; letter-spacing: .1em; }
+.pr .ph h1 { margin: 16px 0 12px; padding: 0; font-size: 50px; line-height: 1.25; color: #fff; background: none; letter-spacing: .02em; text-shadow: 0 2px 10px rgba(0, 0, 0, .15); }
+.pr .ph h1::after { display: none; }
+.ph-meta { display: flex; flex-wrap: wrap; gap: 10px; }
+.ph-meta span { padding: 4px 16px; border-radius: 16px; background: rgba(255, 255, 255, .92); color: var(--c1); font-size: 21px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.pr-body { position: relative; padding: 0 30px; margin-top: -26px; }
+.ps { position: relative; margin: 26px 0 0; padding: 26px 30px 24px; border-radius: 28px; background: #fff; box-shadow: 0 8px 26px rgba(25, 45, 90, .08); break-inside: avoid; page-break-inside: avoid; }
+.ps-h { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.ps-ico { flex: none; width: 46px; height: 46px; padding: 8px; border-radius: 15px; }
+body.parent .pr h2 { display: block; margin: 0; padding: 0; font-size: 32px; line-height: 1.3; background: none; border: 0; border-radius: 0; }
+body.parent .pr h2::before { display: none; }
+body.parent .pr-doc h2 { font-size: 14pt; }
+.pr .ps p, .pr .ps .dm, .pr .ps figure, .pr .ps table { margin: 6px 0; padding: 0; background: none; }
+.pl { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.pi { display: flex; gap: 14px; align-items: flex-start; }
+.pi-t { flex: 1; min-width: 0; }
+.pi-t p { margin: 0; }
+/* 本节内容：蓝色，讲到的题排成小卡片 */
+.ps-what { --a: #2f6fd6; --s: #eaf2ff; }
+.ps-what .ps-ico { color: var(--a); background: var(--s); }
+.ps-what h2 { color: #1b3d7a; }
+.ps-what .pl { gap: 8px; }
+.ps-what .pi { padding: 10px 16px; border-radius: 16px; background: var(--s); font-size: 23px; }
+.ps-what .pi-n { flex: none; width: 10px; height: 10px; margin-top: 15px; border-radius: 50%; background: var(--a); }
+/* 表现亮点：暖金色，星星勋章 */
+.ps-good { --a: #e09a10; --s: #fff6df; background: linear-gradient(135deg, #fffaf0, #fff 60%); }
+.ps-good::after { content: ''; position: absolute; right: 18px; top: 14px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 196, 61, .25), transparent 70%); }
+.ps-good .ps-ico { color: var(--a); background: var(--s); }
+.ps-good h2 { color: #8a5a00; }
+.ps-good .pi { padding: 12px 18px; border-radius: 18px; background: var(--s); border: 2px solid #ffe3a3; }
+.ps-good .pi-n { flex: none; width: 30px; height: 30px; margin-top: 4px; background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2l3 6.3 6.9.9-5 4.8 1.2 6.8L12 17.6 5.9 20.8 7.1 14 2.1 9.2l6.9-.9z' fill='%23f2b21b'/%3E%3C/svg%3E"); }
+/* 需要加强：青绿色，往上的箭头（成长，不是批评） */
+.ps-work { --a: #12a08f; --s: #e7f8f4; border-left: 10px solid var(--a); }
+.ps-work .ps-ico { color: var(--a); background: var(--s); }
+.ps-work h2 { color: #0b5d52; }
+.ps-work .pi { padding: 4px 0 4px 2px; }
+.ps-work .pi-n { flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--s) no-repeat center/22px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 19V6M6 11l6-6 6 6' fill='none' stroke='%2312a08f' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+/* 课后建议：紫色，编号的路线 */
+.ps-next { --a: #6a55d8; --s: #f1eefe; background: linear-gradient(180deg, #faf9ff, #fff); }
+.ps-next .ps-ico { color: var(--a); background: var(--s); }
+.ps-next h2 { color: #3b2c8f; }
+.ps-next .pl { position: relative; gap: 16px; }
+.ps-next .pl::before { content: ''; position: absolute; left: 19px; top: 20px; bottom: 20px; width: 3px; border-radius: 2px; background: repeating-linear-gradient(180deg, #cfc6fb 0 8px, transparent 8px 14px); }
+.ps-next .pi-n { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--a); color: #fff; font-style: normal; font-weight: 700; font-size: 22px; box-shadow: 0 0 0 6px #fff; }
+.ps-next .pi-t { padding-top: 2px; }
+/* 课后作业：珊瑚色，打勾清单 */
+.ps-hw { --a: #ef6a4f; --s: #fff0ec; border: 3px dashed #ffc8ba; box-shadow: none; }
+.ps-hw .ps-ico { color: var(--a); background: var(--s); }
+.ps-hw h2 { color: #a63a22; }
+.ps-hw .pi-n { flex: none; width: 30px; height: 30px; margin-top: 4px; border-radius: 9px; border: 3px solid var(--a); }
+/* 老师的话：信纸，横线和引号 */
+.ps-word { --a: #3a4d73; --s: #eef2f9; background:
+  repeating-linear-gradient(180deg, transparent 0 43px, rgba(58, 77, 115, .1) 43px 45px), #fffdf8; padding-top: 30px; }
+.ps-word::before { content: '\201C'; position: absolute; right: 30px; top: -6px; font: 700 140px/1 Georgia, serif; color: rgba(58, 77, 115, .12); }
+.ps-word .ps-ico { color: var(--a); background: var(--s); }
+.ps-word h2 { color: var(--a); }
+.ps-word .ps-b p { text-indent: 2em; line-height: 45px; }
+.pf { position: relative; margin-top: 30px; text-align: center; }
+.pf-art { display: block; width: 100%; height: 120px; }
+.pf p { position: absolute; left: 0; right: 0; bottom: 64px; margin: 0; font-size: 26px; font-weight: 700; color: var(--c1); }
+.pf small { display: block; padding: 10px 0 26px; font-size: 19px; color: #8a96aa; background: rgba(255, 255, 255, .6); }
+/* A4（PDF）：同样的分块和配色，尺寸换成打印的 */
+body.doc.parent { background: #fff; }
+.pr-doc { font-size: 11.5pt; line-height: 1.7; }
+.pr-doc .ph { min-height: 46mm; border-radius: 0 0 8mm 8mm; }
+.pr-doc .ph-in { padding: 9mm 10mm 6mm; }
+.pr-doc .ph-tag { font-size: 9pt; padding: 1pt 8pt; }
+.pr-doc .ph h1 { font-size: 22pt; margin: 4pt 0 5pt; }
+.pr-doc .ph-meta span { font-size: 9.5pt; padding: 1pt 8pt; }
+.pr-doc .pr-body { padding: 0 4mm; margin-top: -4mm; }
+.pr-doc .ps { margin-top: 5mm; padding: 4mm 6mm; border-radius: 5mm; box-shadow: 0 1mm 3mm rgba(25, 45, 90, .1); }
+.pr-doc .ps-h { gap: 3mm; margin-bottom: 1.5mm; }
+.pr-doc .ps-ico { width: 9mm; height: 9mm; padding: 1.6mm; border-radius: 3mm; }
+.pr-doc h2 { font-size: 14pt; }
+.pr-doc .pl { gap: 2mm; }
+.pr-doc .ps-what .pi { padding: 1.5mm 3mm; font-size: 10.5pt; }
+.pr-doc .ps-what .pi-n { width: 2mm; height: 2mm; margin-top: 2.6mm; }
+.pr-doc .ps-good .pi { padding: 2mm 3mm; border-width: 1pt; }
+.pr-doc .ps-good .pi-n, .pr-doc .ps-hw .pi-n { width: 5mm; height: 5mm; margin-top: .8mm; }
+.pr-doc .ps-work { border-left-width: 2mm; }
+.pr-doc .ps-work .pi-n { width: 6mm; height: 6mm; background-size: 4mm; }
+.pr-doc .ps-next .pi-n { width: 7mm; height: 7mm; font-size: 10pt; box-shadow: 0 0 0 1.2mm #fff; }
+.pr-doc .ps-next .pl::before { left: 3.4mm; }
+.pr-doc .ps-hw { border-width: 1pt; }
+.pr-doc .ps-word { background: repeating-linear-gradient(180deg, transparent 0 7.6mm, rgba(58, 77, 115, .1) 7.6mm 7.9mm), #fffdf8; }
+.pr-doc .ps-word .ps-b p { line-height: 7.9mm; }
+.pr-doc .ps-word::before { font-size: 60pt; right: 6mm; top: -2mm; }
+.pr-doc .pf-art { height: 18mm; }
+.pr-doc .pf p { bottom: 9mm; font-size: 12pt; }
+.pr-doc .pf small { font-size: 8.5pt; padding: 2mm 0 0; background: none; }
+
+/* ── 1.7.0 讲课 PPT 版式：封面 / 情境图 / 对比 / 图解 / 例题分步 / 总结卡（每个文字块单独一个元素，方便拆成可编辑的文字框） ── */
+.sl .body p.ph, .sl p.ph { display: flex; flex-direction: column; justify-content: center; align-items: center; margin: 0; padding: 24px; min-height: 220px; height: 100%; border: 4px dashed var(--c5); border-radius: 26px; background: var(--c4); color: var(--c3); font-size: 28px; text-align: center; line-height: 1.5; }
+.sl p.ph b { font-size: 34px; color: var(--c2); }
+/* 封面：右侧可放一张图 */
+body.cover .sl .cover-art { position: absolute; right: 90px; top: 50%; width: 520px; height: 520px; transform: translateY(-50%); border-radius: 50%; overflow: hidden; border: 10px solid rgba(255, 255, 255, .25); }
+body.cover .sl .cover-art figure, body.cover .sl .cover-art img { margin: 0; width: 100%; height: 100%; object-fit: cover; }
+body.cover .sl .cover-art p.ph { border-radius: 50%; border-color: rgba(255, 255, 255, .6); background: rgba(255, 255, 255, .12); color: #fff; }
+body.cover .sl .cover-art p.ph b { color: #fff; }
+body.cover .sl:has(.cover-art) header, body.cover .sl:has(.cover-art) .body { padding-right: 680px; text-align: left; justify-content: flex-start; }
+body.cover .sl:has(.cover-art) .rule { margin-left: 120px; }
+/* 情境图：左边大图，右边标题和问题 */
+.lay-scene { flex-direction: row !important; }
+.lay-scene .scene-art { position: relative; flex: none; width: 58%; height: 100%; overflow: hidden; background: var(--c4); }
+.lay-scene .scene-art figure { margin: 0; width: 100%; height: 100%; }
+.lay-scene .scene-art img { width: 100%; height: 100%; max-height: none !important; object-fit: cover; border-radius: 0 !important; }
+.lay-scene .scene-art p.ph { border-radius: 0; border-width: 0 6px 0 0; }
+.lay-scene .scene-panel { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 40px 0 70px; }
+.lay-scene .scene-panel header { padding: 30px 50px 16px 44px; font-size: 44px; }
+.lay-scene .scene-panel .rule { margin: 0 50px 0 44px; }
+.lay-scene .scene-panel .body { padding: 24px 50px 0 44px; }
+.lay-scene .scene-panel .body p { margin: .4em 0; }
+.lay-scene .scene-panel .body p.quote { font-weight: 600; }
+.lay-scene footer { left: calc(58% + 44px); }
+/* 对比：两栏卡片，中间 VS */
+.sl .body.cmp { display: flex; gap: 0; align-items: stretch; padding-top: 24px; }
+.sl .cmp .col { flex: 1; min-width: 0; padding: 0 0 18px; border-radius: 24px; background: #fff; border: 3px solid var(--c5); overflow: hidden; box-shadow: 0 10px 26px rgba(20, 40, 80, .07); }
+.sl .cmp .col.c2 { border-color: #f0c9a6; }
+.sl .cmp .col > :not(.ch) { margin-left: 28px; margin-right: 28px; }
+.sl .cmp .col p.ch { margin: 0 0 14px; padding: 14px 28px; background: var(--c2); color: #fff; font-weight: 700; font-size: 1.08em; }
+.sl .cmp .col.c2 p.ch { background: #e07a2e; }
+.sl .cmp p.vs { flex: none; align-self: center; width: 84px; height: 84px; margin: 0 -18px; z-index: 1; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--c1); color: #fff; font-weight: 800; font-size: 30px; box-shadow: 0 0 0 8px #fff; }
+.sl .cmp-foot { position: relative; padding: 0 96px 60px; font-size: 28px; }
+/* 图解：左图右要点（带圈编号） */
+.sl .body.dia { display: grid; grid-template-columns: 1.15fr 1fr; gap: 44px; align-items: stretch; padding-top: 24px; }
+.sl .dia-art { min-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 24px; background: var(--c4); overflow: hidden; }
+.sl .dia-art figure { margin: 0; } .sl .dia-art img { max-height: 600px !important; max-width: 100%; border-radius: 0 !important; }
+.sl .dia-pts { display: flex; flex-direction: column; justify-content: center; gap: .35em; }
+.sl .dia-pts p.pt { margin: 0; padding: .35em .6em; border-radius: 16px; background: #fff; border: 2px solid var(--c5); }
+.sl .dia-pts p.pt .pn, .sl .ex p.stp .sn { color: var(--c2); font-weight: 800; }
+/* 例题分步：上面题目框，下面一步一步（单击出现） */
+.sl .body.ex { display: flex; flex-direction: column; gap: .5em; padding-top: 22px; }
+.sl .ex p.exq { margin: 0; padding: .55em .9em; border-radius: 18px; background: var(--c4); border: 3px solid var(--c5); color: #24304a; }
+.sl .ex p.exq b:first-child { color: var(--c2); }
+.sl .ex .exs { display: flex; flex-direction: column; gap: .3em; padding-left: .2em; }
+.sl .ex p.stp { margin: 0; padding: .15em .4em; }
+.sl .ex p.sl-lab { margin: .2em 0 0; color: var(--c3); font-weight: 700; }
+.sl .ex .dm { margin: .2em 0 .2em 1.6em !important; }
+/* 总结卡 */
+.sl .body.sum { display: flex; flex-direction: column; gap: 18px; padding-top: 26px; }
+.sl .sum-grid { display: grid; gap: 22px; }
+.sl .sum-grid p.card { margin: 0; padding: .6em .8em; min-height: 4.2em; border-radius: 22px; background: #fff; border: 3px solid var(--c5); border-top: 10px solid var(--c2); box-shadow: 0 10px 24px rgba(20, 40, 80, .07); line-height: 1.5; }
+.sl .sum-grid p.card b:first-child { color: var(--c1); font-size: 1.05em; }
+.sl.lay-summary .body { background: linear-gradient(180deg, transparent, var(--c4) 160%); }
+
+/* ── 1.7.0 时间轴、结构图（```时间轴 / ```结构图），文档、长图、幻灯片通用，按字号缩放 ── */
+.dg { margin: .6em 0 .8em; break-inside: avoid; page-break-inside: avoid; }
+.dg.tl .tl-bar { display: flex; height: 3.2em; border-radius: .6em; overflow: hidden; box-shadow: 0 .2em .6em rgba(20, 40, 80, .12); }
+.dg.tl .tl-bar span { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; padding: 0 .3em; color: #fff; line-height: 1.2; text-align: center; overflow: hidden; white-space: nowrap; border-right: 2px solid rgba(255, 255, 255, .7); }
+.dg.tl .tl-bar span:last-child { border-right: 0; }
+.dg.tl .tl-bar b { font-size: .92em; color: #fff; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.dg.tl .tl-bar small { font-size: .72em; opacity: .9; }
+.dg.tl .tl-scale { display: flex; justify-content: space-between; margin: .2em .1em .4em; font-size: .75em; color: #8a96aa; }
+.dg.tl .tl-list { list-style: none; margin: 0; padding: 0 0 0 .2em; display: flex; flex-direction: column; gap: .25em; border-left: 3px solid var(--c5); }
+.dg.tl .tl-list li { display: flex; gap: .7em; align-items: baseline; padding-left: 1.1em; position: relative; }
+.dg.tl .tl-list li::before { content: ''; position: absolute; left: -.42em; top: .5em; width: .6em; height: .6em; border-radius: 50%; background: #fff; border: 3px solid var(--c2); }
+.dg.tl .tl-t { flex: none; min-width: 4.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dg.tl .tl-d b { color: var(--c1); }
+.dg.tree { overflow: hidden; }
+.dg.tree ul { list-style: none; margin: 0; padding: 0; }
+.dg.tree > ul { display: flex; }
+.dg.tree li { display: flex; align-items: center; position: relative; }
+.dg.tree ul ul { display: flex; flex-direction: column; padding-left: 1.6em; position: relative; }
+.dg.tree ul ul::before { content: ''; position: absolute; left: 0; top: 50%; width: .8em; border-top: 2px solid var(--c5); }
+.dg.tree ul ul > li { padding-left: .8em; }
+.dg.tree ul ul > li::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid var(--c5); }
+.dg.tree ul ul > li:first-child::before { top: 50%; } .dg.tree ul ul > li:last-child::before { bottom: 50%; }
+.dg.tree ul ul > li:only-child::before { display: none; }
+.dg.tree ul ul > li::after { content: ''; position: absolute; left: 0; top: 50%; width: .8em; border-top: 2px solid var(--c5); }
+.dg.tree .tn { display: inline-block; margin: .22em 0; padding: .25em .7em; border-radius: .6em; background: #fff; border: 2px solid var(--c5); color: #1d2330; line-height: 1.35; max-width: 16em; }
+.dg.tree .tn.d0 { background: var(--c2); border-color: var(--c2); color: #fff; font-weight: 700; font-size: 1.08em; }
+.dg.tree .tn.d1 { background: var(--c4); border-color: var(--c2); color: var(--c1); font-weight: 600; }
+body.sheet-dg article { width: 178mm; padding: 10px; font-size: 11pt; }
+body.card .dg { margin: 0 28px; padding: 10px 26px 16px; background: #fff; font-size: 22px; }

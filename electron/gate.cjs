@@ -1,4 +1,4 @@
-const SHARED=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps'];
+const SHARED=['pgm','pgmMat','boardSkin','pattern','eyeCare','ink','studentTools','inkOptions','drawAuthor','selectedInk','curtain','spotlight','takeAt','sim','tool','color','size','objKind','revealed','answerGuard','warm','subject','desk','deskLimit','slideSteps','classBar'];
 const clone=v=>JSON.parse(JSON.stringify(v));
 // 学生画面里打开着的各项（当前项 + 桌面上的窗口）：笔迹都要同步过去
 const deskIds=state=>new Set([state.pgmMat?.id,...(Array.isArray(state.desk)?state.desk:[]).map(w=>w&&w.id)].filter(x=>typeof x==='string'));
@@ -22,6 +22,8 @@ function authorizeMessage(role,m,state){
  if(!m||typeof m!=='object'||JSON.stringify(m).length>20*1024*1024)return null;
  const trusted=role==='teacher'||role==='dock',current=`${state.pgm?.materialId}#${state.pgm?.page}`;
  if(m.t==='hello')return {t:'hello',from:String(m.from).slice(0,120)};
+ // 1.7.0 学生窗口角落的「开始上课 / 下课 / 稍后提醒」：只是请教师窗口去做（教师窗口按自己的状态判断），学生窗口不能借它改别的
+ if(m.t==='class')return ['start','stop','later','skip'].includes(m.act)?{t:'class',act:m.act}:null;
  if(m.t==='cmd')return trusted&&typeof m.name==='string'&&/^[a-z][\w.]{0,40}$/i.test(m.name)&&JSON.stringify(m.arg??null).length<20000?{t:'cmd',name:m.name,arg:m.arg??null}:null;
  if(m.t==='snapshot')return role==='teacher'?{t:'snapshot',to:String(m.to),shared:projection(m.shared)}:null;
  if(m.t==='shared'){

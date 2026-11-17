@@ -1,6 +1,7 @@
 // AI 助教的界面：右下角的小羽（可拖动、可隐藏）、冒泡提醒、右侧聊天抽屉（对话、历史、设置、提醒）。
+import { CheckButton } from '../teacher/Experience170';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Bell, Check, ChevronDown, CircleStop, FileText, FolderOpen, History, Loader2, MessageSquarePlus, Paperclip, Pencil, Plus, SendHorizontal, Settings2, Shield, ShieldCheck, ShieldOff, Terminal, Trash2, Undo2, X } from 'lucide-react';
+import { Bell, Check, ChevronDown, CircleStop, Eye, FileText, FolderOpen, History, Loader2, MessageSquarePlus, Paperclip, Pencil, Plus, SendHorizontal, Settings2, Shield, ShieldCheck, ShieldOff, Sparkles, Terminal, Trash2, Undo2, X } from 'lucide-react';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { useStudy } from '../lib/studyStore';
@@ -9,6 +10,8 @@ import { toast } from '../lib/toast';
 import type { SendRecord } from '../lib/studyLogic';
 import { MdText, filePathsIn, type FileRender } from '../teacher/TexText';
 import { FileChip } from '../ui/FileChip';
+import { AiTrouble } from '../ui/AiTrouble';
+import { explainAiError } from '../lib/aiErrors';
 import { SendSheet, useNotify } from '../teacher/ParentSend';
 import { Mascot, type Mood } from './Mascot';
 import { PERSONAS } from './prompt';
@@ -20,6 +23,10 @@ import {
   answerApproval, answerConfirm, answerGrant, closeAssistant, closeParent, dismissBubble, helloText, newChat, openAssistant, openChat, refreshStatus,
   removeChat, renameChat, send, startAssistant, stop, undoTurn, useAssistant, type Item, type Turn,
 } from './controller';
+import { TierChip } from '../account/TierPick';
+import { SuggestTip } from '../account/SuggestTip';
+import { openAccount, setTier } from '../account/account';
+import { applyShowcaseToWorkshop, closeShowcaseViewer, openShowcaseExample } from '../teacher/ShowcaseCard';
 import '../styles/assistant.css';
 
 const yuan = (v: number) => (v >= 0.01 ? '¥' + v.toFixed(2) : v > 0 ? '<¥0.01' : '');
@@ -70,11 +77,50 @@ export function AssistantButton() {
 
 function Floating() {
   const mood = useMood(), bubble = useAssistant((s) => s.bubble), name = useAssistantData((s) => s.settings.name);
+  const page = useStore((s) => s.page), studentId = useStore((s) => s.studentId), rightOpen = useStore((s) => s.rightOpen), rightW = useStore((s) => s.rightW), aiOpen = useStore((s) => s.aiOpen);
   const [pos, setPos] = useState<{ r: number; b: number }>(() => { try { const p = JSON.parse(localStorage.getItem(POS) || ''); if (Number.isFinite(p.r) && Number.isFinite(p.b)) return p; } catch { /* 没存过 */ } return { r: 18, b: 70 }; });
   const drag = useRef<{ x: number; y: number; r: number; b: number; moved: boolean } | null>(null);
   const [over, setOver] = useState(false);
   const clamp = (p: { r: number; b: number }) => ({ r: Math.max(4, Math.min(innerWidth - 90, p.r)), b: Math.max(4, Math.min(innerHeight - 110, p.b)) });
   useEffect(() => { const fit = () => setPos((p) => clamp(p)); addEventListener('resize', fit); return () => removeEventListener('resize', fit); }, []);
+  // 默认位置别挡住右下角的按钮（1440×900 下侧栏学生卡的「收题」就在这里）：自动选不压按钮的位置，老师自己拖过的位置不动
+  useEffect(() => {
+    if (localStorage.getItem(POS)) return;
+    const dodge = () => {
+      if (localStorage.getItem(POS) || drag.current) return;
+      const el = document.querySelector<HTMLElement>('.as-float .as-me');
+      if (!el) return;
+      const mw = el.offsetWidth || 78, mh = el.offsetHeight || 78;
+      const btns = [...document.querySelectorAll<HTMLElement>('.scard-ans button, .ta-page button, .ai-dock button')]
+        .map((b) => b.getBoundingClientRect())
+        .filter((r) => r.width > 1 && r.height > 1 && r.bottom > 0 && r.top < innerHeight);
+      const boxAt = (c: { r: number; b: number }) => {
+        const p = clamp(c);
+        return { p, left: innerWidth - p.r - mw, right: innerWidth - p.r, top: innerHeight - p.b - mh, bottom: innerHeight - p.b };
+      };
+      const hitsAt = (c: { r: number; b: number }) => {
+        const me = boxAt(c);
+        return btns.filter((r) => r.right > me.left - 4 && r.left < me.right + 4 && r.bottom > me.top - 4 && r.top < me.bottom + 4);
+      };
+      const sideEl = document.querySelector<HTMLElement>('.ai-dock') || (page === 'console' && rightOpen ? document.querySelector<HTMLElement>('.right, .ta-right') : null);
+      const sideLeft = sideEl ? sideEl.getBoundingClientRect().left : 0;
+      const curHits = hitsAt({ r: 18, b: 70 });
+      if (!curHits.length) { setPos((prev) => (prev.r === 18 && prev.b === 70 ? prev : clamp({ r: 18, b: 70 }))); return; }
+      const topHit = Math.min(...curHits.map((r) => r.top));
+      const cands = [
+        { r: 18, b: 14 },
+        { r: 18, b: Math.round(innerHeight - topHit + 12) },
+        ...(sideLeft > 160 ? [{ r: Math.round(innerWidth - sideLeft + 16), b: 22 }] : []),
+        ...(page === 'console' && rightOpen ? [{ r: rightW + 18, b: 22 }] : []),
+      ];
+      const clean = cands.find((c) => hitsAt(c).length === 0) ?? cands[0];
+      const next = clamp(clean);
+      setPos((prev) => (Math.abs(prev.r - next.r) < 2 && Math.abs(prev.b - next.b) < 2 ? prev : next));
+    };
+    const t1 = setTimeout(dodge, 120), t2 = setTimeout(dodge, 600);
+    addEventListener('resize', dodge);
+    return () => { clearTimeout(t1); clearTimeout(t2); removeEventListener('resize', dodge); };
+  }, [page, studentId, rightOpen, rightW, aiOpen]);
   useEffect(() => { if (!bubble) return; const t = setTimeout(dismissBubble, 15000); return () => clearTimeout(t); }, [bubble?.id]);
   const drop = async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setOver(false);
@@ -116,7 +162,8 @@ function Drawer() {
       <button className="as-tab" aria-label="关闭" onClick={closeAssistant}><X size={16} /></button>
     </header>
     {status && !status.found && <div className="as-warn">还没有安装 AI 助教的内核（Codex）。到「备课」页的任务中心点「安装」，装好就能用。</div>}
-    {status?.found && !status.studioKey && useAssistantData.getState().settings.api === 'studio' && <div className="as-warn">还没有配置导播台的 AI 接口：在右侧「AI」面板设置里导入银子 API 密钥；或者到这里的「设置」改用你自己登录的 Codex。</div>}
+    {status?.warmup?.phase === 'running' && <div className="as-note" data-qa="assistant-warmup"><Loader2 size={12} className="ags-spin" /> {status.warmup.step || '正在后台准备 AI 安全运行环境（首次使用约 3～5 分钟）…'}</div>}
+    {status?.found && !status.studioKey && useAssistantData.getState().settings.api === 'studio' && <div className="as-warn">还没有连上 AI：<a onClick={() => openAccount('signin')}>登录玲珑账号或合作站账号</a>最省事（软件自动配好）；也可以在右侧「AI」面板设置里一键导入 Key，或者到这里的「设置」改用你自己登录的 Codex。</div>}
     {view === 'chat' && <ChatView />}
     {view === 'list' && <ListView />}
     {view === 'settings' && <SettingsView />}
@@ -128,7 +175,8 @@ const SUGGEST = ['周三晚上 7 点给俊宇加一节课，一个半小时', '�
 
 function ChatView() {
   const chat = useAssistant((s) => s.chat), busy = useAssistant((s) => s.busy), error = useAssistant((s) => s.error);
-  const running = useAssistant((s) => !!s.chats.find((c) => c.id === s.chat?.id)?.running);
+  const curMeta = useAssistant((s) => s.chats.find((c) => c.id === s.chat?.id));
+  const running = !!curMeta?.running, retrying = !!curMeta?.retrying;
   const allConfirms = useAssistant((s) => s.confirms), allGrants = useAssistant((s) => s.grants);
   const confirms = allConfirms.filter((c) => c.chatId === chat?.id), grants = allGrants.filter((c) => c.chatId === chat?.id);
   const others = allConfirms.length + allGrants.length - confirms.length - grants.length;
@@ -155,7 +203,8 @@ function ChatView() {
         <div className="as-ask-b"><button className="as-no" onClick={() => void answerGrant(g.id, 'no')}>不行</button><button onClick={() => void answerGrant(g.id, 'pick')}>我自己选文件…</button>{g.paths.length > 0 && <button className="as-yes" onClick={() => void answerGrant(g.id, 'yes')}>同意</button>}</div></div>)}
       {sureFull && <FullConfirm onDone={() => setSureFull(false)} />}
       {others > 0 && <div className="as-note">另一段对话里还有 {others} 件事等你确认（见「历史对话」）</div>}
-      {error && <div className="as-err">{error}</div>}
+      {retrying && !running && <div className="as-thinking" data-qa="assistant-retrying"><Loader2 size={13} className="ags-spin" />正在等待自动重连…</div>}
+      {error && (explainAiError(error) ? <AiTrouble raw={error} compact /> : <div className="as-err">{error}<CheckButton small /></div>)}
     </div>
     <div className="as-input">
       {files.length > 0 && <div className="as-files">{files.map((f) => <span key={f} title={f}>{IMG.test(f) ? <img src={host.fileUrl(f)} alt="" /> : <FileText size={12} />}{fname(f)}<button aria-label="移除" onClick={() => setFiles(files.filter((x) => x !== f))}><X size={11} /></button></span>)}</div>}
@@ -165,8 +214,9 @@ function ChatView() {
       <div className="as-input-b">
         <button className="as-tab" data-tip="附上电脑里的文件（Word、Excel、PDF、PPT、图片）" onClick={() => void pick()}><Paperclip size={16} /></button>
         <AccessChip onFull={() => setSureFull(true)} />
+        <TierChip use="chat" up note="下一句话开始用「{档位}」，前面聊的内容都在" />
         <span className="flex" />
-        {running && <button className="as-stop" onClick={() => void stop()}><CircleStop size={14} />停下</button>}
+        {(running || retrying) && <button className="as-stop" onClick={() => void stop()}><CircleStop size={14} />停下</button>}
         <button className="as-send" disabled={busy || !text.trim()} onClick={() => go()}>{busy ? <Loader2 size={15} className="ags-spin" /> : <SendHorizontal size={15} />}</button>
       </div>
     </div>
@@ -230,6 +280,14 @@ function TurnBlock({ items, turn, running }: { items: Item[]; turn?: Turn; runni
   </div>;
 }
 
+/** 「切到质量优先再做一遍」：小羽换档（下一句重启内核、接回原会话），再让它把上一轮重做 */
+async function redoQuality() {
+  try {
+    await setTier('chat', 'quality');
+    await send('（已切到质量优先档位）上一轮做得不太好，请重新认真做一遍：先想清楚哪里没做好，改好、自己检查过以后再给我。');
+  } catch (e) { toast((e as Error).message); }
+}
+
 function ItemView({ it }: { it: Item }) {
   const [open, setOpen] = useState(false);
   const approvals = useAssistant((s) => s.approvals);
@@ -237,8 +295,39 @@ function ItemView({ it }: { it: Item }) {
     case 'user': return <div className="as-msg me">{(it.text ?? '').replace(/^【定时任务「(.+?)」触发.*?】\n?/, '⏰ $1：')}{Array.isArray(it.files) && it.files.length > 0 && <div className="as-files">{(it.files as string[]).map((f) => <span key={f}><FileText size={12} />{fname(f)}</span>)}</div>}</div>;
     case 'text': return it.phase === 'commentary' ? <div className="as-msg ai sub"><MdText text={it.text ?? ''} file={it.streaming ? undefined : fileChip} /></div> : <div className="as-msg ai"><MdText text={it.text ?? ''} file={it.streaming ? undefined : fileChip} />{it.streaming && <i className="as-caret" />}</div>;
     case 'tool': {
-      const label = TOOL_LABEL[it.name ?? ''] ?? it.name, c = it.card;
-      if (!c) return <div className={'as-op quiet ' + (it.status ?? '')}>{it.status === 'run' ? <Loader2 size={12} className="ags-spin" /> : it.status === 'fail' ? <X size={12} /> : <Check size={12} />}<span>{label}</span></div>;
+      const label = it.label ?? TOOL_LABEL[it.name ?? ''] ?? it.name, c = it.card;
+      const icon = it.status === 'run' ? <Loader2 size={12} className="ags-spin" /> : it.status === 'fail' ? <X size={12} /> : <Check size={12} />;
+      // cs_tools（搜索、浏览器、截图自检…）：一行名字 + 一句话，点开看工具返回的内容
+      if (!c && it.output) return <div className={'as-op quiet tool ' + (it.status ?? '')}><button className="as-op-t" onClick={() => setOpen(!open)} aria-expanded={open}>{icon}<span>{label}</span><ChevronDown size={11} className={open ? 'up' : ''} /></button>{open && <pre>{it.output}</pre>}</div>;
+      if (!c) return <div className={'as-op quiet ' + (it.status ?? '')}>{icon}<span>{label}</span></div>;
+      if (c.examples?.length) {
+        return (
+          <div className="as-op ok as-ex-wrap" data-qa="as-examples">
+            <div className="as-op-h"><Sparkles size={13} /><b>{c.title}</b></div>
+            <div className="as-ex-list">
+              {c.examples.map((ex) => (
+                <div key={ex.id} className="as-ex-card" data-qa={'as-ex-' + ex.id}>
+                  <div className="as-ex-top">
+                    {ex.thumbUrl ? (
+                      <img className="as-ex-thumb" src={ex.thumbUrl} alt={ex.label} loading="lazy" />
+                    ) : ex.videoUrl ? (
+                      <video className="as-ex-thumb" src={ex.videoUrl} muted loop autoPlay playsInline preload="metadata" />
+                    ) : null}
+                    <div className="as-ex-body">
+                      <div className="as-ex-head"><b>{ex.label}</b>{ex.formats && <i>{ex.formats}</i>}</div>
+                      <p className="as-ex-one">{ex.one}</p>
+                    </div>
+                  </div>
+                  <div className="as-ex-acts">
+                    <button type="button" data-qa={'as-ex-open-' + ex.id} onClick={() => void openShowcaseExample(ex.id, 0)}><Eye size={12} />看完整示例</button>
+                    <button type="button" className="primary" data-qa={'as-ex-apply-' + ex.id} onClick={() => { closeAssistant(); closeShowcaseViewer(); applyShowcaseToWorkshop(ex.id, 0); }}><Sparkles size={12} />去工坊照这个做</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
       return <div className={'as-op ' + (c.tone ?? 'ok')}><div className="as-op-h"><Check size={13} /><b>{c.title}</b></div>{c.lines?.map((l, i) => filePathsIn(l).length ? <MdText key={i} className="as-op-l" text={l} file={fileChip} /> : <p key={i}>{l}</p>)}
         {c.files?.length ? <div className="as-op-f">{c.files.map((f) => <FileChip key={f} path={f} />)}</div> : null}</div>;
     }
@@ -246,9 +335,19 @@ function ItemView({ it }: { it: Item }) {
     case 'file': return <div className="as-op"><div className="as-op-h"><FileText size={13} /><b>{it.status === 'run' ? '正在写文件…' : '写了文件'}</b></div><div className="as-op-f">{(it.files as { path: string }[] | undefined)?.map((f) => <FileChip key={f.path} path={f.path} />)}</div></div>;
     case 'approval': return <Approval it={it} live={!!approvals[it.id]} />;
     case 'note': return <div className="as-note">{it.text}</div>;
-    case 'error': return <div className="as-err">{it.text}</div>;
+    case 'suggest': return <SuggestTip why={it.text ?? ''} model={useAssistant.getState().chat?.model} onRetry={redoQuality} qa="as-suggest" />;
+    case 'error': return <ErrorItem it={it} />;
   }
   return null;
+}
+
+/** 出错的一轮：会话还在，点「接着做」从刚才的进度继续（和 Codex 客户端断线后继续一样） */
+function ErrorItem({ it }: { it: Item }) {
+  const chat = useAssistant((s) => s.chat);
+  const last = !!chat && chat.items.at(-1)?.id === it.id;
+  const body = explainAiError(it.text ?? '') ? <AiTrouble raw={it.text ?? ''} compact /> : <div className="as-err">{it.text}<CheckButton small /></div>;
+  if (!last || chat.running) return body;
+  return <>{body}<button className="as-mini as-resume" data-qa="assistant-resume" onClick={() => void send('刚才中断了，请接着刚才的进度继续做完。').catch((e) => toast((e as Error).message))}><Undo2 size={12} style={{ transform: 'scaleX(-1)' }} />接着做</button></>;
 }
 
 function Approval({ it, live }: { it: Item; live: boolean }) {

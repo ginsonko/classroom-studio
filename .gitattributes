@@ -1,5 +1,14 @@
 * text=auto eol=lf
 *.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.mp4 binary
+*.webm binary
+*.pdf binary
+*.pptx binary
+*.docx binary
+*.zip binary
 *.ico binary
 *.icns binary
 *.wasm binary

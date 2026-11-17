@@ -80,7 +80,7 @@ export function rangeOf(v: unknown): Range | null {
     if (a === null || end === null) continue;
     if (end <= a.t && end + 12 < 24 && end + 12 > a.t) end += 12;
     if (end <= a.t) end += 24;
-    const len = Math.round((end - a.t) * 4) / 4;
+    const len = Math.round((end - a.t) * 60) / 60;
     if (len > 0 && len <= MAX_LEN) return { start: a.t, len, guess: a.guess };
   }
   const one = new RegExp(`(${PART}?\\s*\\d{1,2}(?::\\d{2}|[点點](?:半|\\d{1,2}分?)?))`).exec(s), dur = /(\d+(?:\.\d+)?)\s*(?:h|小时|个小时|课时)/i.exec(s);
@@ -147,7 +147,7 @@ export function lessonsFromJson(j: unknown, today: Date): { lessons: ImportLesso
     if (start !== null && end !== null && !(len > 0)) len = end > start ? end - start : end + 24 - start;
     if (!student || day === null || start === null || !(len > 0) || len > MAX_LEN) { dropped++; continue; }
     const repeat = !date || raw.repeat === true || raw.repeat === 'true';
-    lessons.push({ student, grade: clean(raw.grade, 12), subject: clean(raw.subject, 12), day, date, start, len: Math.round(len * 4) / 4, topic: clean(raw.topic, 120), repeat, ...(guess || raw.unsure === true ? { guess: true } : {}) });
+    lessons.push({ student, grade: clean(raw.grade, 12), subject: clean(raw.subject, 12), day, date, start, len: Math.round(len * 60) / 60, topic: clean(raw.topic, 120), repeat, ...(guess || raw.unsure === true ? { guess: true } : {}) });
   }
   return { lessons: mergeAdjacent(lessons), dropped };
 }

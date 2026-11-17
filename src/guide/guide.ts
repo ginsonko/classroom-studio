@@ -19,6 +19,7 @@ import { toast } from '../lib/toast';
 import { openStudy } from '../teacher/StudyPage';
 import type { Stroke } from '../lib/types';
 import { setGuideSpot, useGuideSignals } from './hits';
+import { openAccount, useAccount } from '../account/account';
 import { BOARD_STEPS, GUIDE_STUDENT, nextChapter, nextOpen, stepsOf, type GuideBase, type GuideCtx, type RouteId, type StepStatus } from './steps';
 
 const KEY = 'cs.guide', SNAP = 'cs.guide.snap';
@@ -64,6 +65,12 @@ export const currentStep = () => currentSteps()[useGuide.getState().idx];
 
 /** 第一次打开（或「以后再说」过了三天）时邀请彩排；测试和学生窗口不弹 */
 export function maybeWelcome() {
+  // 登录页放在新手引导之前：还没判断完要不要弹登录页、或登录页正开着，就等它关了再邀请
+  const a = useAccount.getState();
+  if (host.electron && host.role === 'teacher' && !host.test && (!a.checked || a.panel)) {
+    const off = useAccount.subscribe((x) => { if (x.checked && !x.panel) { off(); setTimeout(maybeWelcome, 400); } });
+    return;
+  }
   const s = useGuide.getState();
   if (host.test || host.role !== 'teacher' || s.seen || s.active || Date.now() < s.snooze) return;
   useGuide.setState({ welcome: true });
@@ -259,12 +266,14 @@ export function tick() {
   if (step.done(ctxNow(), g.mem)) complete('done');
 }
 let polling = 0;
-async function pollSlow() {
+let pollOff: (() => void) | null = null;
+export async function pollSlow() {
   const g = useGuide.getState();
   if (!g.active) return;
   const cfg = await aiConfig().catch(() => null);
   const dock = host.electron ? await host.call<{ shown?: boolean }>('dockState').then((s) => !!s?.shown).catch(() => false) : false;
-  useGuide.setState({ ai: online(cfg), dock });
+  // 登录了玲珑账号 / 合作站账号，或有测通的 API Key，都算配好了 AI
+  useGuide.setState({ ai: online(cfg) || !!cfg?.tested || !!useAccount.getState().view?.signedIn, dock });
 }
 
 // ── 开始 / 退出 ─────────────────────────────────────
@@ -280,6 +289,10 @@ export function startPolling() {
   if (polling) return;
   void pollSlow();
   polling = window.setInterval(() => void pollSlow(), 2000);
+  const reload = () => { void pollSlow(); };
+  window.addEventListener('cs-ai-config', reload);
+  const unsub = useAccount.subscribe((s, p) => { if (s.view?.signedIn !== p.view?.signedIn) void pollSlow(); });
+  pollOff = () => { window.removeEventListener('cs-ai-config', reload); unsub(); };
 }
 /** 退出彩排：练习数据清掉，做到了哪几步留着（下次接着做） */
 export function exitGuide() {
@@ -287,6 +300,7 @@ export function exitGuide() {
   closeSandbox();
   setGuideSpot(null);
   clearInterval(polling); polling = 0;
+  pollOff?.(); pollOff = null;
   useGuide.setState({ active: false, phase: 'step', idx: 0, boardId: '', photoId: '', base: null, mem: {}, min: false });
   persist();
   toast('彩排结束，练习学生小明和彩排黑板都清掉了。随时可以在「帮助」里再来一次');
@@ -308,7 +322,7 @@ export interface Extra { label: string; run: () => void | Promise<void> }
 export function extrasOf(id: string): Extra[] {
   const st = useStore.getState();
   switch (id) {
-    case 'ai': return [{ label: '打开 AI 设置', run: () => st.set({ aiOpen: true }) }, { label: '去银子 API 网站', run: () => void host.call('ai.openSite').catch(() => {}) }];
+    case 'ai': return [{ label: '登录账号', run: () => openAccount('signin') }, { label: '打开 AI 设置', run: () => st.set({ aiOpen: true }) }];
     case 'open': return [{ label: '用自带演示', run: () => { const m = makeDemo(demosOf(st.subject)[0]?.id ?? DEMOS[0].id); st.set({ page: 'console' }); st.cue(m); } }];
     case 'share': return [{ label: '打开学生窗口', run: () => host.openStudentWindow() }];
     case 'ask': return [{ label: '打开 AI 助手', run: () => st.set({ aiOpen: true }) }];

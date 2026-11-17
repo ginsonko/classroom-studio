@@ -2,7 +2,7 @@
 import { addQuestion, ensureStudy, useStudy } from './studyStore';
 import { findDuplicate, guessPoints, type Question } from './studyLogic';
 import type { SubjectId } from './subjects';
-import type { BankDraft } from './agentBankLogic';
+import { citeText, type BankDraft } from './agentBankLogic';
 
 export { parseBank } from './agentBankLogic';
 
@@ -28,7 +28,9 @@ export function importBank(drafts: BankDraft[], subject: SubjectId, source: stri
     addQuestion({
       stem: d.stem, answer: d.answer, analysis: d.analysis, points: guessPoints(d.stem + ' ' + d.analysis, subject), subject,
       difficulty: d.difficulty, qtype: d.qtype, origin: 'ai', status: d.verified ? 'bank' : 'inbox',
-      check: d.verified ? 'ok' : 'unchecked', ...(d.verified ? {} : { checkNote: 'AI 没有确认自检，请核对答案' }), source,
+      check: d.verified ? 'ok' : 'unchecked', ...(d.verified ? {} : { checkNote: 'AI 没有确认自检，请核对答案' }),
+      // 真题 / 改编：出处写进「出处」一栏（卷名、题号、核对结果），结构化的放 cite；原创照旧记是哪个任务出的
+      source: d.cite && d.cite.kind !== '原创' ? citeText(d.cite) : source, ...(d.cite ? { cite: d.cite } : {}),
     });
     if (d.verified) r.bank++; else r.inbox++;
   }

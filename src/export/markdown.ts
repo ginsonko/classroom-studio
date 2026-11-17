@@ -12,11 +12,14 @@ export type Block =
   | { type: 'li'; ordered: boolean; n: number; depth: number; runs: Run[] }
   | { type: 'table'; rows: Run[][][] }
   | { type: 'math'; tex: string; id: number }
-  | { type: 'code'; text: string }
+  /** lang：```时间轴 / ```结构图 画成图（教案、讲义用），其余照原样排代码 */
+  | { type: 'code'; text: string; lang?: string }
   | { type: 'img'; src: string; alt: string }
   | { type: 'break' }
   | { type: 'gap' }
-  | { type: 'hr' };
+  | { type: 'hr' }
+  /** 1.7.0 幻灯片指令：<!-- 版式：对比 -->、<!-- 分步 --> 这类注释，只在排 PPT 时用 */
+  | { type: 'meta'; text: string };
 
 export interface Parsed { blocks: Block[]; maths: { id: number; tex: string; display: boolean }[]; title: string }
 
@@ -76,9 +79,9 @@ export function parseMarkdown(src: string): Parsed {
     const raw = lines[i], line = raw.trim();
     if (!line) { flush(); continue; }
     if (/^```/.test(line)) {
-      flush(); const body: string[] = [];
+      flush(); const body: string[] = [], lang = line.replace(/^`+/, '').trim();
       while (++i < lines.length && !/^```/.test(lines[i].trim())) body.push(lines[i]);
-      blocks.push({ type: 'code', text: body.join('\n') }); continue;
+      blocks.push({ type: 'code', text: body.join('\n'), ...(lang ? { lang } : {}) }); continue;
     }
     const dm = /^(\$\$|\\\[)(.*)$/.exec(line);
     if (dm) {
@@ -92,9 +95,12 @@ export function parseMarkdown(src: string): Parsed {
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) { flush(); blocks.push({ type: 'hr' }); continue; }
     if (line === '[[分页]]') { flush(); blocks.push({ type: 'break' }); continue; }
     if (line === '[[留空]]') { flush(); blocks.push({ type: 'gap' }); continue; }
+    // 插图位：[[插图 电梯启动时人站在秤上]]（还没有图时先占位，PPT 里换成自己的图）
+    const ph = /^\[\[(?:插图|配图)[\s:：]*(.*)\]\]$/.exec(line);
+    if (ph) { flush(); blocks.push({ type: 'img', alt: ph[1].trim(), src: 'placeholder' }); continue; }
     const fd = /[：:]|^\[\[/.test(line) ? fieldsOf(line) : null;
     if (fd) { flush(); blocks.push({ type: 'fields', items: fd }); continue; }
-    if (/^<!--.*-->$/.test(line)) { flush(); continue; }
+    if (/^<!--.*-->$/.test(line)) { flush(); const c = /^<!--\s*(.*?)\s*-->$/.exec(line)?.[1] ?? ''; if (/^(版式|layout|分步|steps|主题色|accent)/i.test(c)) blocks.push({ type: 'meta', text: c }); continue; }
     const im = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(line);
     if (im) { flush(); blocks.push({ type: 'img', alt: im[1], src: im[2] }); continue; }
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
@@ -135,5 +141,5 @@ export function splitSlides(blocks: Block[]): Block[][] {
     cur.push(b);
   }
   if (cur.length) out.push(cur);
-  return out.map((s) => s.filter((b) => b.type !== 'break' && b.type !== 'gap' && b.type !== 'fields')).filter((s) => s.some((b) => b.type !== 'hr'));
+  return out.map((s) => s.filter((b) => b.type !== 'break' && b.type !== 'gap' && b.type !== 'fields')).filter((s) => s.some((b) => b.type !== 'hr' && b.type !== 'meta'));
 }

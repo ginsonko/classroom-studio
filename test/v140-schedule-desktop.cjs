@@ -138,8 +138,8 @@ async function makeFiles() {
   // 3. 排课：23:00 开始两小时；第二天 00:30 撞上；01:00 可以
   const editor = async (date, start, len) => {
     await click('.btn-cue', '排课');
-    await until(() => T(`return !!document.querySelector('.record-editor input[type=time]')`), 4000, 'editor');
-    await type('.record-editor input[type=date]', date); await type('.record-editor input[type=time]', start); await type('.record-editor input[type=number]', len);
+    await until(() => T(`return !!document.querySelector('.record-editor [data-qa="slot-start"]')`), 4000, 'editor');
+    await type('.record-editor input[type=date]', date); await type('.record-editor [data-qa="slot-start"]', start); await type('.record-editor input[type=number]', len);
   };
   await editor(key(plus(2)), '23:00', '2');
   assert.match(await T(`return document.querySelector('.record-note')?.innerText||''`), /过了午夜，次日 01:00 下课/);
@@ -149,7 +149,7 @@ async function makeFiles() {
   await editor(key(plus(3)), '00:30', '1');
   await click('.record-editor .btn-cue', '保存排课');
   assert.match(await until(() => T(`return document.querySelector('.record-editor [role=alert]')?.innerText`), 3000, 'overlap error'), /时间重叠/);
-  await type('.record-editor input[type=time]', '01:00');
+  await type('.record-editor [data-qa="slot-start"]', '01:00');
   await click('.record-editor .btn-cue', '保存排课');
   await until(() => T(`return !document.querySelector('.record-editor')`), 3000, 'saved early lesson');
   const saved = await T(`return Q.useStore.getState().slots.filter(x=>x.id!=='old-1').map(x=>[x.day,x.start,x.len]).sort()`);

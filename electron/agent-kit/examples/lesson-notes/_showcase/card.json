@@ -1,0 +1,30 @@
+{
+  "id": "notes",
+  "skill": "lesson-notes",
+  "label": "课堂讲义",
+  "one": "紧凑两页 A4 打印即发的导学案：第 1 页结构图与判据公式卡，第 2 页阶梯例题手写留白与随堂笔记栏。",
+  "highlights": [
+    "严格浓缩在正反两页 A4 内，一张纸双面打印就能发给学生边听课边动笔推导，告别五六页教材原文照搬",
+    "自带树状知识结构图、四态判据公式速查表与「直觉误区 → 正确理解」对照，考前翻开这一页就够复习",
+    "两道阶梯例题预留思维脚手架与带横线的手写推导框，底部专设随堂笔记栏，听课不动手走神的问题迎刃而解"
+  ],
+  "when": ["课前打印发给学生跟课", "一对一屏幕共享导学", "考前两页纸速查复习"],
+  "formats": "两页 A4 PDF + 可编辑 Word",
+  "cost": "约 4 分钟 · 约 ¥0.4 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "lesson-notes/_showcase/shot-1.webp",
+      "lesson-notes/_showcase/shot-2.webp",
+      "lesson-notes/_showcase/shot-3.webp",
+      "lesson-notes/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    { "label": "超重与失重 课堂导学讲义（两页 A4 PDF）", "file": "lesson-notes/_showcase/超重与失重-讲义.pdf", "kind": "pdf" },
+    { "label": "超重与失重 课堂导学讲义（Word 可改）", "file": "lesson-notes/_showcase/超重与失重-讲义.docx", "kind": "docx" }
+  ],
+  "styleRef": [
+    "lesson-notes/超重与失重-讲义.md"
+  ]
+}

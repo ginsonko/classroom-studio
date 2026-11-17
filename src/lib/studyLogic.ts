@@ -6,9 +6,17 @@ import type { ChapterState } from './types';
 export type Result = 'right' | 'wrong' | 'half';
 export type Origin = 'board' | 'paste' | 'ai' | 'explain' | 'manual' | 'homework' | 'import';
 
+/** 1.7.0 题目出处（AI 工坊题库里每题必带）：真题 / 改编要写卷名、年份、地区、网址；status 是导播台来源核对的结果 */
+export interface Cite {
+  kind: '真题' | '改编' | '原创';
+  title?: string; no?: string; year?: string; region?: string; url?: string;
+  status?: 'verified' | 'unverified' | 'unreachable' | 'missing' | 'skipped' | 'original';
+  label?: string;            // 「来源已核对」「来源未核实」「未抽查」「原创」
+}
 export interface Question {
   id: string;
   stem: string;              // 题干文字（看图题可以为空，只有 image）
+  tag?: string;              // 1.7.0 一句话考点标签：录像分析认题时模型给的「这道题练什么」（家长版「本节内容」用）
   image?: string;            // 题图绝对路径（学情库 study/img 下）
   imagePt?: number;          // 题图在原卷上的打印宽度（pt）；导出时按原大小放，不按像素放大
   answer?: string;
@@ -18,6 +26,7 @@ export interface Question {
   difficulty: number;        // 1 基础 … 5 压轴
   qtype: string;             // 题型，各学科不同（物理：选择 / 填空 / 计算 / 实验 / 其他）
   source?: string;           // 来自哪份课件、哪一页
+  cite?: Cite;               // 1.7.0 结构化出处（AI 工坊题库导入时带进来）
   origin: Origin;
   status: 'inbox' | 'bank';
   check?: 'ok' | 'mismatch' | 'unchecked';   // AI 原创题的自检结果
@@ -50,10 +59,34 @@ export interface LessonNote {
   subject?: SubjectId;
   summary: string; strengths: string[]; problems: string[]; next: string[]; parent: string; homework?: string;
   via: 'ai' | 'rules'; files?: string[]; sends?: SendRecord[];
+  /** 1.7.0 一句话「这节课讲了什么」（课前卡片、课表详情、下节备课用） */
+  oneLine?: string;
+  /** 1.7.0 这节课讲到 / 做过的题（家长版「本节内容」里列出来，每道一句「练了什么」的短标签） */
+  covered?: string[];
+  /** 1.7.0 拿不准、不适合给家长看的话：只在老师这边显示（待确认），不进家长版 */
+  pending?: string[];
   /** 班组课：每位成员一份总结，记下是哪个班组的课 */
   groupId?: string;
 }
 export interface SendRecord { channel: 'wecom' | 'email'; ok: boolean; at: string; to: string; error?: string }
+/**
+ * 家长版「本节内容」每道题的一行：模型给的考点标签 tag 优先，其次知识点名，都没有写「第 N 题」（不截半句题干）。
+ * 相同的标签从第二道起补题号，不然家长分不清是不是重复。
+ */
+export function coveredLabels(items: { tag?: string; point?: string }[]): string[] {
+  const seen = new Map<string, number>();
+  return items.map((x, i) => {
+    const base = (x.tag ?? '').trim() || (x.point ?? '').trim() || `第 ${i + 1} 题`;
+    const n = seen.get(base) ?? 0; seen.set(base, n + 1);
+    return n ? `${base}（第 ${i + 1} 题）` : base;
+  });
+}
+/** 模型给每道题写的「练了什么」：数量必须和题目数一一对应，对不齐就整条作废（宁可写「第 N 题」也不错位） */
+export function pickCoveredTags(v: unknown, count: number): string[] | undefined {
+  if (!Array.isArray(v) || count <= 0) return undefined;
+  const tags = v.map((x) => String(x ?? '').replace(/\s+/g, ' ').replace(/^第?\s*\d+\s*[题道．.、:：]?\s*/, '').trim().slice(0, 24)).filter(Boolean);
+  return tags.length === count ? tags : undefined;
+}
 export interface Homework { id: string; studentId: string; title: string; at: string; questionIds: string[]; points: string[]; files: string[] }
 export interface Portrait { text: string; at: string; via: 'ai' | 'rules' }
 /** 老师交给 AI 的学生资料：家长聊天记录、家长要求、老师自己的备注 */
@@ -74,6 +107,8 @@ export interface SortRecord {
   enriched?: string[];
   /** 下课分析录像时自动改的学习地图格子（mapKey = 学生@学科），撤销时还是这样的才改回去 */
   map?: { mapKey: string; ci: number; si: number; from: ChapterState; to: ChapterState }[];
+  /** 1.7.0 这节课是哪天上的（录像分析可能隔天才做，写总结按上课那天找） */
+  date?: string;
   /** 来自哪段录像 */
   recordId?: string;
   undone?: string;
@@ -91,6 +126,10 @@ export interface Prep {
   id: string; studentId: string; subject?: SubjectId; date: string; start?: number; slotId?: string; at: string; topic: string;
   points: string[]; materials: string[]; questionIds: string[]; plan: string; files: string[]; courseware?: string[];
   via: 'ai' | 'rules'; auto?: boolean;
+  /** 1.7.0 一句话「这节课讲什么」（课前卡片、课表详情、写课后总结用） */
+  summary?: string;
+  /** 1.7.0 这条备课是怎么来的：小羽自己做好文件后记的、归档 kind=prep 的文件、启动时从旧文件补的 */
+  from?: 'assistant' | 'file' | 'migrate';
 }
 /** 归到学生名下的文件：换学生时自动存下的板书、助教做的教案、老师手动归档的资料 */
 export interface StudentFile {
@@ -367,17 +406,26 @@ export function answersMatch(a: string, b: string): boolean {
 
 // ── 课后总结（没配模型时的规则版） ───────────────────────
 /** roots：知识网络追溯出的、和本节课错题相关的薄弱前置（已写成一句话） */
-export interface LessonInput { student: string; topic: string; minutes?: number; attempts: { q: Question; a: Attempt }[]; notes: string; homework?: string; roots?: string[]; subject?: SubjectId }
-export function lessonByRules(i: LessonInput): Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent'> {
+export interface LessonInput { student: string; topic: string; minutes?: number; attempts: { q: Question; a: Attempt }[]; notes: string; homework?: string; roots?: string[]; subject?: SubjectId;
+  /** 1.7.0 这节课的备课（主题、打算讲的知识点、备课摘要） */
+  prep?: string;
+  /** 1.7.0 这节课讲到 / 做过的题（录像分析认出来的，含老师讲的例题） */
+  covered?: string[];
+  /** 1.7.0 上节课一句话 */
+  last?: string }
+export function lessonByRules(i: LessonInput): Pick<LessonNote, 'summary' | 'strengths' | 'problems' | 'next' | 'parent' | 'oneLine'> {
   const right = i.attempts.filter((x) => !isMiss(x.a)), bad = i.attempts.filter((x) => isMiss(x.a));
   const pts = (list: typeof i.attempts) => [...new Set(list.flatMap((x) => x.q.points))].map(pointLabel);
   const strengths = right.length ? [`${pts(right).slice(0, 3).join('、') || '课堂练习'}：${right.length} 题做对`] : [];
   const problems = bad.length ? [`${pts(bad).slice(0, 3).join('、') || '课堂练习'}：${bad.length} 题需要订正`] : [];
   const next = [...(i.roots?.length ? ['先补前置：' + i.roots.map((r) => r.split('（')[0].split(' · ').pop()).join('、')] : []), ...(bad.length ? ['先订正本节课的错题，再做同类变式'] : []), ...(i.homework ? ['完成课后作业：' + i.homework] : [])];
   const total = i.attempts.length;
-  const summary = `本节课学习「${i.topic || '课堂内容'}」${i.minutes ? `，共 ${i.minutes} 分钟` : ''}。` + (total ? `课堂练习 ${total} 题，做对 ${right.length} 题。` : '') + (i.notes.trim() ? '课堂记录：' + i.notes.trim().slice(0, 200) : '');
-  const parent = `${i.student}家长您好，今天的课学习了「${i.topic || '课堂内容'}」。` + (total ? `课堂上完成 ${total} 道练习，做对 ${right.length} 道。` : '') + (problems.length ? `需要加强的是${pts(bad).slice(0, 2).join('、')}，已安排订正。` : '整体掌握不错。') + (i.homework ? `课后作业：${i.homework}。` : '') + '有问题随时联系我。';
-  return { summary, strengths, problems, next, parent };
+  // 老师自己写的课堂笔记（录像精析写进档案的那几段是给 AI 看的，不照搬进总结）
+  const teacherNotes = i.notes.split(/\n{2,}/).filter((x) => !/^课堂(精析|录像小结)（/.test(x.trim())).join(' ').trim();
+  const cov = i.covered?.length ? `讲了 ${i.covered.length} 道题` : '';
+  const summary = `本节课学习「${i.topic || '课堂内容'}」${i.minutes ? `，共 ${i.minutes} 分钟` : ''}。` + (cov ? cov + '。' : '') + (total ? `课堂练习 ${total} 题，做对 ${right.length} 题。` : '') + (teacherNotes ? '课堂记录：' + teacherNotes.slice(0, 200) : '');
+  const parent = `${i.student}家长您好，今天的课学习了「${i.topic || '课堂内容'}」。` + (cov ? `课上${cov}。` : '') + (total ? `课堂上完成 ${total} 道练习，做对 ${right.length} 道。` : '') + (problems.length ? `接下来重点巩固${pts(bad).slice(0, 2).join('、')}，已安排订正。` : `${i.student}今天学得很认真。`) + (i.homework ? `课后作业：${i.homework}。` : '') + '有问题随时联系我。';
+  return { summary, strengths, problems, next, parent, oneLine: `学习了「${i.topic || '课堂内容'}」` + (cov ? `，${cov}` : '') + (total ? `，练习 ${total} 题对 ${right.length} 题` : '') };
 }
 
 // ── 文档拼装（Markdown → 主进程导出 Word / PDF / PPT / 长图） ──────────

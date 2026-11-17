@@ -66,13 +66,16 @@ export const likelyVision = (id: string) => /gpt-4o|gpt-4\.1|gpt-5|gpt-6|claude|
  */
 const PREFER = [/^gpt-6/i, /^gpt-5/i, /claude.*(opus|sonnet)/i, /gemini.*pro/i, /^gpt-4\.1/i, /^gpt-4o/i, /qwen.*(vl|omni|max)/i, /deepseek/i, /glm/i, /doubao/i, /kimi/i];
 const SMALL = /mini|nano|lite|tiny|small|(^|[-_])(1|3|7|8)b\b|instruct-?\d*k?$|search|realtime|audio|tts|embed|whisper|moderation|codex/i;
-/** 银子 API 网站一键导入推荐的文本模型；Key 能用就直接选它 */
-const RECOMMENDED = ['gpt-6.1-sol'];
+/** 银子 API 网站一键导入推荐的文本模型；Key 能用就直接选它（1.7.0：gpt-6.1-sol 偏弱，改推 gpt-6-astra） */
+const RECOMMENDED = ['gpt-6-astra'];
+/** 名字排在前面、但实际偏弱的型号：只有别无选择时才自动选 */
+const WEAK = /^gpt-6.1-sol$|-sol$/i;
 export function pickDefaultModel(ids: string[]): string {
   const rec = RECOMMENDED.map((m) => ids.find((id) => id.toLowerCase() === m)).find(Boolean);
   if (rec) return rec;
   const chat = ids.filter((id) => modelCat(id) === 'chat');
-  const big = chat.filter((id) => !SMALL.test(id));
+  const strong = chat.filter((id) => !SMALL.test(id) && !WEAK.test(id));
+  const big = strong.length ? strong : chat.filter((id) => !SMALL.test(id));
   for (const re of PREFER) { const hit = sortModels(big.filter((id) => re.test(id))); if (hit.length) return hit[0]; }
   return sortModels(big.filter(likelyVision))[0] || sortModels(big)[0] || sortModels(chat)[0] || '';
 }

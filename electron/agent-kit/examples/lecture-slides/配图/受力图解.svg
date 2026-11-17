@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 800" width="960" height="800">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#dbe7f8" stroke-width="1.2"/>
+    </pattern>
+  </defs>
+
+  <!-- 浅蓝科学网格底板 -->
+  <rect width="960" height="800" rx="24" fill="#f5f9ff"/>
+  <rect width="960" height="800" rx="24" fill="url(#grid)"/>
+
+  <!-- 顶部图题条 -->
+  <rect x="36" y="28" width="888" height="58" rx="14" fill="#1e3a8a"/>
+  <text x="480" y="65" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="25" font-weight="700" fill="#ffffff">受力分析矢量图解（以加速上升为例：F<tspan baseline-shift="sub" font-size="0.7em">N</tspan> &gt; mg）</text>
+
+  <!-- 左侧：研究对象「人」的隔离体受力图 -->
+  <rect x="42" y="110" width="520" height="654" rx="20" fill="#ffffff" stroke="#bfd4f2" stroke-width="3"/>
+  <text x="302" y="152" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#1e3a8a">研究对象：乘客（质量 m）</text>
+
+  <!-- 正方向坐标轴 -->
+  <g transform="translate(106, 440)">
+    <line x1="0" y1="150" x2="0" y2="-190" stroke="#64748b" stroke-width="3" stroke-dasharray="8 6"/>
+    <polygon points="0,-206 -9,-184 9,-184" fill="#64748b"/>
+    <text x="0" y="-218" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#475569">+y（向上为正）</text>
+  </g>
+
+  <!-- 电梯底板与体重秤 -->
+  <rect x="172" y="642" width="260" height="36" rx="10" fill="#334155"/>
+  <rect x="202" y="618" width="200" height="26" rx="8" fill="#38bdf8" stroke="#0284c7" stroke-width="2.5"/>
+  <text x="302" y="637" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="15" font-weight="700" fill="#0f172a">电子压力计台面</text>
+
+  <!-- 人物淡化轮廓（突出质心与力矢量） -->
+  <g opacity="0.24" fill="#64748b">
+    <circle cx="302" cy="310" r="34"/>
+    <rect x="264" y="352" width="76" height="136" rx="20"/>
+    <rect x="270" y="484" width="26" height="132" rx="10"/>
+    <rect x="308" y="484" width="26" height="132" rx="10"/>
+  </g>
+
+  <!-- 等长参考虚线（标出 mg 大小对应的向上高度，直观看出 F_N 比 mg 长出一截 ma） -->
+  <line x1="250" y1="274" x2="430" y2="274" stroke="#ef4444" stroke-width="2.5" stroke-dasharray="6 5"/>
+  <text x="438" y="280" font-family="Microsoft YaHei, sans-serif" font-size="16" font-weight="600" fill="#dc2626">mg 等大参考线</text>
+
+  <!-- 合力超出的 ΔF = ma 括号标注 -->
+  <path d="M256 186 H244 V274 H256" fill="none" stroke="#059669" stroke-width="3"/>
+  <rect x="132" y="210" width="104" height="40" rx="8" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="184" y="236" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#047857">合力 ma</text>
+
+  <!-- 向上支持力 F_N（更长：长度 254px = 166 + 88） -->
+  <line x1="302" y1="440" x2="302" y2="206" stroke="#2563eb" stroke-width="11" stroke-linecap="round"/>
+  <polygon points="302,176 282,214 322,214" fill="#2563eb"/>
+  <rect x="322" y="182" width="186" height="46" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="415" y="212" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#1d4ed8">支持力 F<tspan baseline-shift="sub" font-size="0.7em">N</tspan></text>
+
+  <!-- 向下重力 mg（长度 166px，永远不变） -->
+  <line x1="302" y1="440" x2="302" y2="586" stroke="#dc2626" stroke-width="11" stroke-linecap="round"/>
+  <polygon points="302,612 282,576 322,576" fill="#dc2626"/>
+  <rect x="322" y="556" width="186" height="46" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="415" y="586" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#b91c1c">重力 G = mg</text>
+
+  <!-- 质心点 O -->
+  <circle cx="302" cy="440" r="11" fill="#0f172a" stroke="#ffffff" stroke-width="3"/>
+  <text x="274" y="447" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#0f172a">O</text>
+
+  <!-- 底部核心提示 -->
+  <text x="302" y="728" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="20" font-weight="700" fill="#1e293b">F<tspan baseline-shift="sub" font-size="0.7em">N</tspan> - mg = ma  ⇒  F<tspan baseline-shift="sub" font-size="0.7em">N</tspan> = m(g + a)</text>
+
+  <!-- 右侧上方：加速度矢量卡 -->
+  <rect x="590" y="110" width="330" height="236" rx="20" fill="#ffffff" stroke="#bfd4f2" stroke-width="3"/>
+  <text x="755" y="152" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#047857">运动状态决定合力方向</text>
+  <line x1="654" y1="296" x2="654" y2="202" stroke="#10b981" stroke-width="10" stroke-linecap="round"/>
+  <polygon points="654,176 636,210 672,210" fill="#10b981"/>
+  <text x="782" y="218" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#047857">加速度 a 向上</text>
+  <text x="782" y="256" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#334155">• 电梯加速上升</text>
+  <text x="782" y="288" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#334155">• 电梯减速下降</text>
+  <text x="755" y="326" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#0f766e">两种运动加速度都向上！</text>
+
+  <!-- 右侧下方：牛顿第三定律（支持力 -> 压力计读数） -->
+  <rect x="590" y="372" width="330" height="392" rx="20" fill="#ffffff" stroke="#bfd4f2" stroke-width="3"/>
+  <text x="755" y="414" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="#b45309">为什么秤的读数等于 F<tspan baseline-shift="sub" font-size="0.7em">N</tspan>？</text>
+
+  <!-- 秤台面作用力与反作用力示意 -->
+  <rect x="645" y="538" width="220" height="28" rx="8" fill="#38bdf8" stroke="#0284c7" stroke-width="2"/>
+  <!-- 秤对人的支持力 F_N -->
+  <line x1="715" y1="538" x2="715" y2="454" stroke="#2563eb" stroke-width="8"/>
+  <polygon points="715,434 701,460 729,460" fill="#2563eb"/>
+  <text x="670" y="488" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#1d4ed8">F<tspan baseline-shift="sub" font-size="0.7em">N</tspan></text>
+
+  <!-- 人对秤的压力 F'_N -->
+  <line x1="795" y1="566" x2="795" y2="650" stroke="#ea580c" stroke-width="8"/>
+  <polygon points="795,670 781,644 809,644" fill="#ea580c"/>
+  <text x="845" y="628" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#c2410c">F'<tspan baseline-shift="sub" font-size="0.7em">N</tspan></text>
+
+  <rect x="616" y="688" width="278" height="54" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text x="755" y="722" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="19" font-weight="700" fill="#9a3412">牛顿第三定律：F'<tspan baseline-shift="sub" font-size="0.7em">N</tspan> = F<tspan baseline-shift="sub" font-size="0.7em">N</tspan></text>
+</svg>

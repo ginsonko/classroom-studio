@@ -5,8 +5,11 @@ import { useStore } from './store';
 import { useStudy } from './studyStore';
 import { RESULT_NAME } from './studyLogic';
 import { useRecording } from './recording';
+import { boardPngs } from '../ink/boardExport';
+import type { Material, Stroke } from './types';
 
-export interface Chapter { t: number; kind: 'material' | 'page' | 'board' | 'attempt' | 'question' | 'note'; title: string; ref?: string }
+/** ink（1.7.0）：这一页上有新的书写；同一页一直在写只留一条，t 是最后一笔的时刻，n 是记了几次 */
+export interface Chapter { t: number; kind: 'material' | 'page' | 'board' | 'attempt' | 'question' | 'note' | 'ink'; title: string; ref?: string; n?: number }
 
 const post = (c: Omit<Chapter, 't'>) => void host.call('recordChapter', c).catch(() => {});
 const clip = (s: string, n: number) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
@@ -15,7 +18,7 @@ let started = false;
 export function startTimeline() {
   if (started || !host.electron || host.role !== 'teacher') return;
   started = true;
-  let off: (() => void) | null = null;
+  let off: (() => void) | null = null, inked: Map<string, { title: string; strokes: number; at: number }> | null = null, started0 = 0;
   const attach = () => {
     const st = useStore.getState();
     let mat = st.pgmMat.id, page = st.pgm.page;
@@ -39,14 +42,56 @@ export function startTimeline() {
         questions = new Set(d.questions.map((q) => q.id));
       }
     });
-    off = () => { a(); b(); };
+    // 1.7.0 书写：哪一页有新的笔迹，攒 2.5 秒报一次（主进程把同一页连着写的并成一条、时间挪到最后一笔）
+    inked = new Map();
+    let ink = st.ink, dirty = new Set<string>();
+    const pub = (xs: Stroke[] | undefined) => (xs ?? []).filter((x) => x.layer !== 'private').length;
+    const c = useStore.subscribe((s) => {
+      if (s.ink === ink) return;
+      for (const k of new Set([...Object.keys(s.ink), ...Object.keys(ink)])) if (s.ink[k] !== ink[k] && pub(s.ink[k]) > 0 && pub(s.ink[k]) !== pub(ink[k])) dirty.add(k);
+      ink = s.ink;
+    });
+    const flush = setInterval(() => {
+      if (!dirty.size) return;
+      const s = useStore.getState();
+      for (const k of dirty) {
+        const mat = matOf(k.slice(0, k.lastIndexOf('#'))), page = Number(k.slice(k.lastIndexOf('#') + 1)) || 0;
+        const title = `${mat?.title ?? '黑板'}${mat && mat.pages.length > 1 ? ` 第 ${page + 1} 页` : ''}`;
+        inked!.set(k, { title, strokes: pub(s.ink[k]), at: Date.now() });
+        post({ kind: 'ink', title: '书写：' + title, ref: k });
+      }
+      dirty = new Set();
+    }, 2500);
+    off = () => { a(); b(); c(); clearInterval(flush); };
   };
   const sync = (phase: string) => {
-    if (phase === 'recording' && !off) attach();
-    else if (phase !== 'recording' && off) { off(); off = null; }
+    if (phase === 'recording' && !off) { started0 = useRecording.getState().status.startedAt ?? Date.now(); attach(); }
+    else if (phase !== 'recording' && off) { off(); off = null; const rid = useRecording.getState().status.id; if (rid && inked?.size) void saveBoards(rid, inked, started0).catch(() => {}); inked = null; }
   };
   sync(useRecording.getState().status.phase);
   useRecording.subscribe((s) => sync(s.status.phase));
+}
+
+/** 学生画面里打开着的一项（黑板 / 课件） */
+function matOf(id: string): Material | undefined {
+  const st = useStore.getState();
+  return st.pgmMat.id === id ? st.pgmMat : st.desk.find((w) => w.id === id)?.mat;
+}
+/**
+ * 1.7.0 下课时把这节课写过的黑板页按原始笔迹画成图，存进录像文件夹：下课分析直接看板书原图（比录像截帧清楚、也省钱）。
+ * 课件上的批注还是靠录像截帧（课件本身要和笔迹叠在一起看）。
+ */
+async function saveBoards(rid: string, inked: Map<string, { title: string; strokes: number; at: number }>, startedAt: number) {
+  const items: { ref: string; title: string; t: number; strokes: number; png: string }[] = [];
+  for (const [k, v] of inked) {
+    const mat = matOf(k.slice(0, k.lastIndexOf('#')));
+    if (mat?.kind !== 'board') continue;
+    const page = Number(k.slice(k.lastIndexOf('#') + 1)) || 0;
+    const pngs = await boardPngs(mat, page, 'page').catch(() => [] as string[]);
+    pngs.slice(0, 6).forEach((png, i) => items.push({ ref: k, title: v.title + (pngs.length > 1 ? `（第 ${i + 1} 段）` : ''), t: Math.max(0, (v.at - startedAt) / 1000), strokes: v.strokes, png }));
+    if (items.length >= 60) break;
+  }
+  if (items.length) await host.call('recordBoards', { id: rid, items });
 }
 
 export const fmtT = (t: number) => { const s = Math.floor(t), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), z = (n: number) => String(n).padStart(2, '0'); return (h ? h + ':' + z(m) : String(m)) + ':' + z(s % 60); };

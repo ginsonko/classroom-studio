@@ -28,6 +28,7 @@ import type { ParamDef } from '../physics/sim/presetKit';
 import { demoById, pickPatch } from '../demos';
 import { clampDemo } from '../demos/kit';
 import { fmt } from '../physics/sim/text';
+import { ClassCorner } from '../student/ClassCorner';
 import { DockPlugins } from '../plugins/DockPlugins';
 import { GuideSpot } from '../guide/Spot';
 import { fitZoom } from '../ui/fit';
@@ -183,6 +184,7 @@ export function DockApp() {
         {guard
           ? <span className="tdock-badge" data-tip="已开启防截屏：任何共享方式都看不到这个浮层。如果学生那边在这里看到黑块，请在设置里关闭防截屏">防截屏</span>
           : <span className="tdock-badge" data-tip="腾讯会议请选「共享窗口 → 课堂展示」，学生就看不到这个浮层；不要共享整个屏幕">教师浮层</span>}
+        <ClassCorner where="dock" />
         <button onClick={() => setMini(true)} data-tip="收成小圆点"><Minimize2 size={13} /></button>
       </div>
       {st.drawAuthor === 'student' && (

@@ -5,7 +5,9 @@ import { host } from './host';
 import { useStore } from './store';
 import { addQuestion, nowIso, patchQuestion, recordAttempt, sid, useStudy } from './studyStore';
 import { lessonByAi, online, readQuestion } from './studyAi';
-import { guessDifficulty, guessPoints, guessType, homeworkMarkdown, lessonByRules, lessonMarkdown, pointLabel, questionSubject, type LessonNote, type Question, type Result } from './studyLogic';
+import { coveredLabels, guessDifficulty, guessPoints, guessType, homeworkMarkdown, lessonByRules, pointLabel, questionSubject, type LessonNote, type Prep, type Question, type Result } from './studyLogic';
+import { oneLineOf, parentMarkdown } from './parentReport';
+import { familyOf } from './subjects';
 import { nodeInfo, rootText, traceBack } from './knowledgeNet';
 import { learningOf, subjectOfStudent } from './subjectState';
 
@@ -21,8 +23,15 @@ export async function buildLessonNote(o: { studentId: string; name: string; date
   const roots = traceBack(bad, nodeInfo(o.studentId, data, learningOf(o.studentId, subject), subject)).filter((r) => !bad.includes(r.key)).slice(0, 3).map(rootText);
   // 这天的课堂精析（AI 听了课堂录像写进档案的）也给写总结的模型看
   const fine = (data.notes ?? []).filter((n) => n.studentId === o.studentId && n.kind === 'teacher' && !n.todo && dayKey(n.at) === o.date && /^课堂(精析|录像小结)（/.test(n.text)).map((n) => n.text.slice(0, 1500));
-  const input = { student: o.name, topic: o.topic, minutes: o.minutes, attempts: todays, notes: [o.notes ?? '', ...fine].filter((x) => x.trim()).join('\n\n'), homework: o.homework ?? '', roots, subject };
-  const base = { id: o.id ?? sid(), studentId: o.studentId, subject, date: o.date, at: nowIso(), topic: o.topic, minutes: o.minutes, homework: o.homework || undefined, ...(o.groupId ? { groupId: o.groupId } : {}) };
+  // 1.7.0：这节课的备课、录像里认出来的题（含老师讲的例题）、上节课一句话，一起给写总结的模型
+  const prep = (data.preps ?? []).filter((p) => p.studentId === o.studentId && p.date === o.date).sort((a, b) => b.at.localeCompare(a.at))[0];
+  const covered = coveredOn(o.studentId, o.date);
+  const last = [...data.lessons].filter((l) => l.studentId === o.studentId && l.date < o.date && l.id !== o.id).sort((a, b) => b.date.localeCompare(a.date))[0];
+  // 给写总结的模型看完整一点的题干（它给每道题写「练了什么」标签）；记进总结、给家长看的是短标签
+  const coveredForAi = covered.map((x) => (x.point ? x.point + '：' : '') + (x.stem || x.tag)).filter(Boolean);
+  const coveredForShow = coveredLabels(covered);
+  const input = { student: o.name, topic: o.topic, minutes: o.minutes, attempts: todays, notes: [o.notes ?? '', ...fine].filter((x) => x.trim()).join('\n\n'), homework: o.homework ?? '', roots, subject, ...(prep ? { prep: prepText(prep) } : {}), covered: coveredForAi, ...(last ? { last: oneLineOf(last) } : {}) };
+  const base = { id: o.id ?? sid(), studentId: o.studentId, subject, date: o.date, at: nowIso(), topic: o.topic, minutes: o.minutes, homework: o.homework || undefined, ...(o.groupId ? { groupId: o.groupId } : {}), ...(coveredForShow.length ? { covered: coveredForShow.slice(0, 12) } : {}) };
   try {
     const cfg = await aiConfig();
     const r = online(cfg) ? await lessonByAi(input) : lessonByRules(input);
@@ -30,6 +39,31 @@ export async function buildLessonNote(o: { studentId: string; name: string; date
   } catch (e) {
     return { note: { ...base, ...lessonByRules(input), via: 'rules' }, warning: (e as Error).message + '。已改用规则模板生成，可以直接编辑。' };
   }
+}
+
+/** 备课记录 → 一句话（给写总结、课前卡片用） */
+export function prepText(p: Prep): string {
+  const sum = (p.summary || p.plan.replace(/^#+.*$/gm, '').replace(/\s+/g, ' ').trim()).slice(0, 160);
+  return [p.topic, p.points.length ? '知识点：' + p.points.map((k) => pointLabel(k).split(' · ').pop()).join('、') : '', sum].filter(Boolean).join('；');
+}
+/** 这节课讲到 / 做过的题：tag 是模型给的「练了什么」标签，point 是第一个知识点名，stem 是给模型看的题干 */
+export interface CoveredItem { qid: string; tag: string; point: string; stem: string }
+/** 某天课堂录像分析认出来的题：学生做的、老师讲的例题都算 */
+export function coveredOn(studentId: string, date: string): CoveredItem[] {
+  const d = useStudy.getState().data, qs = new Map(d.questions.map((q) => [q.id, q])), out: CoveredItem[] = [], seen = new Set<string>();
+  for (const s of d.sorts ?? []) {
+    if (s.undone || !s.recordId || !s.studentIds.includes(studentId) || (s.date ?? dayKey(s.at)) !== date) continue;
+    for (const id of [...new Set([...s.questions, ...(s.taught ?? []), ...s.attempts.map((a) => d.attempts.find((x) => x.id === a)?.questionId ?? '')])]) {
+      const q = qs.get(id);
+      if (!q || seen.has(id)) continue;
+      const stem = (q.stem ?? '').replace(/\s+/g, ' ').replace(/\$[^$]*\$/g, (m) => m).trim();
+      const tag = (q.tag ?? '').replace(/\s+/g, ' ').trim();
+      if (!stem && !tag) continue;
+      seen.add(id);
+      out.push({ qid: id, tag, point: q.points.length ? pointLabel(q.points[0]).split(' · ').pop() ?? '' : '', stem: stem.slice(0, 100) });
+    }
+  }
+  return out.slice(0, 30);
 }
 
 /** 保存课后总结；第一次保存时学生课次 +1 */
@@ -44,7 +78,8 @@ export function saveLesson(n: LessonNote) {
 /** 课后总结导出（长图 png / Word / PDF），文件记到这条总结上 */
 export async function lessonDocument(n: LessonNote, name: string, formats: string[]): Promise<DocOut> {
   saveLesson(n);
-  const r = await host.call<DocOut>('study.document', { kind: 'lesson', title: `${name}-${n.date}-课后反馈`, markdown: lessonMarkdown(n, name), formats });
+  // 1.7.0 导出的是家长版：只留家长需要的部分，每块不同版式、插画式背景（长图在微信里直接看）
+  const r = await host.call<DocOut>('study.document', { kind: 'lesson', title: `${name}-${n.date}-课后反馈`, markdown: parentMarkdown(n, name, familyOf(n.subject)), formats });
   useStudy.getState().update((d) => ({ ...d, lessons: d.lessons.map((l) => (l.id === n.id ? { ...l, files: [...(l.files ?? []), ...r.out] } : l)) }));
   return r;
 }

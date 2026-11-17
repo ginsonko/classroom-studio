@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, KeyRound, Loader2, XCircle } f
 import { host } from '../lib/host';
 import { ai } from '../lib/ai';
 import { pickDefaultModel } from '../lib/models';
+import { agentProbeText } from '../lib/aiErrors';
 import { saveAgentModel, saveStudioKey } from '../lib/agentPrefs';
 import { loadModels } from '../ui/ModelPicker';
 import { useStore } from '../lib/store';
@@ -50,7 +51,9 @@ export async function applyImport(s: ImportSummary, step: (t: string) => void): 
   } else void loadModels(true);
   step(`正在用 ${model} 测试连接…`);
   const r = await ai.test().catch((e: Error) => { throw new Error('配置已保存，但连接测试没通过：' + e.message); });
-  return `已导入并连接成功：${r.model}，${(r.ms / 1000).toFixed(1)} 秒`;
+  const bad = agentProbeText(r.agent);
+  if (bad) throw new Error(`配置已保存，聊天能用（${r.model}），${bad}`);
+  return `已导入并连接成功：${r.model}，${(r.ms / 1000).toFixed(1)} 秒${r.agent?.ok ? '；小羽和 AI 工坊也能用' : ''}`;
 }
 
 const Change = ({ from, to, keep }: { from: string; to: string; keep: string }) =>

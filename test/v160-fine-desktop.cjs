@@ -103,7 +103,8 @@ const server = http.createServer((req, res) => {
   visionInRun = 0;
   const rec = await T(`const r=await Q.recordAnalysis.analyzeRecording('rec-f1');return r&&{id:r.id,q:r.questions,a:r.attempts,n:r.notes,unsure:r.unsure,taught:r.taught,enriched:r.enriched,lines:r.lines}`);
   const vis = requests.filter(isVision), fine = requests.filter(isFine);
-  assert.equal(vis.length, 3, '有原话时截 18 张，分三批');
+  // 1.7.0：按换页、学生开口、补帧全看，张数不再固定 18
+  assert.ok(vis.length >= 1, '分批看画面');
   assert.equal(fine.length, 1);
   assert.equal(fine[0].model, 'fake-text', '精析用文字模型');
   const fp = JSON.stringify(fine[0].messages);
@@ -126,7 +127,7 @@ const server = http.createServer((req, res) => {
   const notes = await T(`return Q.useStudy.getState().data.notes.filter(n=>${JSON.stringify(rec.n)}.includes(n.id))`);
   assert.equal(notes.length, 2);
   const summary = notes.find((x) => !x.todo), todo = notes.find((x) => x.todo);
-  assert.match(summary.text, /^课堂精析（AI 听了 18 句课堂原话、看了 18 张画面）/);
+  assert.match(summary.text, /^课堂精析（AI 听了 18 句课堂原话、看了 \d+ 页画面）/);
   for (const k of ['临界条件', '这节课的安排', '学生做追及题', '卡住的地方', '七成把握↑', '三成把握', '可能还没掌握', '“速度相等的时候距离最大，是 25 米”（4:05）']) assert.ok(summary.text.includes(k), '档案里有 ' + k);
   assert.ok(!summary.text.includes('调麦克风'), '闲聊不写');
   assert.equal(todo.todo, 'practice'); assert.match(todo.text, /下节课：自由落体最后 1 秒的题再练一次（课上 9:20 说的）/);
@@ -134,18 +135,18 @@ const server = http.createServer((req, res) => {
   const ms = await T(`return Q.studyLogic.mastery('stu-a',Q.useStudy.getState().data).get(${JSON.stringify(KEYS[0])})`);
   assert.equal(ms.n, 2); assert.ok(Math.abs(ms.score - (0.7 + 1 * 0.75) / 1.75) < 1e-9, '掌握度按几成把握算：' + ms.score);
   const meta = JSON.parse(fs.readFileSync(path.join(f1, 'recording.json'), 'utf8')).analysis;
-  assert.deepEqual([meta.voice, meta.pending, meta.taught, meta.frames, meta.fineSkip], [18, 1, 1, 18, undefined]);
+  assert.deepEqual([meta.voice, meta.pending, meta.taught, meta.fineSkip], [18, 1, 1, undefined]); assert.ok(meta.frames >= 1 && meta.pages === meta.frames);
   assert.deepEqual(meta.items.map((x) => x.state), ['written', 'pending', 'teacher', 'taught']);
   assert.equal(meta.segments.length, 3);
   assert.match(meta.summary, /临界条件/);
-  assert.ok((await toasts()).some((t) => /AI 听完、看完了「追及问题」：3 道题进收件箱、记了 1 条作答.*课堂小结记进档案；1 道拿不准，需要你看一眼/.test(t)), JSON.stringify(await toasts()));
+  assert.ok((await toasts()).some((t) => /AI 听完、看完了「追及问题」（看了 \d+ 页画面）：3 道题进收件箱、记了 1 条作答.*课堂小结记进档案；1 道拿不准，需要你看一眼/.test(t)), JSON.stringify(await toasts()));
   mark('fine analysis: confident judgements become attempts with level / evidence / lesson time; unsure ones wait; demos count as taught; manual attempts only get evidence', { vision: vis.length });
 
   // ── 2. 回放页：待确认、按 AI 的记、整批撤销 ──
   await T(`Q.useStore.getState().set({page:'replay'});return true`);
   await until(() => T(`return !!document.querySelector('[data-qa="pending-item"]')`), 8000, '回放页显示待确认');
   const txt = await T(`return document.querySelector('[data-qa="rp-analysis"]').innerText`);
-  assert.match(txt, /AI 听了 18 句原话、看了 18 张画面：3 道题进收件箱、1 条作答、老师讲的例题 1 道/);
+  assert.match(txt, /AI 听了 18 句原话、看了 \d+ 张画面：3 道题进收件箱、1 条作答、老师讲的例题 1 道/);
   const card = await T(`return document.querySelector('[data-qa="pending-item"]').innerText`);
   for (const k of ['AI 觉得：错', '三成把握', '自己做的', 'AI 只有 6 成把握', '误区：把最后 1 秒当成了第 1 秒', '是 5 米吧', '6:40', '按 AI 的记']) assert.ok(card.includes(k), '待确认卡片里有 ' + k + '：' + card);
   await shot('v160-fine-1-replay-pending.png');
@@ -183,7 +184,7 @@ const server = http.createServer((req, res) => {
   api.recording.onSaved({ id: 'rec-f3', title: '没有原话', studentId: 'stu-a', path: '' });
   const m3 = await until(() => JSON.parse(fs.readFileSync(path.join(recDir, '2026-01-01-rec-f3', 'recording.json'), 'utf8')).analysis, 60000, '没有原话的自动分析');
   assert.equal(requests.filter(isFine).length, fine1, '没有原话不做精析');
-  assert.deepEqual([m3.frames, m3.voice, m3.fineSkip], [12, undefined, '还没有课堂原话']);
+  assert.deepEqual([m3.frames > 0, m3.voice, m3.fineSkip], [true, undefined, '还没有课堂原话']);
   await T(`Q.useRecording.setState(s=>({rev:s.rev+1}));return true`);
   await until(() => T(`return !!document.querySelector('[data-qa="rp-fine-skip"]')`), 8000, '回放页写明没听原话的原因');
   assert.match(await T(`return document.querySelector('[data-qa="rp-fine-skip"]').innerText`), /没听课堂原话：还没有课堂原话。转好文字后点「重新分析」/);

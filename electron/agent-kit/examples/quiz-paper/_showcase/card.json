@@ -1,0 +1,34 @@
+{
+  "id": "test",
+  "skill": "quiz-paper",
+  "label": "测验卷",
+  "one": "像重点学校正式印发的 40 分钟 100 分 A4 测验卷，密封线、登分栏、分步评分细则和双向细目表一应俱全。",
+  "highlights": [
+    "卷头填写栏、密封线提示、大题登分表、解答题按分值留白齐全，打印出来直接能当周测或入学摸底卷发",
+    "解答题拆到每一步给几分（如「写出位移差得 2 分」）、列明常见错法怎么扣分，谁批改都是同一把尺子",
+    "自带完整命题双向细目表（知识点 × 能力层次 × 6:3:1 难度配比 × 题号分值），教研备课与考后复盘直接能用"
+  ],
+  "when": ["阶段小测验收", "新学生入学摸底", "考前限时模拟"],
+  "formats": "A4 Word + PDF（正式试卷 / 评分细则与双向细目表）+ 题库",
+  "cost": "约 8 分钟 · 约 ¥0.8 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "quiz-paper/_showcase/shot-1.webp",
+      "quiz-paper/_showcase/shot-2.webp",
+      "quiz-paper/_showcase/shot-3.webp",
+      "quiz-paper/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    { "label": "40 分钟正式测验卷（A4 PDF）", "file": "quiz-paper/_showcase/超重与失重-测验.pdf", "kind": "pdf" },
+    { "label": "评分细则与双向细目表（PDF）", "file": "quiz-paper/_showcase/超重与失重-测验答案.pdf", "kind": "pdf" },
+    { "label": "40 分钟正式测验卷（Word 可改）", "file": "quiz-paper/_showcase/超重与失重-测验.docx", "kind": "docx" },
+    { "label": "评分细则与双向细目表（Word 可改）", "file": "quiz-paper/_showcase/超重与失重-测验答案.docx", "kind": "docx" }
+  ],
+  "styleRef": [
+    "quiz-paper/超重与失重-测验.md",
+    "quiz-paper/超重与失重-测验答案.md",
+    "quiz-paper/超重与失重-题库.json"
+  ]
+}

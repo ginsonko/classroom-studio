@@ -1,7 +1,8 @@
-const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage}=require('electron');
+const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage,safeStorage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
-const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,atomicWrite,workspaceJSON,readJSON,within,cleanTemps}=require('./core.cjs');
-const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');const {Asr}=require('./asr.cjs');const {AsrSetup}=require('./asrSetup.cjs');
+const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,atomicWrite,workspaceJSON,readJSON,within,cleanTemps,fixPath}=require('./core.cjs');
+const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');const {Asr}=require('./asr.cjs');const {AsrSetup}=require('./asrSetup.cjs');const {ToolHost}=require('./toolHost.cjs');const {WebTools}=require('./webTools.cjs');const {AiBrowser}=require('./aiBrowser.cjs');const {PageCheck}=require('./pageCheck.cjs');const {Desk}=require('./desk.cjs');
+const {Account,makeCrypt,paymentPage}=require('./account.cjs');const tierKit=require('./tier.cjs');const charge=require('./charge.cjs');const {CodexHome}=require('./codexHome.cjs');const {locate:locateCli}=require('./agents.cjs');const {Showcase}=require('./showcase.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
 const DATA=(()=>{const want=path.resolve(process.env.CS_DATA_DIR||path.join(path.parse(ROOT).root,'ClassroomStudioData'));if(process.env.CS_DATA_DIR)return want;try{fs.mkdirSync(want,{recursive:true});const probe=path.join(want,'.write-probe');fs.writeFileSync(probe,'');fs.unlinkSync(probe);return want;}catch{return path.join(app.getPath('appData'),'ClassroomStudioData');}})();
@@ -24,15 +25,24 @@ app.on('web-contents-created',(_e,wc)=>{
 });
 // 学生画面上的网页课件、插件（如计时器提示音）要能直接出声：学生窗口没人点，等不到「用户手势」
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
-protocol.registerSchemesAsPrivileged([{scheme:'studio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'lesson',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'plugin',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
+protocol.registerSchemesAsPrivileged([{scheme:'studio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'lesson',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'plugin',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'showcase',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
 const files=new Files(path.join(DATA,'cache'));
-const windows=new Map(),roles=new Map();let plugins,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater,asr,asrSetup;
+const windows=new Map(),roles=new Map();let account,tiers,priceConfirm,chargeGate,plugins,showcase,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater,asr,asrSetup,toolHost,codexHome;
 const send=(win,ch,data)=>{if(win&&!win.isDestroyed()&&!win.webContents.isCrashed())win.webContents.send(ch,data);};
 const notify=(type,value={})=>{if(value.error)log.warn('提示',type,value.message);for(const [role,w]of windows)if(role==='teacher')send(w,'cs:event',{type,...value});};
 const busy=()=>['starting','recording','stopping'].includes(recording?.status.phase);
 function safeRole(e){if(e.senderFrame!==e.sender.mainFrame)throw Error('课件页面没有桌面控制权限');const role=roles.get(e.sender.id);if(!role)throw Error('未知窗口');return role;}
-function saving(){clearTimeout(saveTimer);const work=saveQueue.catch(()=>{}).then(()=>{const value={...saved,settings,capabilities:[...files.tokens],urls:[...files.urls],allowedRoots:[...files.roots]};return atomicWrite(path.join(DATA,'workspace.json'),()=>workspaceJSON(value));});saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
+function saving(){clearTimeout(saveTimer);const exDir=showcase?.dir?.()||'';const keepPath=p=>!(exDir&&within(exDir,path.resolve(p)));const work=saveQueue.catch(()=>{}).then(()=>{const value={...saved,settings,capabilities:[...files.tokens].filter(([,r])=>keepPath(r)),urls:[...files.urls].filter(([p])=>keepPath(p)),allowedRoots:[...files.roots].filter(keepPath)};return atomicWrite(path.join(DATA,'workspace.json'),()=>workspaceJSON(value));});saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
 function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{void saving().catch(()=>{});},700);}
+// 硬盘快满提醒（E.4）：录像目录和数据目录所在的盘剩不到 5 GB 就在老师顶栏提醒，不挡操作；测试可用 CS_FAKE_FREE_GB 模拟剩余空间
+const diskWatch=require('./diskWatch.cjs');
+async function checkDisk(why){
+ const fake=TEST?(process.env.CS_FAKE_FREE_GB!==undefined?async()=>({bavail:Math.round(Number(process.env.CS_FAKE_FREE_GB)*1024**3/4096),bsize:4096,blocks:250000000}):async()=>({bavail:Math.round(50*1024**3/4096),bsize:4096,blocks:250000000})):undefined;
+ const r=await diskWatch.check([{role:'recordings',dir:settings.recordings},{role:'data',dir:DATA}],{statfs:fake});
+ const low=r.low.length?{low:r.low,message:r.low.map(x=>x.message).join('；'),why}:null;
+ if(low&&why==='startup'&&!diskWatch.shouldShowAtStartup(saved.diskWarnDismissed))return null;
+ if(low)notify('diskLow',{disk:low});return low;
+}
 function rememberPublic(){
  const full=saved.shared??{},prior=full.ink??{},merged={...prior};
  for(const[k,v]of Object.entries(publicData.ink??{}))merged[k]=[...v,...(prior[k]??[]).filter(s=>s.layer==='private')];
@@ -55,7 +65,8 @@ async function fileResponse(file,req,response,headers){
  return new Response(require('node:stream').Readable.toWeb(fs.createReadStream(file,{start,end})),{status:206,headers});
 }
 function guardSession(ses){
- ses.protocol.handle('studio',async req=>{try{const u=new URL(req.url);if(u.hostname!=='app')return new Response('Not found',{status:404});let rel=decodeURIComponent(u.pathname).replace(/^\//,'')||'index.html';const base=rel.startsWith('recorder.')||rel.startsWith('snip.')?__dirname:path.join(ROOT,process.env.CS_DIST||'dist');const file=path.resolve(base,rel);if(!within(base,file))return new Response('Denied',{status:403});const response=await net.fetch(pathToFileURL(file).href);const headers=new Headers(response.headers);headers.set('Content-Security-Policy',"default-src 'self' lesson: data: blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' lesson: plugin: data: blob: https: http:; connect-src 'self' lesson: plugin: blob: https: http:; frame-src lesson: plugin: https: http: blob:; media-src 'self' lesson: blob: https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'");return new Response(response.body,{status:response.status,headers});}catch{return new Response('Resource unavailable',{status:404});}});
+ ses.protocol.handle('studio',async req=>{try{const u=new URL(req.url);if(u.hostname!=='app')return new Response('Not found',{status:404});let rel=decodeURIComponent(u.pathname).replace(/^\//,'')||'index.html';const base=rel.startsWith('recorder.')||rel.startsWith('snip.')?__dirname:path.join(ROOT,process.env.CS_DIST||'dist');const file=path.resolve(base,rel);if(!within(base,file))return new Response('Denied',{status:403});const response=await net.fetch(pathToFileURL(file).href);const headers=new Headers(response.headers);headers.set('Content-Security-Policy',"default-src 'self' lesson: showcase: data: blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' lesson: plugin: showcase: data: blob: https: http:; connect-src 'self' lesson: plugin: showcase: blob: https: http:; frame-src lesson: plugin: showcase: https: http: blob:; media-src 'self' lesson: showcase: blob: https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'");return new Response(response.body,{status:response.status,headers});}catch{return new Response('Resource unavailable',{status:404});}});
+ ses.protocol.handle('showcase',async req=>{try{if(!showcase)return new Response('Not ready',{status:404});const file=showcase.resolveProtocolUrl(req.url);const response=await net.fetch(pathToFileURL(file).href,{headers:noRange(req)});const headers=new Headers(response.headers);headers.set('Access-Control-Allow-Origin','*');headers.set('X-Content-Type-Options','nosniff');if(/\.html?$/i.test(file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');return new Response(injectCookieShim(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return await fileResponse(file,req,response,headers);}catch{return new Response('示例资源不可读取',{status:404});}});
  ses.protocol.handle('lesson',async req=>{try{const file=files.resolve(req.url);const response=await net.fetch(pathToFileURL(file).href,{headers:noRange(req)});const headers=new Headers(response.headers);headers.set('Access-Control-Allow-Origin','*');headers.set('X-Content-Type-Options','nosniff');if(/\.html?$/i.test(file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');return new Response(injectCookieShim(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return await fileResponse(file,req,response,headers);}catch{return new Response('课件文件已移动或不可读取',{status:404});}});
  // 插件：plugin://<id>/…，每个插件一个独立来源；页面注入 SDK，内容安全策略只放行 plugin.json 里写明的域名
  ses.protocol.handle('plugin',async req=>{try{const r=plugins?.resolve(req.url);if(!r)return new Response('<meta charset="utf-8"><body style="font:14px system-ui;color:#8a93a3;padding:24px">这个插件已停用，或者文件不存在。</body>',{status:404,headers:{'content-type':'text/html; charset=utf-8'}});const response=await net.fetch(pathToFileURL(r.file).href,{headers:noRange(req)});const headers=new Headers(response.headers);headers.set('X-Content-Type-Options','nosniff');headers.set('Cache-Control','no-store');headers.set('Access-Control-Allow-Origin','*');headers.set('Content-Security-Policy',plugins.csp(r.manifest||plugins.manifest(r.id)));if(/\.html?$/i.test(r.file)&&response.status===200&&!req.headers.get('range')){headers.delete('content-length');headers.set('content-type','text/html; charset=utf-8');return new Response(plugins.inject(Buffer.from(await response.arrayBuffer())),{status:200,headers});}return await fileResponse(r.file,req,response,headers);}catch{return new Response('插件文件不可读取',{status:404});}});
@@ -72,6 +83,10 @@ function exportWindow(){
 }
 let exportQueue=Promise.resolve();
 function exportDoc(file,formats,opts){const job=exportQueue.then(()=>exporter.exportMarkdown(file,formats,exportWindow,opts));exportQueue=job.catch(()=>{});return job;}
+// 1.7.0 B：工坊成品自检（HTML 打包后离屏点一遍、题库来源核对、公式检查）；PDF 原文的文字用排版页里的 pdf.js 读
+const deliver=require('./deliverCheck.cjs'),{probeHtml}=require('./htmlProbe.cjs');
+async function pdfText(buf){const w=exportWindow();try{await w.loadURL('studio://app/export.html');for(let i=0;i<100&&!(await w.webContents.executeJavaScript('!!window.csExport'));i++)await new Promise(r=>setTimeout(r,50));return String(await w.webContents.executeJavaScript(`window.csExport.pdfText(${JSON.stringify(Buffer.from(buf).toString('base64'))})`)||'');}finally{await require('./office.cjs').closeWindow(w);}}
+function checkDeliverables(t){return deliver.checkDeliverables(t.work,{since:(t.turnStart||0)-2000,skill:t.skill,probeHtml:f=>probeHtml(f,{electron:require('electron')}),fetch:(u,o)=>net.fetch(u,o),webFetch:toolHost?.parts?.web?(u,w)=>toolHost.parts.web.fetchForSourceCheck(u,w):undefined,pdfText,log:(...a)=>log.info(...a)});}
 files.office=new OfficeConverter({makeWindow:exportWindow,url:p=>files.url(p),log});
 const dockManager=createDock({
  settings:()=>settings, save:()=>scheduleSave(), log,
@@ -294,7 +309,7 @@ ipcMain.on('cs:bus',(e,message)=>{try{const role=safeRole(e),m=authorizeMessage(
  if(m.t==='hello'){send(BrowserWindow.fromWebContents(e.sender),'cs:bus',{t:'snapshot',to:m.from,shared:projection(publicData)});return;}
  if(m.t==='snapshot')return;
  applyMessage(publicData,m);if(['shared','stroke','edit','erase'].includes(m.t))rememberPublic();
- for(const[r,w]of windows)if(r!=='recorder'&&!(m.t==='cmd'&&r==='student')&&w.webContents.id!==e.sender.id)send(w,'cs:bus',m);
+ for(const[r,w]of windows)if(r!=='recorder'&&!((m.t==='cmd'||m.t==='class')&&r==='student')&&w.webContents.id!==e.sender.id)send(w,'cs:bus',m);
  }catch(err){notify('notice',{message:'同步操作未应用：'+err.message,error:true});}});
 ipcMain.handle('cs:call',async(e,{method,value})=>{
  // 窗口关闭或被重建时，渲染进程里还在路上的调用会晚到；窗口已经没了就静默丢弃，不当成错误
@@ -309,7 +324,9 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
   if(method==='recordMeter'&&value.recordId===recording.current?.id){recording.update({micLevel:Number(value.micLevel)||0,systemLevel:Number(value.systemLevel)||0});return;}
   throw Error('录制组件权限不足');
  }
- if(method==='exists'){try{canUsePath(role,value);return fs.existsSync(value);}catch{return false;}}
+ if(method==='exists'){try{const p=/^https?:/i.test(String(value))?String(value):fixPath(value);canUsePath(role,p);return fs.existsSync(p);}catch{return false;}}
+ // 和 exists 一样，但返回规范化后的真实路径（%20、file://、~ 都还原），找不到 / 没授权返回 null
+ if(method==='resolvePath'){try{const p=fixPath(value);canUsePath(role,p);return fs.existsSync(p)?normal(p):null;}catch{return null;}}
  if(method==='persist'&&role==='teacher'){
   // 教师窗口只发来有改动的页面笔迹和撤销记录，再附上现有页面 / 记录的完整名单；没发来的沿用上次存下的同一份对象
   const {inkKeys,historyKeys,...rest}=value??{};
@@ -326,9 +343,11 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  // 学生画面里打开的插件课件：只能存取自己的数据、报告错误
  if(role==='student'&&(method==='plugins.storage'||method==='plugins.error'))return pluginCall(method,value,e);
  if(!trusted&&method!=='saveImage')throw Error('此操作仅在教师窗口可用');
- if(typeof method==='string'&&method.startsWith('ai.'))return ai.handle(method,value,{windows,dataDir:DATA,sender:e.sender,ledger,reconciler});
+ if(typeof method==='string'&&method.startsWith('ai.'))return ai.handle(method,value,{...aiCtx(),sender:e.sender});
+ if(typeof method==='string'&&method.startsWith('account.'))return accountCall(method,value);
  if(typeof method==='string'&&method.startsWith('agents.'))return agentCall(method,value);
  if(typeof method==='string'&&method.startsWith('assistant.'))return assistantCall(method,value);
+ if(typeof method==='string'&&method.startsWith('aitools.'))return aiToolsCall(method,value);
  if(typeof method==='string'&&method.startsWith('study.'))return studyCall(method,value);
  if(typeof method==='string'&&method.startsWith('notify.'))return notifier.handle(method,value);
  if(typeof method==='string'&&method.startsWith('manim.'))return manim.handle(method,value);
@@ -336,6 +355,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(typeof method==='string'&&method.startsWith('motion.'))return motionCall(method,value);
  if(typeof method==='string'&&method.startsWith('update.'))return updateCall(method,value);
  if(typeof method==='string'&&method.startsWith('plugins.'))return pluginCall(method,value,e);
+ if(typeof method==='string'&&method.startsWith('showcase.'))return showcase.handle(method,value);
  if(method==='archive.folder'){if(!TEST)await shell.openPath(archive.dir);return normal(archive.dir);}
  if(typeof method==='string'&&method.startsWith('archive.'))return archive.handle(method,value);
  switch(method){
@@ -358,7 +378,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'hideDock':return dockManager.setVisible(false);
  case 'displays':return screen.getAllDisplays().map(d=>({id:d.id,label:d.label||`显示器 ${d.id}`,primary:d.id===screen.getPrimaryDisplay().id,bounds:d.bounds}));
  case 'placeStudent':{const d=screen.getAllDisplays().find(d=>d.id===value.id);if(!d)throw Error('显示器已断开');const w=await makeWindow('student');w.setFullScreen(false);w.setBounds(d.bounds);w.setFullScreen(!!value.fullscreen);w.show();if(!TEST)await dockManager.ensure();return;}
- case 'reveal':{const actual=path.resolve(value);if(!within(DATA,actual))files.allowed(actual);shell.showItemInFolder(actual);return;}
+ case 'reveal':{const actual=fixPath(value);if(!within(DATA,actual))files.allowed(actual);shell.showItemInFolder(actual);return;}
  case 'settings':return {...settings,recording:recording.status,displays:screen.getAllDisplays().length};
  case 'setSettings':{
   const rec=['microphone','systemAudio','autoRecord','bitrate','voiceTrack'].some(k=>value[k]!==undefined);
@@ -372,16 +392,24 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
   if(typeof value.autoAnalyze==='boolean')settings.autoAnalyze=value.autoAnalyze;
   if([0.5,1,2,3,5,10].includes(value.analysisCap))settings.analysisCap=value.analysisCap;
   if(typeof value.splitWeChat==='boolean')settings.splitWeChat=value.splitWeChat;
+  if(typeof value.shortDrop==='boolean')settings.shortDrop=value.shortDrop;if([1,5].includes(value.shortMinutes))settings.shortMinutes=value.shortMinutes;
   for(const k of ['afterSummary','afterBoard','afterBoardLong'])if(typeof value[k]==='boolean')settings[k]=value[k];
   if(typeof value.transcribe==='boolean'){settings.transcribe=value.transcribe;if(value.transcribe)void asr.resumeRecent().catch(()=>{});asr.changed();}
   if(value.autoRec&&typeof value.autoRec==='object')settings.autoRec=cleanAutoRec({...settings.autoRec,...value.autoRec});
   if(typeof value.autostart==='boolean'){settings.autostart=value.autostart;if(app.isPackaged)app.setLoginItemSettings({openAtLogin:value.autostart});}
   scheduleSave();return settings;}
  case 'pickRecordings':{if(busy()||recording.jobs.length)throw Error('录像保存、回放生成完以后再修改目录');const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'选择录像保存目录',properties:['openDirectory','createDirectory']});if(!r.canceled)await changeRecordings(r.filePaths[0]);return settings.recordings;}
- case 'startLesson':{await makeWindow('student');if(busy())return recording.status;await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
+ case 'startLesson':{await makeWindow('student');if(busy())return recording.status;void checkDisk('record').catch(()=>{});await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
  case 'stopLesson':return recording.stop();
+ case 'disk.status':return checkDisk('startup');
+ case 'disk.dismiss':saved.diskWarnDismissed=diskWatch.today();scheduleSave();return true;
+ case 'whatsNew.state':return {version:VERSION,seen:saved.seenWhatsNewVersion||''};
+ case 'whatsNew.seen':saved.seenWhatsNewVersion=String(value||VERSION);scheduleSave();return true;
+ case 'recordKeepShort':return recording.keepShort(String(value||''));
  case 'recordChapter':return recording.chapter(value);
  case 'recordFrames':return recording.frames(String(value?.id||''),value?.times);
+ case 'recordBoards':return recording.saveBoards(String(value?.id||''),value?.items);
+ case 'recordBoardImages':return recording.boardImages(String(value?.id||''));
  case 'osNotify':return osNotify(value);
  case 'splitRecording':return recording.splitQueued(String(value||''));
  // 回放页里直接播放（跟着字幕跳转）：只放行这一段录像所在的文件夹
@@ -392,7 +420,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  case 'recoverRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');if(item.phase==='converting')return null;return recording.enqueue(item.folder,{id:item.id,title:item.title,studentId:item.studentId});}
  case 'deleteRecording':{asr.drop(value);const folder=await recording.remove(value);if(TEST)await fs.promises.rm(folder,{recursive:true,force:true});else await shell.trashItem(folder);log.info('删除录像',folder);return true;}
  case 'recordingsInfo':{const rows=await recording.list();const disk=await recording.disk(settings.recordings);return {dir:normal(settings.recordings),free:disk.free,total:disk.total,used:rows.reduce((a,r)=>a+(r.bytes||0),0),count:rows.length,systemDrive:onSystemDrive(settings.recordings)};}
- case 'nextLesson':{if(!busy())throw Error('现在没有在录课');await recording.stop();if(!(await recording.settle(60000)))throw Error('上一节还没收尾，请稍后再点');await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
+ case 'nextLesson':{if(!busy())throw Error('现在没有在录课');await recording.stop();if(!(await recording.settle(60000)))throw Error('上一节还没收尾，请稍后再点');void checkDisk('record').catch(()=>{});await makeWindow('recorder');if(blocker===null)blocker=powerSaveBlocker.start('prevent-display-sleep');return recording.start({...settings,studentId:value?.studentId,title:value?.title},TEST&&(value?.synthetic===true||process.env.CS_SYNTHETIC_RECORD==='1'));}
  case 'shortcut.create':return createShortcuts(true);
  case 'shortcut.state':return shortcutState();
  case 'openRecording':{const item=(await recording.list()).find(x=>x.id===value);if(!item)throw Error('找不到这段录像');const err=await shell.openPath(item.phase==='complete'?item.mp4:item.raw);if(err)throw Error(err);return;}
@@ -509,16 +537,69 @@ async function pluginCall(method,value,e){
  default:throw Error('未知的插件操作：'+method);
  }
 }
+const aiCtx=()=>({windows,dataDir:DATA,ledger,reconciler,tiers,gate:chargeGate,log,emit:(type,v)=>notify(type,v),account,codexHome});
+// ── 玲珑账号 / 合作站账号 ─────────────────────────────
+/** 登录以后：建（或找回）专用 Key，写进 AI 设置；页面只知道「接好了」 */
+async function connectAccount(){
+ const k=await account.ensureKey(),s=account.site();
+ const cfg=ai.setAccountKey(DATA,{baseUrl:k.baseUrl,key:k.key,account:{kind:account.kind,site:s.id,name:s.name,username:account.state.username||''}});
+ chargeGate.who=null;log.info('账号已连接',account.kind,s.id);notify('aiConfig',{});
+ return {...account.view(),ai:cfg};
+}
+/** 启动时要不要铺登录页：玲珑账号、合作站账号、测通过的 Key 三样都没有，而且老师没勾「以后不再自动弹出」 */
+async function gateState(){
+ const v=account.view();
+ if(v.signedIn)return {show:false,why:'signed',view:v};
+ if(await ai.keyUsable(DATA))return {show:false,why:'key',view:v};
+ return {show:!v.never,why:v.never?'never':'none',view:v};
+}
+async function openPayment(url,fields){
+ const pay=new BrowserWindow({parent:windows.get('teacher')||undefined,width:980,height:760,title:'充值',autoHideMenuBar:true,webPreferences:{partition:'pay-'+Date.now(),contextIsolation:true,sandbox:true,nodeIntegration:false}});
+ pay.removeMenu();
+ pay.webContents.setWindowOpenHandler(({url:next})=>{if(/^https?:\/\//i.test(next))void pay.loadURL(next);return {action:'deny'};});
+ pay.on('closed',()=>notify('accountPayClosed',{}));
+ await pay.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(paymentPage(url,fields)));
+ return true;
+}
+async function accountCall(method,value){
+ const v=value||{};
+ switch(method){
+ case 'account.view':return {...account.view(),ai:ai.publicConfig(DATA)};
+ case 'account.gate':return gateState();
+ case 'account.prefs':return account.setPrefs({never:!!v.never});
+ case 'account.siteInfo':return account.siteInfo(String(v.site||'linglong'));
+ case 'account.login':{const r=await account.login(v);return r.need2fa?r:connectAccount();}
+ case 'account.verify2fa':{await account.verify2fa(v.code);return connectAccount();}
+ case 'account.sendCode':return account.sendCode(v);
+ case 'account.register':{await account.register(v);return connectAccount();}
+ case 'account.connect':return connectAccount();
+ case 'account.signOut':{account.signOut();const cfg=ai.clearAccountKey(DATA);chargeGate.who=null;notify('aiConfig',{});log.info('账号已退出');return {...account.view(),ai:cfg};}
+ case 'account.self':return account.self();
+ case 'account.topupInfo':return account.topupInfo();
+ case 'account.price':return account.price(v.amount);
+ case 'account.pay':{const p=await account.pay(v.amount,v.method);if(!TEST)await openPayment(p.url,p.fields);return {opened:!TEST};}
+ case 'account.redeem':return account.redeem(v.code);
+ case 'account.logs':return account.logs(v);
+ case 'account.board':{const c=ai.credentials(DATA);return charge.fetchBoard(account,{configured:{text:[c.model].filter(Boolean)}});}
+ case 'account.quotePending':return priceConfirm.pending();
+ case 'account.quoteAnswer':return priceConfirm.answer(String(v.id||''),!!v.yes);
+ default:throw Error('未知的账号操作：'+method);
+ }
+}
 async function agentCall(method,value){
  switch(method){
  case 'agents.detect':return agents.detect();
+ case 'agents.warmup':return agents.warmupState();
+ case 'agents.warmupRun':return agents.prewarmCodex({reason:'manual',force:!!value?.force});
  case 'agents.install':return agents.install(value);
  case 'agents.update':return agents.update(value||'codex');
  case 'agents.bank':return agents.readBank(value?.id,value?.file);
  case 'agents.list':return agents.list();
  case 'agents.get':return agents.get(value);
- case 'agents.start':{const v=value||{};let pluginFrom='';if(v.kind==='plugin'&&v.pluginId){pluginFrom=path.join(plugins.installedDir,plugins.safeId(v.pluginId));if(!fs.existsSync(path.join(pluginFrom,'plugin.json')))throw Error('没有这个插件');}const t=agents.start({engine:v.engine,title:v.title,prompt:v.prompt,context:v.context,cap:v.cap,useStudioKey:!!v.useStudioKey,formats:v.formats,model:v.model,permission:v.permission,skill:v.skill,kind:v.kind,effort:v.effort,attachments:v.attachments,pluginFrom});log.info('后台任务开始',t.id,t.engine,t.permission,t.kind||'',t.title);return t;}
+ case 'agents.start':{const v=value||{};let pluginFrom='';if(v.kind==='plugin'&&v.pluginId){pluginFrom=path.join(plugins.installedDir,plugins.safeId(v.pluginId));if(!fs.existsSync(path.join(pluginFrom,'plugin.json')))throw Error('没有这个插件');}const t=agents.start({engine:v.engine,title:v.title,prompt:v.prompt,context:v.context,cap:v.cap,useStudioKey:!!v.useStudioKey,formats:v.formats,model:v.model,permission:v.permission,skill:v.skill,kind:v.kind,effort:v.effort,attachments:v.attachments,pluginFrom,tier:v.tier,styleRef:v.styleRef});log.info('后台任务开始',t.id,t.engine,t.permission,t.kind||'',t.title);return t;}
  case 'agents.configure':return agents.configure(value?.id,value||{});
+ case 'agents.retryQuality':return agents.retryQuality(value?.id??value);
+ case 'agents.suggest':return agents.suggestQuality(String(value?.id||''),String(value?.why||'效果可能不太好'));
  case 'agents.inject':return agents.inject(value?.id,value?.text,value?.attachments);
  case 'agents.pickAttach':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'添加附件（图片、Word、PDF 等）',properties:['openFile','multiSelections'],filters:[{name:'图片和文档',extensions:['png','jpg','jpeg','webp','gif','pdf','docx','doc','pptx','xlsx','txt','md','csv','json','html','svg']},{name:'所有文件',extensions:['*']}]});return r.canceled?[]:r.filePaths.slice(0,8).map(normal);}
  // AI 工坊：任务里正在做的插件挂到 plugin://dev-<任务>/ 预览，满意了装上
@@ -537,6 +618,21 @@ async function agentCall(method,value){
  }
 }
 const DOC_EXT=/\.(pdf|docx?|pptx?|xlsx?|csv|md|markdown|txt|rtf|png|jpe?g|gif|webp|bmp|mp4|mp3|m4a|wav|zip)$/i;
+/** AI 工具：设置、确认卡片、浏览器面板、键鼠暂停 / 继续 */
+async function aiToolsCall(method,value){
+ const v=value||{},b=toolHost.parts.browser,d=toolHost.parts.desk;
+ switch(method){
+ case 'aitools.status':return {...toolHost.status(),browsers:b.list()};
+ case 'aitools.settings':return toolHost.setSettings(v);
+ case 'aitools.confirm':return toolHost.settle(String(v.id||''),String(v.choice||'deny'));
+ case 'aitools.browserShow':return b.show(v.key?String(v.key):'',v.rect||null);
+ case 'aitools.browserAction':return b.userAction(String(v.key||''),String(v.action||''),v.arg);
+ case 'aitools.browserList':return b.list();
+ case 'aitools.deskResume':return d.resume();
+ case 'aitools.deskStop':d.stopAll('老师点了停止');return null;
+ default:throw Error('未知操作：'+method);
+ }
+}
 async function assistantCall(method,value){
  const v=value||{};
  switch(method){
@@ -553,12 +649,14 @@ async function assistantCall(method,value){
  case 'assistant.undone':return assistant.markUndone(v.id,v.turnId,v.note);
  case 'assistant.notice':return assistant.notice(v.id,v.text);
  // 老师在对话里同意让助教打开 / 读取的文件：和拖进来的文件一样授权给资料库
- case 'assistant.grant':{const p=path.resolve(String(v.path||''));const st=await fs.promises.stat(p);return files.authorize(p,st.isDirectory());}
+ case 'assistant.grant':{const p=fixPath(v.path);if(!fs.existsSync(p))throw Error('找不到这个文件（可能被移动、改名或删除了）：'+p);const st=await fs.promises.stat(p);return files.authorize(p,st.isDirectory());}
  case 'assistant.pickFiles':{const r=await dialog.showOpenDialog(windows.get('teacher'),{title:'给 AI 助教看的文件',properties:['openFile','multiSelections']});return r.canceled?[]:r.filePaths.slice(0,8).map(p=>files.authorize(p));}
  case 'assistant.workspace':{if(!TEST)await shell.openPath(assistant.work);return normal(assistant.work);}
  // 助教工作目录、学情库里的文件随便开；别处的只开文档、图片、音视频（老师在对话里点的，不开程序和脚本）
- case 'assistant.open':{const f=path.resolve(String(v.path||''));if(!within(assistant.work,f)&&!within(study.dir,f)&&!DOC_EXT.test(f))throw Error('这种文件不能从对话里直接打开，请到文件夹里打开');if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');const err=await shell.openPath(f);if(err)throw Error('打不开：'+err);return;}
- case 'assistant.reveal':{const f=path.resolve(String(v.path||''));if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');if(!TEST)shell.showItemInFolder(f);return normal(f);}
+ case 'assistant.open':{const f=fixPath(v.path);if(!within(assistant.work,f)&&!within(study.dir,f)&&!DOC_EXT.test(f))throw Error('这种文件不能从对话里直接打开，请到文件夹里打开');if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');const err=await shell.openPath(f);if(err)throw Error('打不开：'+err);return;}
+ // 对话里点了 .json：题库文件直接导入题库（界面解析），别的给「在文件夹中显示」
+ case 'assistant.readJson':{const f=fixPath(v.path);if(!/\.json$/i.test(f))throw Error('只能读 JSON 文件');if(!fs.existsSync(f))throw Error('找不到这个文件（可能被移动、改名或删除了）：'+f);if(!within(assistant.work,f)&&!within(study.dir,f))files.allowed(f);if(fs.statSync(f).size>2*1024*1024)throw Error('文件太大（超过 2MB），请到文件夹里打开');try{return JSON.parse(fs.readFileSync(f,'utf8').replace(/^\uFEFF/,''));}catch(e){throw Error('这个文件不是合法的 JSON：'+String(e.message).slice(0,120));}}
+ case 'assistant.reveal':{const f=fixPath(v.path);if(!fs.existsSync(f))throw Error('文件不存在（可能被移动或删除了）');if(!TEST)shell.showItemInFolder(f);return normal(f);}
  default:throw Error('未知的助教操作：'+method);
  }
 }
@@ -592,8 +690,11 @@ async function studyCall(method,value){
 const shown=new Set();
 /** 录像自动开关的设置（和 src/lib/autoRecord.ts 的 cleanAutoRecord 同一套规则） */
 function cleanAutoRec(o){
- const d={start:true,lead:5,stopAfter:15,idle:true,idleMinutes:20,adhoc:false,sound:false},b=k=>typeof o?.[k]==='boolean'?o[k]:d[k],stop=Number(o?.stopAfter);
- return {start:b('start'),lead:[0,2,5,10].includes(Number(o?.lead))?Number(o.lead):d.lead,stopAfter:Number.isInteger(stop)&&(stop===0||stop>=5&&stop<=240)?stop:d.stopAfter,idle:b('idle'),idleMinutes:[10,20,30,45].includes(Number(o?.idleMinutes))?Number(o.idleMinutes):d.idleMinutes,adhoc:b('adhoc'),sound:b('sound')};
+ const d={v:2,start:true,autoStart:false,lead:0,stopAfter:15,autoStop:false,idle:true,idleMinutes:20,adhoc:false,sound:false,stageButton:true},b=k=>typeof o?.[k]==='boolean'?o[k]:d[k],stop=Number(o?.stopAfter),lead=Math.round(Number(o?.lead));
+ const base={start:b('start'),stopAfter:Number.isInteger(stop)&&(stop===0||stop>=5&&stop<=240)?stop:d.stopAfter,idle:b('idle'),idleMinutes:[10,20,30,45].includes(Number(o?.idleMinutes))?Number(o.idleMinutes):d.idleMinutes,adhoc:b('adhoc'),sound:b('sound')};
+ // 1.6.0 存下的（没有 v）：按 1.7.0 新默认改成准时提醒、不自动开也不自动下课
+ if(o?.v!==2)return {...d,...base};
+ return {...d,...base,autoStart:b('autoStart'),autoStop:b('autoStop'),stageButton:b('stageButton'),lead:lead>=0&&lead<=10?lead:d.lead};
 }
 /** 录像自动开关的系统通知：教师窗口最小化、被会议挡住时也能看到；点一下回到教师窗口 */
 function osNotify({title,body}={}){
@@ -616,18 +717,35 @@ function remindLesson(item){
 }
 async function start(){
  await fs.promises.mkdir(files.cache,{recursive:true});cleanTemps(path.join(DATA,'workspace.json'));saved=await readJSON(path.join(DATA,'workspace.json'),{});
- settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,analysisCap:2,splitWeChat:false,afterSummary:false,afterBoard:false,afterBoardLong:false,voiceTrack:true,transcribe:true,...saved.settings};
+ settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,analysisCap:2,splitWeChat:false,shortDrop:!TEST||process.env.CS_SHORT_DROP==='1',shortMinutes:1,afterSummary:false,afterBoard:false,afterBoardLong:false,voiceTrack:true,transcribe:true,...saved.settings};
  settings.autoRec=cleanAutoRec(settings.autoRec);
  // 0.4.0：防截屏改为默认关闭（开启时部分会议软件全屏共享会显示黑块）
  if(!saved.migrated040){saved.migrated040=true;settings.captureGuard=false;}
  ledger=new Ledger(DATA);
+ // 1.7.0 玲珑账号和档位：账号登录状态用系统安全存储加密；档位按用途记在 tiers.json
+ tiers=new tierKit.TierStore(path.join(DATA,'tiers.json'));if(TEST&&process.env.CS_TIER_HOSTS)tierKit.setTestHosts(process.env.CS_TIER_HOSTS.split(','));
+ tierKit.setDefectLogger({dir:path.join(DATA,'logs'),log});
+ tierKit.installFetch();
+ await tierKit.ensureSiteRelay();
+ account=new Account({dir:DATA,crypt:makeCrypt(safeStorage),client:tierKit.CLIENT,...(TEST&&process.env.CS_ACCOUNT_SITES?{sites:JSON.parse(process.env.CS_ACCOUNT_SITES)}:{})});
+ priceConfirm=new charge.PriceConfirm({emit:m=>notify('quote',m)});
+ chargeGate=new charge.ChargeGate({account,confirm:priceConfirm,preauth:charge.taskPreauth({agents:()=>agents,ledger}),log});
  plugins=new Plugins({dir:path.join(DATA,'plugins'),log,emit:m=>notify(m.type,m)});
+ showcase=new Showcase({files,plugins,notify,log});
  if(plugins.safeMode)log.warn('插件：上两次启动没有正常运行，这次不加载插件');
  // 正常跑满 1 分钟算启动成功，清掉「连续启动失败」计数
  setTimeout(()=>plugins.stable(),TEST?3000:60000);
  agentKit.setExtra(()=>plugins.skills());
- agents=new Agents({dir:path.join(DATA,'agents'),toolsDir:path.join(DATA,'tools'),fetch:(u,o)=>net.fetch(u,o),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('agent',{agent:m}),exporter:exportDoc,onCharge:()=>reconciler?.soon(120000),imageGen:(v)=>ai.handle('ai.image',v,{windows,dataDir:DATA,ledger,reconciler})});
- assistant=new Assistant({dir:path.join(DATA,'assistant'),toolsDir:path.join(DATA,'tools'),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('assistant',{assistant:m}),onCharge:()=>reconciler?.soon(120000)});try{files.authorize(assistant.work,true);}catch{}
+ // 1.7.0 AI 工具（cs_tools）：联网搜索、内置浏览器、截图自检、看屏幕和键鼠，工坊和小羽共用
+ const allowLocalWeb=TEST&&process.env.CS_ALLOW_LOCAL_WEB==='1';
+ toolHost=new ToolHost({dataDir:DATA,log,emit:m=>notify('aitools',{aitools:m}),inClass:()=>busy()?'正在录课':''});
+ toolHost.parts={web:new WebTools({electron:require('electron'),host:toolHost,log,allowLocalhost:allowLocalWeb}),browser:new AiBrowser({electron:require('electron'),host:toolHost,window:()=>windows.get('teacher'),log,emit:m=>notify('aitools',{aitools:m})}),page:new PageCheck({electron:require('electron'),allowed:f=>{try{files.allowed(f);return true;}catch{return false;}},log}),desk:new Desk({electron:require('electron'),host:toolHost,dir:path.join(DATA,'tools','desk'),log,emit:m=>notify('aitools',{aitools:m})})};
+ await toolHost.start().catch(e=>log.warn('AI 工具接口没有启动',e.message));
+ const autoPrewarm=!TEST||process.env.CS_CODEX_PREWARM==='1';
+ codexHome=new CodexHome({dir:path.join(DATA,'codex-home'),locate:()=>locateCli('codex',path.join(DATA,'tools')),log,emit:state=>notify('codexWarmup',{state})});
+ agents=new Agents({dir:path.join(DATA,'agents'),codexHome,autoPrewarm,tools:toolHost,toolsDir:path.join(DATA,'tools'),fetch:(u,o)=>net.fetch(u,o),ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>notify('agent',{agent:m}),exporter:exportDoc,check:checkDeliverables,onCharge:()=>reconciler?.soon(120000),imageGen:(v)=>ai.handle('ai.image',v,aiCtx()),tierOf:()=>tiers.get('workshop')});
+ assistant=new Assistant({dir:path.join(DATA,'assistant'),codexHome,tools:toolHost,toolsDir:path.join(DATA,'tools'),ledger,credentials:()=>ai.credentials(DATA),tierOf:()=>tiers.get('chat'),log,emit:m=>notify('assistant',{assistant:m}),onCharge:()=>reconciler?.soon(120000)});try{files.authorize(assistant.work,true);}catch{}
+ if(autoPrewarm)setTimeout(()=>void codexHome.prewarm({reason:'startup'}).catch(()=>{}),TEST?50:2500);
  reconciler=new Reconciler({ledger,credentials:()=>ai.credentials(DATA),log,emit:m=>{if(m.tasks?.length)agents.refreshCost(m.tasks);notify('ledger',m);}});if(!TEST)reconciler.start();try{files.authorize(agents.dir,true);}catch{}
  study=new Study({dir:path.join(DATA,'study'),exportDoc,log});files.authorize(study.dir,true);study.templateCss=kind=>plugins.templateCss(kind);study.watch(()=>notify('studyChanged'));
  notifier=new Notify({dir:DATA,root:study.dir,test:TEST,log});
@@ -656,6 +774,9 @@ async function start(){
  publicData=projection(saved.shared);if(publicData.sim)publicData.sim.playing=false;
  recording=new Recording({directory:settings.recordings,ffmpeg:path.join(ROOT,'bin',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'),onChange:status=>{notify('recording',{status});if(!['starting','recording','stopping'].includes(status.phase)&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}},send:m=>send(windows.get('recorder'),'cs:event',m),onSaved:r=>{log.info('回放已生成',r.path);notify('recordSaved',{record:{id:r.id,title:r.title,studentId:r.studentId}});void asr?.offer({id:r.id}).catch(e=>log.warn('语音转写排队',e.message));},
   split:()=>settings.splitWeChat===true,
+  // 1.7.0 短录像不算上课：默认开，1 分钟以下丢弃（可选 5 分钟）
+  shortLimit:()=>settings.shortDrop===false?0:(settings.shortMinutes===5?300:60),undoMs:TEST&&process.env.CS_DROP_UNDO?Number(process.env.CS_DROP_UNDO):undefined,
+  onStopped:r=>{log.info(r.kept?'下课':'短录像已丢弃（可撤销）',r.id,Math.round(r.seconds)+'s');notify('recordStopped',r);},
   partLimits:TEST&&process.env.CS_PART_LIMITS?JSON.parse(process.env.CS_PART_LIMITS):undefined,
   label:m=>(saved.local?.students??[]).find(x=>x.id===m.studentId)?.name,
   onSplit:r=>{if(r.error)log.warn('微信分段失败',r.error);else log.info('微信分段',r.dir,r.parts.length);notify('recordSplit',{record:{id:r.id,title:r.title,studentId:r.studentId},dir:r.dir,parts:r.parts.map(p=>p.file),error:r.error??null});}});
@@ -670,9 +791,9 @@ async function start(){
  Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu',label:'最强网课教辅系统'},{role:'editMenu',label:'编辑'},{role:'windowMenu',label:'窗口'}]):null);await makeWindow('teacher');await makeWindow('student');if(!TEST)await dockManager.ensure();
  for(const ev of ['display-added','display-removed','display-metrics-changed'])screen.on(ev,refitAll);
  if(lastUpdate)setTimeout(()=>notify('update',{update:{phase:lastUpdate.ok?'done':'failed',result:lastUpdate}}),2500);
- if(!TEST){void recording.resume();setTimeout(()=>void asr.resumeRecent().catch(e=>log.warn('语音转写',e.message)),90000);repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
+ if(!TEST){void checkDisk('startup').catch(()=>{});void recording.resume();setTimeout(()=>void asr.resumeRecent().catch(e=>log.warn('语音转写',e.message)),90000);repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
  if(!TEST){const auto=()=>{if(settings.updateCheck!==false)void updater.check();};setTimeout(auto,20000);setInterval(auto,12*3600000).unref?.();}
- if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get asr(){return asr;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},remindLesson,exportDoc,offerLink:l=>offerLink(l)};
+ if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,checkDisk,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get asr(){return asr;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},get showcase(){return showcase;},get account(){return account;},get tiers(){return tiers;},get chargeGate(){return chargeGate;},get priceConfirm(){return priceConfirm;},get toolHost(){return toolHost;},get codexHome(){return codexHome;},checkDeliverables,remindLesson,exportDoc,offerLink:l=>offerLink(l)};
 }
 // 一键导入（yinzi-import/1）：网站打开 classroom-studio:// 链接或双击 .yzimport 文件。没开着就带着参数启动，开着就交给已有的实例
 let startLink=TEST?'':linkFromArgv(process.argv);
@@ -691,6 +812,6 @@ if(!TEST&&!app.requestSingleInstanceLock())app.quit();else{app.whenReady().then(
 app.on('open-url',(e,url)=>{e.preventDefault();void offerLink(url);});
 app.on('open-file',(e,file)=>{if(/\.yzimport$/i.test(file)){e.preventDefault();void offerLink(file);}});
 app.on('activate',()=>{const t=windows.get('teacher');if(t&&!t.isDestroyed())t.show();});
-app.on('will-quit',()=>{try{agents?.stopAll();assistant?.stopAll();reminders?.stop();reconciler?.stop();study?.watcher?.close();}catch{}});
+app.on('will-quit',()=>{try{toolHost?.stop();agents?.stopAll();assistant?.stopAll();reminders?.stop();reconciler?.stop();study?.watcher?.close();}catch{}});
 app.on('window-all-closed',()=>{if(TEST||quitting)app.quit();});
 app.on('before-quit',e=>{if(!quitting&&!TEST){e.preventDefault();void closeApp();}});

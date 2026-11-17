@@ -15,6 +15,7 @@ import { isGroup, kindName, memberText, peopleOf } from '../lib/groups';
 import { captureFromScreen } from '../lib/studyActions';
 import { RESULT_NAME, type Result } from '../lib/studyLogic';
 import '../styles/study.css';
+import { LessonBrief } from './LessonBrief';
 
 /** 课堂作答：老师看学生做完一题，点一下记对错；题目自动截图进学情收件箱 */
 function ClassAnswers({ studentId }: { studentId: string }) {
@@ -179,6 +180,7 @@ export function StudentCard({ onOpen }: { onOpen: () => void }) {
         <span>上次讲到</span>
         <b>{s.lastTopic || '尚未记录'}</b>
       </div>
+      <LessonBrief studentId={s.id} />
       {last && (
         <button className="scard-replay" onClick={() => void host.call('openRecording', last.id).catch((e) => reportMaterialError(e, '课堂回放'))}>
           <span className="play"><CirclePlay size={16} /></span>

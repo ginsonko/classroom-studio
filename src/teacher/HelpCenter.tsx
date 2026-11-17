@@ -1,3 +1,4 @@
+import { openWhatsNew } from './Experience170';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Check, Clapperboard, Copy, Download, ExternalLink, Info, Loader2, RefreshCw, Rocket, Search, X } from 'lucide-react';
 import { showWelcome } from '../guide/guide';
@@ -86,6 +87,7 @@ function About() {
   const copy = () => void navigator.clipboard.writeText(QQ_GROUP).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); });
   return (
     <div className="help-about">
+      <button className="ab-whatsnew" data-qa="help-whatsnew" onClick={() => { useHelp.setState({ open: false }); openWhatsNew(); }}>查看本次更新内容</button>
       <div className="ab-hero">
         <Logo size={56} />
         <div>

@@ -30,6 +30,7 @@ function zip(entries) {
 const x = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 const FONT = '<w:rFonts w:ascii="Microsoft YaHei" w:hAnsi="Microsoft YaHei" w:eastAsia="Microsoft YaHei" w:cs="Microsoft YaHei"/>';
 const EMU = 9525; // 每像素
+const DIAGRAM = /^(时间轴|时间线|timeline|结构图|知识结构|思维导图|tree|mindmap)$/i; // 和 src/export/diagrams.ts 的 isDiagram 一致
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -126,7 +127,8 @@ function buildDocx(parsed, pics) {
       case 'p': return para(runs(b.runs), b.quote ? '<w:pBdr><w:left w:val="single" w:sz="18" w:space="6" w:color="9DB8E8"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="F3F7FD"/><w:ind w:left="240"/>' : '');
       case 'li': { const left = 420 * (b.depth + 1); return para(`<w:r><w:rPr><w:b/><w:color w:val="2F6FD6"/></w:rPr><w:t xml:space="preserve">${b.ordered ? b.n + '.' : '•'}</w:t></w:r><w:r><w:tab/></w:r>${runs(b.runs)}`, `<w:tabs><w:tab w:val="left" w:pos="${left}"/></w:tabs><w:ind w:left="${left}" w:hanging="360"/>`); }
       case 'math': return para(pic(b.id, INLINE), '<w:jc w:val="center"/><w:spacing w:before="80" w:after="80"/>');
-      case 'code': return b.text.split('\n').map((l) => para(`<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${x(l)}</w:t></w:r>`, '<w:shd w:val="clear" w:color="auto" w:fill="F5F6F8"/><w:spacing w:before="0" w:after="0"/>')).join('');
+      case 'code': if (b.pic && pics.get(b.pic)) { const p = pics.get(b.pic); return para(pic(b.pic, Math.min(1, BODY_PX / p.w)), '<w:jc w:val="center"/><w:spacing w:before="80" w:after="120"/>'); }
+        return b.text.split('\n').map((l) => para(`<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr><w:t xml:space="preserve">${x(l)}</w:t></w:r>`, '<w:shd w:val="clear" w:color="auto" w:fill="F5F6F8"/><w:spacing w:before="0" w:after="0"/>')).join('');
       case 'break': return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
       case 'gap': return para('') + para('') + para('') + para('');
       case 'fields': {
@@ -190,6 +192,71 @@ const P_NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xm
 const EMPTY_TREE = '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>';
 const REL = (items) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items.map(([id, type, target]) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`).join('')}</Relationships>`;
 
+// ── 1.7.0 可编辑的页：背景图（版式底色、装饰）+ 原生文字框（能直接改字）+ 公式 / 插图图片，单击分步用 PowerPoint 的「淡入」动画 ──
+const PX = 7620; // 1600 像素宽的排版页 → 12192000 EMU
+const emu = (v) => Math.round(v * PX);
+const clr = (c) => { const s = String(c || '').toUpperCase(); if (!/^[0-9A-F]{6}([0-9A-F]{2})?$/.test(s)) return '<a:srgbClr val="1D2330"/>'; return s.length === 8 ? `<a:srgbClr val="${s.slice(0, 6)}"><a:alpha val="${Math.round(parseInt(s.slice(6), 16) / 255 * 100000)}"/></a:srgbClr>` : `<a:srgbClr val="${s}"/>`; };
+const FONT_RUN = '<a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/>';
+const sz = (px) => Math.max(600, Math.min(40000, Math.round(px * 0.6 * 100)));
+
+function textShape(id, L) {
+  // 字体在 PowerPoint 里比浏览器略宽：没有底色的文字框往外放宽一点，免得多折一行
+  const slack = L.fill || L.line ? 0 : Math.max(12, L.w * 0.05);
+  let left = L.x, w = L.w + slack;
+  if (!L.fill && !L.line && L.align === 'ctr') left -= slack / 2; else if (!L.fill && !L.line && L.align === 'r') left -= slack;
+  left = Math.max(0, left); w = Math.min(1600 - left, w);
+  const [pt, pr, pb, pl] = (L.pad || [0, 0, 0, 0]).map((v) => emu(Math.max(0, v || 0)));
+  const geom = L.radius > 1 ? `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${Math.min(50000, Math.round(L.radius / Math.max(1, Math.min(L.w, L.h)) * 100000))}"/></a:avLst></a:prstGeom>` : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>';
+  const fill = L.fill ? `<a:solidFill>${clr(L.fill)}</a:solidFill>` : '<a:noFill/>';
+  const ln = L.line ? `<a:ln w="${emu(L.lineW || 1)}"><a:solidFill>${clr(L.line)}</a:solidFill>${L.dash ? '<a:prstDash val="dash"/>' : ''}</a:ln>` : '<a:ln><a:noFill/></a:ln>';
+  const runs = (L.runs || []).map((r) => (r.br ? `<a:br><a:rPr lang="zh-CN" sz="${sz(r.size)}"/></a:br>` : r.text ? `<a:r><a:rPr lang="zh-CN" altLang="en-US" sz="${sz(r.size)}"${r.b ? ' b="1"' : ''}${r.i ? ' i="1"' : ''} dirty="0"><a:solidFill>${clr(r.color)}</a:solidFill>${FONT_RUN}</a:rPr><a:t>${x(r.text)}</a:t></a:r>` : '')).join('');
+  const lh = L.lineHeight ? `<a:lnSpc><a:spcPts val="${Math.max(100, Math.round(L.lineHeight * 0.6 * 100))}"/></a:lnSpc>` : '';
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="文字 ${id}"/><p:cNvSpPr${L.fill || L.line ? '' : ' txBox="1"'}/><p:nvPr/></p:nvSpPr>`
+    + `<p:spPr><a:xfrm><a:off x="${emu(left)}" y="${emu(L.y)}"/><a:ext cx="${emu(w)}" cy="${emu(L.h)}"/></a:xfrm>${geom}${fill}${ln}</p:spPr>`
+    + `<p:txBody><a:bodyPr wrap="square" lIns="${pl}" tIns="${pt}" rIns="${pr}" bIns="${pb}" anchor="${L.anchor === 'ctr' ? 'ctr' : 't'}" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/>`
+    + `<a:p><a:pPr algn="${L.align || 'l'}">${lh}</a:pPr>${runs}<a:endParaRPr lang="zh-CN" sz="${sz(L.size || 24)}" dirty="0"/></a:p></p:txBody></p:sp>`;
+}
+function picShape(id, rid, L, name) {
+  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${x(name)} ${id}" descr="${x(L.alt || '').slice(0, 1500)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>`
+    + `<p:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${emu(L.x)}" y="${emu(L.y)}"/><a:ext cx="${emu(L.w)}" cy="${emu(L.h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+}
+/** 单击分步：每一步一次单击，同一步的几个元素一起淡入 */
+function timingXml(groups) {
+  if (!groups.length) return '';
+  let id = 2;
+  const effect = (spid, first) => {
+    const a = ++id, b = ++id, c = ++id;
+    return `<p:par><p:cTn id="${a}" presetID="10" presetClass="entr" presetSubtype="0" fill="hold" nodeType="${first ? 'clickEffect' : 'withEffect'}"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>`
+      + `<p:set><p:cBhvr><p:cTn id="${b}" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr><p:to><p:strVal val="visible"/></p:to></p:set>`
+      + `<p:animEffect transition="in" filter="fade"><p:cBhvr><p:cTn id="${c}" dur="400"/><p:tgtEl><p:spTgt spid="${spid}"/></p:tgtEl></p:cBhvr></p:animEffect></p:childTnLst></p:cTn></p:par>`;
+  };
+  const clicks = groups.map((ids) => { const g = ++id, s = ++id; return `<p:par><p:cTn id="${g}" fill="hold"><p:stCondLst><p:cond delay="indefinite"/></p:stCondLst><p:childTnLst><p:par><p:cTn id="${s}" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst><p:childTnLst>${ids.map((spid, k) => effect(spid, k === 0)).join('')}</p:childTnLst></p:cTn></p:par></p:childTnLst></p:cTn></p:par>`; }).join('');
+  return `<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst><p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>${clicks}</p:childTnLst></p:cTn>`
+    + '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst><p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>';
+}
+
+/** 一页可编辑的幻灯片：返回 { xml, media: [{ rid, name, data }] }；page = { bg, layers, alt }，图片层带 png */
+function editableSlide(i, page) {
+  const media = [{ rid: 'rId2', name: `slide${i + 1}-bg.png`, data: page.bg }];
+  let nid = 2;
+  const shapes = [], steps = new Map();
+  for (const L of page.layers || []) {
+    if (L.w < 1 || L.h < 1) continue;
+    const id = ++nid;
+    if (L.kind === 'pic') {
+      if (!L.png) continue;
+      const rid = 'rId' + (media.length + 2);
+      media.push({ rid, name: `slide${i + 1}-${id}.png`, data: L.png });
+      shapes.push(picShape(id, rid, L, L.math ? '公式' : '图片'));
+    } else shapes.push(textShape(id, L));
+    if (L.step > 0) { if (!steps.has(L.step)) steps.set(L.step, []); steps.get(L.step).push(id); }
+  }
+  const groups = [...steps.keys()].sort((a, b) => a - b).map((k) => steps.get(k));
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${P_NS}><p:cSld name="第 ${i + 1} 页"><p:bg><p:bgPr><a:blipFill dpi="0" rotWithShape="1"><a:blip r:embed="rId2"/><a:srcRect/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:effectLst/></p:bgPr></p:bg>`
+    + `<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes.join('')}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${timingXml(groups)}</p:sld>`;
+  return { xml, media };
+}
+
 function buildPptx(slides, title) {
   const W = 12192000, H = 6858000;
   const slideXml = (i, alt) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${P_NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>`
@@ -210,6 +277,14 @@ function buildPptx(slides, title) {
     { name: 'ppt/theme/theme1.xml', data: THEME },
   ];
   slides.forEach((s, i) => {
+    if (s.bg) {
+      const e = editableSlide(i, s);
+      entries.push({ name: `ppt/slides/slide${i + 1}.xml`, data: e.xml });
+      entries.push({ name: `ppt/slides/_rels/slide${i + 1}.xml.rels`, data: REL([['rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml'], ...e.media.map((m) => [m.rid, 'image', `../media/${m.name}`])]) });
+      for (const m of e.media) entries.push({ name: `ppt/media/${m.name}`, data: m.data });
+      return;
+    }
+    // 旧格式：整页一张图
     entries.push({ name: `ppt/slides/slide${i + 1}.xml`, data: slideXml(i, s.alt || '') });
     entries.push({ name: `ppt/slides/_rels/slide${i + 1}.xml.rels`, data: REL([['rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml'], ['rId2', 'image', `../media/slide${i + 1}.png`]]) });
     entries.push({ name: `ppt/media/slide${i + 1}.png`, data: s.png });
@@ -245,6 +320,16 @@ async function exportMarkdown(file, formats, makeWindow, opts = {}) {
           const size = img.getSize(), k = size.width / r.w || 1;
           pics.set(m.id, { png: img.toPNG(), w: size.width / k, h: size.height / k, depth: r.depth });
         }
+        // 时间轴、结构图：单独排一张截图放进 Word
+        let dk = 0;
+        for (const b of parsed.blocks) {
+          if (b.type !== 'code' || !DIAGRAM.test(String(b.lang || '').trim()) || dk >= 20) continue;
+          const r = await call('showDiagram', b.lang, b.text); await frame();
+          const img = await w.webContents.capturePage({ x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(1600, r.w), height: Math.min(900, r.h) });
+          const size = img.getSize(), k = size.width / r.w || 1;
+          b.pic = 'dg' + dk++;
+          pics.set(b.pic, { png: img.toPNG(), w: size.width / k, h: size.height / k, depth: 0 });
+        }
         fs.writeFileSync(base + '.docx', buildDocx(parsed, pics)); out.push(base + '.docx');
       } catch (e) { errors.push('Word：' + e.message); }
     }
@@ -252,9 +337,21 @@ async function exportMarkdown(file, formats, makeWindow, opts = {}) {
       try {
         const s = await call('renderSlides', md), pages = [];
         for (let i = 0; i < Math.min(s.count, 80); i++) {
-          await call('showSlide', i); await frame();
-          const img = await w.webContents.capturePage({ x: 0, y: 0, width: 1600, height: 900 });
-          pages.push({ png: img.toPNG(), alt: s.notes[i] || '' });
+          const info = await call('showSlide', i); await frame();
+          // 整页截一张（公式、插图从这里裁），再藏起文字和图截一张背景；文字做成 PowerPoint 里能直接改的文字框
+          const full = await w.webContents.capturePage({ x: 0, y: 0, width: 1600, height: 900 });
+          const layers = await call('slideLayers');
+          await call('hideLeaves', true); await frame();
+          const bg = await w.webContents.capturePage({ x: 0, y: 0, width: 1600, height: 900 });
+          await call('hideLeaves', false);
+          const size = full.getSize(), k = size.width / 1600 || 1;
+          for (const L of layers) {
+            if (L.kind !== 'pic') continue;
+            const r = { x: Math.max(0, Math.floor(L.x * k)), y: Math.max(0, Math.floor(L.y * k)) };
+            r.width = Math.min(size.width - r.x, Math.ceil(L.w * k)); r.height = Math.min(size.height - r.y, Math.ceil(L.h * k));
+            if (r.width > 0 && r.height > 0) L.png = full.crop(r).toPNG();
+          }
+          pages.push({ bg: bg.toPNG(), layers, alt: s.notes[i] || '', layout: info?.layout, steps: info?.steps || 0 });
         }
         fs.writeFileSync(base + '.pptx', buildPptx(pages, s.title)); out.push(base + '.pptx');
       } catch (e) { errors.push('PPT：' + e.message); }

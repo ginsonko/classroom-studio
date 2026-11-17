@@ -10,14 +10,15 @@ import {
 } from './guide';
 import { ROUTE_NAME, nextOpen, placeCard, summary, type Box, type Corner, type RouteId } from './steps';
 import { GuideSpot, findSpot } from './Spot';
+import { useWhatsNew } from '../teacher/Experience170';
 
 /** 导播台窗口里的彩排：邀请卡、引导卡、完成清单、按钮高亮 */
 export function Guide() {
-  const active = useGuide((s) => s.active), welcome = useGuide((s) => s.welcome);
+  const active = useGuide((s) => s.active), welcome = useGuide((s) => s.welcome), whatsNew = useWhatsNew((s) => s.open);
   useEffect(() => { resumeGuide(); const t = setTimeout(maybeWelcome, 1800); return () => clearTimeout(t); }, []);
   useEffect(() => { if (!active) return; const t = setInterval(tick, 400); return () => clearInterval(t); }, [active]);
   return <>
-    {welcome && !active && <Welcome />}
+    {welcome && !active && !whatsNew && <Welcome />}
     {active && <Coach />}
     <GuideSpot win="teacher" />
   </>;
@@ -26,7 +27,9 @@ export function Guide() {
 function Welcome() {
   const status = useGuide((s) => s.status);
   const started = Object.keys(status).length > 0;
-  return <section className="guide-card guide-welcome" role="dialog" aria-label="上课彩排">
+  const ref = useRef<HTMLElement>(null);
+  const { corner } = useCorner(ref, '');
+  return <section ref={ref} className={'guide-card guide-welcome at-' + corner} role="dialog" aria-label="上课彩排">
     <header><Clapperboard size={18} /><b>花几分钟彩排一节课？</b><span className="flex" /><button className="guide-x" onClick={laterWelcome} aria-label="关闭"><X size={15} /></button></header>
     <p>用练习学生「小明」和一块彩排黑板，亲手把上课走一遍：选学生、上屏、写板书、存 PDF、AI 讲题、AI 整理……每一步做到了才往下走。</p>
     <p className="guide-dim">彩排时写的东西、加的题和记录，退出时都会清掉，不会弄乱你的学生档案。</p>
@@ -52,7 +55,7 @@ function useCorner(ref: React.RefObject<HTMLElement | null>, sel: string) {
       if (!slim) wideH.current = el.offsetHeight;
       const cs = getComputedStyle(document.documentElement), px = (v: string, d: number) => parseFloat(cs.getPropertyValue(v)) || d;
       const box = (e: Element | null, weight = 1): Box | null => { const r = e?.getBoundingClientRect(); return r && r.width > 1 ? { x: r.left, y: r.top, w: r.width, h: r.height, weight } : null; };
-      const avoid = [box(sel ? findSpot(sel) : null, 20), box(document.querySelector('.ai-dock')),
+      const avoid = [box(sel ? findSpot(sel) : null, 20), box(document.querySelector('.ai-dock')), box(document.querySelector('.sc-card'), 4),
         ...[...document.querySelectorAll('[role=dialog]:not(.guide-card)')].map((d) => box(d))].filter((b): b is Box => !!b);
       const h = Math.max(el.offsetHeight, wideH.current);
       setPlace((p) => {

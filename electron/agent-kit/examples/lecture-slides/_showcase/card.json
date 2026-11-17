@@ -1,0 +1,38 @@
+{
+  "id": "ppt",
+  "skill": "lecture-slides",
+  "label": "讲课 PPT",
+  "one": "16:9 可编辑讲课幻灯片，六种版式搭配情境配图，例题和推导鼠标点一下出一步。",
+  "highlights": [
+    "封面、生活情境、双栏对比、受力图解、分步例题、总结卡六种版式穿插，告别一页页纯文字列表",
+    "文字框在 PowerPoint 和 WPS 里能直接改字，公式单独成高清图并在说明里保留原始 LaTeX",
+    "推导与例题自带单击淡入分步动画，在导播台里点一下出一步，完全贴合老师边问边讲的节奏"
+  ],
+  "when": ["新课主讲", "公开课展示", "考前专题串讲"],
+  "formats": "可编辑 PPTX + PDF",
+  "cost": "约 5 分钟 · 约 ¥0.6 · 质量优先档，仅估算",
+  "preview": {
+    "type": "slides",
+    "images": [
+      "lecture-slides/_showcase/shot-1.webp",
+      "lecture-slides/_showcase/shot-2.webp",
+      "lecture-slides/_showcase/shot-3.webp",
+      "lecture-slides/_showcase/shot-4.webp"
+    ]
+  },
+  "full": [
+    {
+      "label": "超重与失重 讲课课件（可编辑 PPTX）",
+      "file": "lecture-slides/_showcase/超重与失重-课件.pptx",
+      "kind": "pptx"
+    },
+    {
+      "label": "超重与失重 讲课课件（PDF 讲义版）",
+      "file": "lecture-slides/_showcase/超重与失重-课件.pdf",
+      "kind": "pdf"
+    }
+  ],
+  "styleRef": [
+    "lecture-slides/超重与失重-课件.md"
+  ]
+}

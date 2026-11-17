@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <!-- 外框与黑板木质/金属边框 -->
+  <rect x="0" y="0" width="1200" height="620" rx="18" fill="#1e293b"/>
+  <rect x="14" y="14" width="1172" height="592" rx="12" fill="#16352c" stroke="#335c4e" stroke-width="3"/>
+
+  <!-- 顶部主标题栏 -->
+  <rect x="34" y="28" width="1132" height="56" rx="8" fill="#112922" stroke="#4d8b76" stroke-width="1.5"/>
+  <text x="600" y="64" text-anchor="middle" fill="#f8fafc" font-size="25" font-weight="bold">§4.6 超重与失重　　【核心铁律：不看速度 v 方向，只看加速度 a 方向！】</text>
+
+  <!-- 三栏分隔虚线 -->
+  <line x1="406" y1="98" x2="406" y2="586" stroke="#4d8b76" stroke-width="2" stroke-dasharray="8 6"/>
+  <line x1="794" y1="98" x2="794" y2="586" stroke="#4d8b76" stroke-width="2" stroke-dasharray="8 6"/>
+
+  <!-- ================= 左栏：概念本质与受力矢量图 ================= -->
+  <rect x="36" y="98" width="352" height="36" rx="6" fill="#1f4d3f"/>
+  <text x="212" y="122" text-anchor="middle" fill="#fde68a" font-size="18" font-weight="bold">一、左栏：本质区分与受力图（常驻）</text>
+
+  <text x="48" y="160" fill="#e2e8f0" font-size="16" font-weight="bold">1. 实重：G = mg（地球吸引，恒定不变）</text>
+  <text x="48" y="188" fill="#93c5fd" font-size="16" font-weight="bold">2. 视重：F' = Fₙ（压秤力，牛三转换）</text>
+
+  <!-- 电梯受力示意图框 -->
+  <rect x="48" y="206" width="328" height="306" rx="10" fill="#122b23" stroke="#3b6e5c" stroke-width="1.5"/>
+  <text x="212" y="232" text-anchor="middle" fill="#cbd5e1" font-size="15">加速上升 / 减速下降（a 竖直向上）</text>
+
+  <!-- 台秤 -->
+  <rect x="132" y="428" width="160" height="24" rx="5" fill="#38bdf8" stroke="#bae6fd" stroke-width="1.5"/>
+  <text x="212" y="445" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="bold">体重秤台面</text>
+
+  <!-- 乘客简影与质心 O -->
+  <circle cx="212" cy="292" r="18" fill="#64748b"/>
+  <rect x="192" y="314" width="40" height="72" rx="10" fill="#64748b"/>
+  <rect x="196" y="386" width="13" height="42" fill="#64748b"/>
+  <rect x="215" y="386" width="13" height="42" fill="#64748b"/>
+  <circle cx="212" cy="350" r="5" fill="#ffffff"/>
+  <text x="224" y="355" fill="#ffffff" font-size="14" font-weight="bold">O</text>
+
+  <!-- 向上支持力 Fₙ（长蓝箭） -->
+  <line x1="212" y1="350" x2="212" y2="254" stroke="#38bdf8" stroke-width="5"/>
+  <polygon points="212,240 203,258 221,258" fill="#38bdf8"/>
+  <text x="226" y="264" fill="#7dd3fc" font-size="16" font-weight="bold">Fₙ（长）</text>
+
+  <!-- 向下重力 mg（短红箭） -->
+  <line x1="212" y1="350" x2="212" y2="410" stroke="#f87171" stroke-width="5"/>
+  <polygon points="212,424 203,406 221,406" fill="#f87171"/>
+  <text x="226" y="414" fill="#fca5a5" font-size="16" font-weight="bold">G = mg</text>
+
+  <!-- 左侧加速度方向 a -->
+  <line x1="92" y1="390" x2="92" y2="306" stroke="#facc15" stroke-width="4"/>
+  <polygon points="92,292 84,308 100,308" fill="#facc15"/>
+  <text x="64" y="282" fill="#fde047" font-size="15" font-weight="bold">正方向 +y</text>
+  <text x="68" y="412" fill="#fde047" font-size="15" font-weight="bold">a 向上</text>
+
+  <!-- 底部牛二+牛三链条 -->
+  <text x="212" y="480" text-anchor="middle" fill="#fef08a" font-size="16" font-weight="bold">牛二：Fₙ - mg = ma  ⇒  Fₙ = m(g+a)</text>
+  <text x="212" y="502" text-anchor="middle" fill="#a7f3d0" font-size="14">牛三：人对秤压力 F' = Fₙ &gt; mg（超重）</text>
+
+  <rect x="48" y="524" width="328" height="52" rx="8" fill="#1b3f33" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="212" y="546" text-anchor="middle" fill="#ecfdf5" font-size="14" font-weight="bold">解题四步：定对象 → 判 a 方向 → 列牛二 → 转牛三</text>
+  <text x="212" y="567" text-anchor="middle" fill="#a7f3d0" font-size="13">（学生漏写牛三必用红粉笔圈出！）</text>
+
+  <!-- ================= 中栏：四态判据表与红粉笔避坑区 ================= -->
+  <rect x="424" y="98" width="352" height="36" rx="6" fill="#1f4d3f"/>
+  <text x="600" y="122" text-anchor="middle" fill="#fde68a" font-size="18" font-weight="bold">二、中栏：四态判据与红字纠偏</text>
+
+  <!-- 超重卡 -->
+  <rect x="424" y="148" width="352" height="84" rx="8" fill="#122b23" stroke="#38bdf8" stroke-width="2"/>
+  <text x="440" y="175" fill="#7dd3fc" font-size="17" font-weight="bold">【超重】 判据：a 竖直向上</text>
+  <text x="440" y="200" fill="#f1f5f9" font-size="15">运动：① 加速上升　② 减速下降（踩刹车）</text>
+  <text x="440" y="222" fill="#fde047" font-size="15" font-weight="bold">定量：Fₙ = m(g + a) &gt; mg</text>
+
+  <!-- 失重卡 -->
+  <rect x="424" y="244" width="352" height="84" rx="8" fill="#122b23" stroke="#fb923c" stroke-width="2"/>
+  <text x="440" y="271" fill="#fdba74" font-size="17" font-weight="bold">【失重】 判据：a 竖直向下</text>
+  <text x="440" y="296" fill="#f1f5f9" font-size="15">运动：① 加速下降　② 减速上升（快到顶楼）</text>
+  <text x="440" y="318" fill="#fde047" font-size="15" font-weight="bold">定量：Fₙ = m(g - a) &lt; mg</text>
+
+  <!-- 完全失重卡 -->
+  <rect x="424" y="340" width="352" height="80" rx="8" fill="#122b23" stroke="#c084fc" stroke-width="2"/>
+  <text x="440" y="367" fill="#d8b4fe" font-size="17" font-weight="bold">【完全失重】 判据：a = g 竖直向下</text>
+  <text x="440" y="392" fill="#f1f5f9" font-size="15">结果：Fₙ = 0（天平失效、水球悬浮、上抛全程）</text>
+  <text x="440" y="412" fill="#a7f3d0" font-size="14">注意：地球引力 mg 一点没少，全部提供加速度！</text>
+
+  <!-- 红粉笔直觉大坑警示框 -->
+  <rect x="424" y="434" width="352" height="142" rx="10" fill="#3b1d24" stroke="#f87171" stroke-width="2.5"/>
+  <text x="600" y="462" text-anchor="middle" fill="#fca5a5" font-size="17" font-weight="bold">★ 红粉笔当场追问 · 三大直觉陷阱</text>
+  <text x="438" y="490" fill="#fee2e2" font-size="14">× 往上升就是超重 → 减速上升 a 向下，是失重！</text>
+  <text x="438" y="516" fill="#fee2e2" font-size="14">× 上抛最高点 v=0 平衡 → a=g 向下，完全失重！</text>
+  <text x="438" y="542" fill="#fde047" font-size="14" font-weight="bold">✓ 下蹲传感器：先失重（加速蹲）后超重（减速停）</text>
+  <text x="438" y="564" fill="#bbf7d0" font-size="13">（配合导播台「电梯体重秤」插件实时拖动验证）</text>
+
+  <!-- ================= 右栏：典例示范与学生互动演算区 ================= -->
+  <rect x="812" y="98" width="352" height="36" rx="6" fill="#1f4d3f"/>
+  <text x="988" y="122" text-anchor="middle" fill="#fde68a" font-size="18" font-weight="bold">三、右栏：例题示范与学生演算区</text>
+
+  <!-- 上半区：老师规范板演 -->
+  <rect x="812" y="148" width="352" height="192" rx="8" fill="#122b23" stroke="#64748b" stroke-width="1.5"/>
+  <text x="826" y="174" fill="#93c5fd" font-size="16" font-weight="bold">【师板演 · 例1】m=60kg，2m/s² 减速下降</text>
+  <text x="826" y="202" fill="#f8fafc" font-size="15">解：向下减速 ⇒ 加速度 a = 2 m/s² 竖直向上</text>
+  <text x="826" y="228" fill="#f8fafc" font-size="15">取竖直向上为正方向，对人列牛二：</text>
+  <text x="842" y="256" fill="#fde047" font-size="16" font-weight="bold">Fₙ - mg = ma</text>
+  <text x="842" y="282" fill="#fde047" font-size="16" font-weight="bold">Fₙ = 60×(10 + 2) = 720 N（超重）</text>
+  <text x="826" y="310" fill="#a7f3d0" font-size="14">由牛顿第三定律，对秤压力 F' = 720 N 向下</text>
+  <text x="826" y="330" fill="#cbd5e1" font-size="13">（追问：此时人的真实重力是多少？答：仍 600 N）</text>
+
+  <!-- 下半区：学生持笔互动板演留白框 -->
+  <rect x="812" y="354" width="352" height="222" rx="8" fill="#0f241d" stroke="#facc15" stroke-width="2" stroke-dasharray="10 6"/>
+  <text x="826" y="382" fill="#fde047" font-size="16" font-weight="bold">【生持笔演算区 · 例2 连接体防漏力】</text>
+  <text x="826" y="408" fill="#e2e8f0" font-size="14">人 M=50kg 托书箱 m=5kg，随梯 a=2m/s² 向上加速</text>
+  <text x="826" y="436" fill="#7dd3fc" font-size="14">① 请学生开画笔：画出“人”受的 3 个竖直力：</text>
+  <text x="840" y="462" fill="#fca5a5" font-size="14" font-weight="bold">• 重点盯防：是否漏画书箱压手的 F'=60N ↓</text>
+  <text x="826" y="492" fill="#a7f3d0" font-size="14">② 隔离法：N - 500 - 60 = 50×2 ⇒ N = 660 N</text>
+  <text x="826" y="518" fill="#fde047" font-size="14" font-weight="bold">③ 整体法秒验：N = (50+5)×(10+2) = 660 N</text>
+  <text x="826" y="556" fill="#94a3b8" font-size="13">（下课前点「存板书 PDF」一键归档发学生微信）</text>
+</svg>

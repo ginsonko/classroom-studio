@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bot, CalendarDays, Circle, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
   PanelRightOpen, Palette, Square, Users, Settings2, PenTool, Sparkles, BellRing, BookOpenCheck, Shapes, Workflow, LifeBuoy,
-  SkipForward, Film, Clapperboard, Puzzle, UsersRound, Eraser, Undo2,
+  SkipForward, Film, Clapperboard, Puzzle, UsersRound, Eraser, Undo2, Trash2,
 } from 'lucide-react';
 import { canRestoreClass, classHasContent, clearClass, restoreClass, studentName } from '../lib/classReset';
 import { type FileEntry } from '../lib/library';
@@ -21,11 +21,13 @@ import { FlowPanel, NotesPanel, StudentCard } from './SidePanels';
 import { Students } from './Students';
 import { host } from '../lib/host';
 import { openMaterial } from '../doc/actions';
-import { useRecording, toggleRecording, nextLesson, isLive } from '../lib/recording';
+import { useRecording, toggleRecording, nextLesson, isLive, keepShort } from '../lib/recording';
 import { startTimeline } from '../lib/timeline';
 import { startRecordAnalysis } from '../lib/recordAnalysis';
 import { startAutoRecord } from '../lib/autoRecordRun';
 import { startAfterClass, useAfter } from '../lib/afterClass';
+import { startPrepWarm } from '../lib/prepWarm';
+import { LessonBrief } from './LessonBrief';
 import { AfterClassChip } from './AfterClassChip';
 import { AutoRecordCard } from './AutoRecordCard';
 import { ReplayPage } from './ReplayPage';
@@ -52,7 +54,11 @@ import { PluginButton, PluginSheets } from '../plugins/PluginUi';
 import { SortButton, SortDialog } from './SortDialog';
 import { openSort, useSort } from '../lib/sort';
 import { Guide } from '../guide/GuideCards';
+import { ShowcaseHost, useShowcase } from './ShowcaseCard';
+import { AccountButton, AccountHost } from '../account/AccountHost';
+import { DiskBanner, SelfCheck, WhatsNew } from './Experience170';
 import { AssistantButton, AssistantHost } from '../assistant/AssistantUI';
+import { AiToolsLayer } from './AiToolsLayer';
 import { groups, individuals, isGroup, kindName, membersOf } from '../lib/groups';
 
 export function TeacherApp() {
@@ -67,7 +73,7 @@ export function TeacherApp() {
   const skinsOpen = useStore((s) => s.skinsOpen);
   useAnswerMarks();
 
-  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); startAutoRecord(); startAfterClass(); document.title = '最强网课教辅系统 · 教师端'; }, []);
+  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); startAutoRecord(); startAfterClass(); startPrepWarm(); document.title = '最强网课教辅系统 · 教师端'; }, []);
   const autoOn = useAuto((s) => s.settings.on);
   const helpOpen = useHelp((s) => !!s.open), updateDot = useHelp((s) => ['available', 'ready'].includes(s.update.phase) && s.update.info?.latest !== s.skip);
   useEffect(() => {
@@ -83,9 +89,16 @@ export function TeacherApp() {
       const el = e.target as HTMLElement;
       if (el.closest('input,textarea,[contenteditable]')) return;
       const st = useStore.getState();
-      if (e.key === 'Enter' && st.pvw) { e.preventDefault(); st.take(); }
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') st.setShared({ pgm: stepView(st.pgmMat, st.pgm, 1) });
-      if (e.key === 'ArrowLeft' || e.key === 'PageUp') st.setShared({ pgm: stepView(st.pgmMat, st.pgm, -1) });
+      const inShowcase = !!useShowcase.getState().viewer;
+      if (e.key === 'Enter' && st.pvw && !inShowcase) { e.preventDefault(); st.take(); }
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        if (inShowcase) { if (st.pvw) { e.preventDefault(); st.set({ pvw: { ...st.pvw, view: stepView(st.pvw.mat, st.pvw.view, 1) } }); } }
+        else st.setShared({ pgm: stepView(st.pgmMat, st.pgm, 1) });
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        if (inShowcase) { if (st.pvw) { e.preventDefault(); st.set({ pvw: { ...st.pvw, view: stepView(st.pvw.mat, st.pvw.view, -1) } }); } }
+        else st.setShared({ pgm: stepView(st.pgmMat, st.pgm, -1) });
+      }
       if (e.key === 'Tab') { e.preventDefault(); const both = st.libraryOpen || st.rightOpen; st.set({ libraryOpen: !both, rightOpen: !both }); }
       if (e.key === '1' && e.altKey) st.set({ page: 'console' });
     };
@@ -148,8 +161,14 @@ export function TeacherApp() {
       <SkillRunner />
       <FormulaHost />
       <PluginSheets />
+      <ShowcaseHost />
       <Guide />
       <AssistantHost />
+      <AiToolsLayer />
+      <AccountHost />
+      <WhatsNew />
+      <SelfCheck />
+      <DiskBanner />
       <Tooltips />
     </div>
   );
@@ -208,6 +227,7 @@ function TopBar() {
       </button>
       {status.phase==='recording' && <button className="tb-next" onClick={()=>void nextLesson()} data-tip="连堂课：这一节保存，马上开始录下一节（学生窗口和会议共享不用动）"><SkipForward size={13}/><span>下一节</span></button>}
       <AfterClassChip />
+      {status.discarded&&now<status.discarded.until&&<button className="tb-job tb-drop" data-qa="short-drop" onClick={()=>void keepShort(status.discarded!.id)} data-tip={`不到 ${status.discarded.limit>=300?5:1} 分钟的录像不算上课：不生成回放、不算课次、不做 AI 分析，到时间只删这一段。设置在齿轮「窗口、录课与回放」里`}><Trash2 size={13}/><span>已丢弃短录像 · {Math.max(0,Math.ceil((status.discarded.until-now)/1000))} 秒内可</span><b>撤销</b></button>}
       {job && job.id!==chipId && <button className="tb-job" onClick={()=>set({page:'replay'})} data-tip={`「${job.title||'课堂回放'}」正在后台生成 MP4，不影响上课${(status.jobs?.length??0)>1?`；后面还有 ${status.jobs!.length-1} 段排队`:''}`}><Film size={13}/><span>回放生成中</span><b className="num">{Math.round((job.progress??0)*100)}%</b></button>}
       {rec.on && (
         <div className="tb-meters" data-tip="录音电平：麦克风 / 系统声音（含腾讯会议里学生的声音）">
@@ -250,6 +270,7 @@ function TopBar() {
       <DockToggle />
       <button className="tb-ico" onClick={()=>useRecording.setState({panel:true})} data-tip="窗口、录课与回放"><Settings2 size={16}/></button>
       <button className="tb-ico" data-guide="student-window" onClick={()=>host.openStudentWindow()} data-tip="打开学生窗口"><MonitorUp size={16} /></button>
+      <AccountButton />
     </header>
   );
 }
@@ -423,7 +444,7 @@ function RemindBanner() {
   return (
     <div className="remind-banner" role="status">
       <BellRing size={18} />
-      <div><b>{r.title}</b><span>{r.body.replace('点这里打开导播台。', '')}{brief && <em className="remind-brief" data-qa="remind-brief">这节课记得：{brief}</em>}{sum && <em className={'remind-check' + (/有问题/.test(sum) ? ' bad' : '')}>课前检查：{sum}{/有问题|留意/.test(sum) ? '（见右侧本课流程）' : ''}</em>}</span></div>
+      <div><b>{r.title}</b>{r.studentId && <LessonBrief studentId={r.studentId} compact />}<span>{r.body.replace('点这里打开导播台。', '')}{brief && <em className="remind-brief" data-qa="remind-brief">这节课记得：{brief}</em>}{sum && <em className={'remind-check' + (/有问题/.test(sum) ? ' bad' : '')}>课前检查：{sum}{/有问题|留意/.test(sum) ? '（见右侧本课流程）' : ''}</em>}</span></div>
       <button className="go" onClick={go}>准备上课</button>
       <button onClick={() => setR(null)}>知道了</button>
     </div>

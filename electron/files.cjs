@@ -2,16 +2,18 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {pathToFileURL}=require('node:url');
-const {within,atomicJSON,readJSON}=require('./core.cjs');
+const {within,atomicJSON,readJSON,fixPath}=require('./core.cjs');
 const {runProcess}=require('./recording.cjs');
 const pptSteps=require('./pptSteps.cjs');
 const STEPS_V=1;
 const EXT={'.pdf':'pdf','.zml':'pdf','.ppt':'slides','.pptx':'slides','.doc':'word','.docx':'word','.rtf':'word','.md':'word','.markdown':'word','.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.bmp':'image','.gif':'image','.svg':'image','.html':'html','.htm':'html','.mp4':'video','.webm':'video','.m4v':'video','.mov':'video','.wmv':'video','.avi':'video','.asf':'video','.mpg':'video','.flv':'video','.rm':'video','.rmvb':'video','.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.swf':'flash','.zip':'archive','.rar':'archive'};
 const normal=p=>path.resolve(p).replaceAll('\\','/');
+// 路径先规范化（file://、%20、~），找不到时报一句人话，不把 ENOENT 原文丢给老师
+const real=p=>{const f=fixPath(p);try{return fs.realpathSync(f);}catch(e){if(e.code==='ENOENT')throw Error('找不到这个文件（可能被移动、改名或删除了）：'+f);throw e;}};
 class Files{
  constructor(cache){this.cache=cache;this.roots=new Set();this.tokens=new Map();this.urls=new Map();this.scans=new Map();this.queue=Promise.resolve();}
- authorize(p,dir=false){const actual=fs.realpathSync(p);this.roots.add(dir?actual:path.dirname(actual));return normal(actual);}
- allowed(p){const actual=fs.realpathSync(p);if(![...this.roots].some(root=>within(root,actual))&&!within(this.cache,actual))throw Error('请先在资料库选择这个文件或所在目录');return actual;}
+ authorize(p,dir=false){const actual=real(p);this.roots.add(dir?actual:path.dirname(actual));return normal(actual);}
+ allowed(p){const actual=real(p);if(![...this.roots].some(root=>within(root,actual))&&!within(this.cache,actual))throw Error('请先在资料库选择这个文件或所在目录');return actual;}
  url(p){
   if(/^https?:\/\//i.test(p))return new URL(p).href;
   if(/^lesson:/i.test(p))return p;

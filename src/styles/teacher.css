@@ -456,6 +456,12 @@ body.resizing .con { transition: none; }
 @container rd (max-width: 330px) {
   .rd-zoom { display: none; }
   .rd-bar .seg button:not(.on) { display: none; }
+  .rd-foot { padding: 0 6px; gap: 4px; }
+  .rd-foot > .film { display: none; }
+  .rd-pg { min-width: 38px; font-size: 12px; margin-right: auto; }
+  .rd-foot > button:not(.btn-cue):not(.btn-live) { width: 22px; height: 26px; }
+  .rd-foot > .btn-cue { padding: 0 8px; }
+  .rd-foot > .btn-live { padding: 0 7px; }
 }
 .rd-pg i { font-style: normal; color: var(--fg-3); }
 .film {
@@ -694,3 +700,5 @@ body.resizing .con { transition: none; }
 .ai-in textarea:focus { box-shadow: inset 0 0 0 1px var(--cue), 0 0 0 3px var(--cue-soft); }
 .ai-in button { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-sm); background: var(--cue); color: #04161a; }
 .ai-in button:disabled { background: var(--bg-3); color: var(--fg-3); }
+.tb-drop { color: var(--warn); }
+.tb-drop b { margin-left: 4px; text-decoration: underline; }

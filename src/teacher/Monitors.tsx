@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { AppWindow, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, Scissors, ScrollText, X } from 'lucide-react';
+import { AppWindow, ChevronLeft, ChevronRight, Columns2, Eye, EyeOff, MonitorUp, Plus, Radio, Scissors, ScrollText, X } from 'lucide-react';
 import { isLong } from '../lib/longBoard';
 import { longWheel } from '../stage/longNav';
-import { useStore } from '../lib/store';
+import { stepView, useStore } from '../lib/store';
 import { BASE, deskOrder, pageLabel } from '../lib/desk';
 import { Desk } from '../stage/Desk';
 import { readDroppedFiles, useLib } from '../lib/useLib';
@@ -117,6 +117,13 @@ export function PvwMonitor() {
       <div className="mon-h">
         <span className="tally cue">预监</span>
         <span className="mon-t">{pvw ? pvw.mat.title : '下一项'}</span>
+        {pvw && pvw.mat.total > 1 && (
+          <>
+            <button className="mon-btn" aria-label="预监上一页" disabled={pvw.view.page <= 0 && pvw.view.slide <= 0} onClick={() => set({ pvw: { ...pvw, view: { ...pvw.view, ...stepView(pvw.mat, pvw.view, -1, { pages: true }) } } })}><ChevronLeft size={13} /></button>
+            <small className="num" style={{ fontSize: 11, color: 'var(--fg-2)' }}>{pvw.view.page + 1}/{pvw.mat.total}</small>
+            <button className="mon-btn" aria-label="预监下一页" disabled={pvw.view.page >= pvw.mat.total - 1} onClick={() => set({ pvw: { ...pvw, view: { ...pvw.view, ...stepView(pvw.mat, pvw.view, 1, { pages: true }) } } })}><ChevronRight size={13} /></button>
+          </>
+        )}
         {pvw && <button className="mon-btn" onClick={() => set({ pvw: null })} aria-label="清空预监"><X size={13} /></button>}
       </div>
       <div className="mon-body">
@@ -126,8 +133,8 @@ export function PvwMonitor() {
           <div className="mon-empty">把课件拖到这里，或在阅读器点「放预监」<br />确认无误再按 <kbd>Enter</kbd> 切给学生</div>
         )}
       </div>
-      <button className="take-btn" disabled={!pvw} onClick={take}>
-        <span>切给学生</span><kbd>Enter</kbd>
+      <button className="take-btn" disabled={!pvw || pvw.teacherOnly} onClick={take}>
+        <span>{pvw?.teacherOnly ? '示例仅供老师预览' : '切给学生'}</span>{!pvw?.teacherOnly && <kbd>Enter</kbd>}
       </button>
     </div>
   );

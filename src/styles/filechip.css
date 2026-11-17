@@ -5,3 +5,4 @@
 .as-fchip-b { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 8px; color: inherit; opacity: .75; }
 .as-fchip-b:last-child { margin-right: 3px; }
 .as-fchip-b:hover { opacity: 1; background: rgba(255, 255, 255, .08); }
+.as-fchip-b.as-fchip-t { width: auto; padding: 0 6px; white-space: nowrap; font-size: 11px; opacity: .95; font-weight: 600; }

@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { bytes, fileEntry, highlight, KIND_LABEL, prepareMaterial, search, type FileEntry, type FolderNode } from '../lib/library';
 import { useCatalog } from '../lib/catalog';
+import { useStudy } from '../lib/studyStore';
+import { studentRecent } from '../lib/recentLogic';
 import { useStore } from '../lib/store';
 import type { Kind } from '../lib/types';
 import { addFiles, addRoot, addWeb, readDroppedFiles, refreshLibrary, removeLoose, removeRoot, useLib } from '../lib/useLib';
@@ -39,6 +41,9 @@ export function Library({ onTeacher, onStudent, onCue }: { onTeacher: (f: FileEn
   const [sel, setSel] = useState<string | null>(null);
   const [limit, setLimit] = useState(200);
   const [webOpen, setWebOpen] = useState(false), [webUrl, setWebUrl] = useState('');
+  // 1.7.0「最近」按学生看：选了学生时默认只看这位学生名下最近用过 / 更新过的文件，可以切回「全部」
+  const [recentAll, setRecentAll] = useState(false);
+  const study = useStudy((s) => s.data), catalog = useCatalog((s) => s.items);
 
   const student = students.find((s) => s.id === studentId);
   const node = lib?.folders.get(folder) ?? lib?.root;
@@ -178,7 +183,14 @@ export function Library({ onTeacher, onStudent, onCue }: { onTeacher: (f: FileEn
       ) : tab === 'shelf' ? (
         <CatalogPanel compact onOpen={onTeacher} />
       ) : tab === 'recent' ? (
-        <div className="lib-list">{recents.length ? listFiles(recents) : <div className="lib-empty">打开或展示过的课件会出现在这里</div>}</div>
+        <div className="lib-list">
+          {student && <div className="lib-seg" data-qa="recent-scope"><button className={recentAll ? '' : 'on'} onClick={() => setRecentAll(false)}>{student.name}</button><button className={recentAll ? 'on' : ''} onClick={() => setRecentAll(true)}>全部</button></div>}
+          {student && !recentAll ? (() => {
+            const items = studentRecent({ studentId: student.id, recents, pathOf: (id) => lib.files.get(id)?.path ?? id, files: study.files, preps: study.preps, lessons: study.lessons, catalog: Object.values(catalog) });
+            return items.length ? items.map((it) => { const f = lib.files.get(it.path); return f ? <div key={it.path} data-qa="recent-student">{row(f, true)}</div> : <div key={it.path} className="lib-f" data-qa="recent-student" title={it.path} onClick={() => { try { onTeacher(fileEntry(it.path)); } catch (e) { reportMaterialError(e, '打开文件'); } }}><span className="lib-name"><span className="lib-t">{it.title}</span><span className="lib-m">{it.opened ? '最近打开 · ' : ''}{it.why}{it.at ? ' · ' + it.at.slice(5, 10).replace('-', '/') : ''}</span></span></div>; })
+              : <div className="lib-empty">{student.name}名下还没有文件。备课、板书、课后总结导出的文件，和打开过的这位学生的资料会出现在这里</div>;
+          })() : recents.length ? listFiles(recents) : <div className="lib-empty">打开或展示过的课件会出现在这里</div>}
+        </div>
       ) : tab === 'fav' ? (
         <div className="lib-list">{favorites.length ? listFiles(favorites) : <div className="lib-empty">点课件右侧的星标收藏</div>}</div>
       ) : (
