@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Check, Clock3, ListChecks, Loader2, Minus, Settings2, TriangleAlert, Video, X } from 'lucide-react';
+import { Check, Clock3, ListChecks, Loader2, Minus, PackageCheck, Settings2, TriangleAlert, Video, X } from 'lucide-react';
+import { openDeliverDrawer } from './AfterClassDeliver';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { useStudy } from '../lib/studyStore';
@@ -89,6 +90,7 @@ export function AfterClassChip() {
           {s.retry && <button disabled={!!doing} data-qa={'after-retry-' + s.key} onClick={() => void retry(s)}>{doing === s.key ? <Loader2 size={11} className="spin" /> : null}{retryLabel(s)}</button>}
         </li>)}</ol>
         <footer>
+          <button className="btn-cue" data-qa="after-deliver" onClick={() => { openDeliverDrawer({ recordId: row.id, studentId: row.studentId || undefined }); setOpen(false); }}><PackageCheck size={13} />课后发家长</button>
           <button onClick={() => { set({ page: 'replay' }); setOpen(false); }}><Video size={13} />{pending ? `去确认 ${pending} 道` : '去回放'}</button>
           <button onClick={() => { useRecording.setState({ panel: true }); setOpen(false); }} data-tip="每一步开不开，在「设置 → 下课后」里改"><Settings2 size={13} />设置</button>
           <span className="flex" />

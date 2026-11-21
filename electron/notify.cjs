@@ -186,7 +186,7 @@ function rfcDate(d) {
 function mimeMessage({ fromName, from, to, subject, text, image, imageName }) {
   const rel = 'rel-' + crypto.randomUUID(), alt = 'alt-' + crypto.randomUUID();
   const paras = String(text).split(/\n+/).map((p) => p.trim()).filter(Boolean).map((p) => `<p style="margin:0 0 10px;line-height:1.7">${esc(p)}</p>`).join('');
-  const html = `<!doctype html><html><body style="font-family:'Microsoft YaHei',sans-serif;font-size:15px;color:#222;max-width:760px">${paras}${image ? '<p><img src="cid:report" style="max-width:100%" alt="课后反馈长图"></p>' : ''}<p style="color:#999;font-size:12px">由最强网课教辅系统发送</p></body></html>`;
+  const html = `<!doctype html><html><body style="font-family:'Microsoft YaHei',sans-serif;font-size:15px;color:#222;max-width:760px">${paras}${image ? '<p><img src="cid:report" style="max-width:100%" alt="课后反馈长图"></p>' : ''}<p style="color:#999;font-size:12px">由玲珑课堂发送</p></body></html>`;
   const lines = [
     `From: ${b64(fromName || '老师')} <${from}>`, `To: ${to.map((t) => `<${t}>`).join(', ')}`, `Subject: ${b64(subject)}`,
     `Date: ${rfcDate(new Date())}`, `Message-ID: <${crypto.randomUUID()}@classroom-studio>`, 'MIME-Version: 1.0',
@@ -297,13 +297,13 @@ class Notify {
     const cfg = this.load();
     if (v.channel === 'email') {
       const s = this.smtpConfig(cfg);
-      await this.email(cfg, [s.user], { subject: '最强网课教辅系统 · 发件邮箱测试', text: '这是一封测试邮件。收到说明发件邮箱设置正确，可以给家长发课后反馈了。' });
+      await this.email(cfg, [s.user], { subject: '玲珑课堂 · 发件邮箱测试', text: '这是一封测试邮件。收到说明发件邮箱设置正确，可以给家长发课后反馈了。' });
       this.log?.info('家长通知', '邮件测试通过', s.host);
       return { ok: true, to: maskMail(s.user) };
     }
     const c = cfg.contacts[String(v.studentId || '')] || {}, url = unseal(c.wecom);
     if (!url) throw Error('先填写并保存企业微信消息推送地址');
-    await wecomPost(url, { msgtype: 'text', text: { content: '最强网课教辅系统连接测试：这个群以后会收到课后反馈。' } });
+    await wecomPost(url, { msgtype: 'text', text: { content: '玲珑课堂连接测试：这个群以后会收到课后反馈。' } });
     this.log?.info('家长通知', '企业微信测试通过');
     return { ok: true, to: '…' + c.wecom.hint };
   }

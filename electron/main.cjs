@@ -1,8 +1,8 @@
 const {app,BrowserWindow,ipcMain,protocol,session,net,screen,dialog,shell,Menu,desktopCapturer,powerSaveBlocker,Notification,clipboard,nativeImage,safeStorage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Files,normal}=require('./files.cjs');const {OfficeConverter}=require('./office.cjs');const {atomicJSON,atomicWrite,workspaceJSON,readJSON,within,cleanTemps,fixPath}=require('./core.cjs');
-const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');const {Asr}=require('./asr.cjs');const {AsrSetup}=require('./asrSetup.cjs');const {ToolHost}=require('./toolHost.cjs');const {WebTools}=require('./webTools.cjs');const {AiBrowser}=require('./aiBrowser.cjs');const {PageCheck}=require('./pageCheck.cjs');const {Desk}=require('./desk.cjs');
-const {Account,makeCrypt,paymentPage}=require('./account.cjs');const tierKit=require('./tier.cjs');const charge=require('./charge.cjs');const {CodexHome}=require('./codexHome.cjs');const {locate:locateCli}=require('./agents.cjs');const {Showcase}=require('./showcase.cjs');
+const {Recording}=require('./recording.cjs');const ai=require('./ai.cjs');const {createDock}=require('./dock.cjs');const {projection,authorizeMessage,applyMessage}=require('./gate.cjs');const {Ledger}=require('./ledger.cjs');const {Agents}=require('./agents.cjs');const {Assistant}=require('./assistant.cjs');const {createReminders}=require('./remind.cjs');const {injectCookieShim}=require('./htmlshim.cjs');const exporter=require('./exporter.cjs');const {Study}=require('./study.cjs');const {Notify}=require('./notify.cjs');const warmup=require('./warmup.cjs');const {Manim}=require('./manim.cjs');const {ManimSetup}=require('./manimSetup.cjs');const {Reconciler}=require('./reconcile.cjs');const {Archive}=require('./archive.cjs');const {SCHEME,ALT_SCHEME,linkFromArgv}=require('./importLink.cjs');const {Updater}=require('./updater.cjs');const {Plugins}=require('./plugins.cjs');const agentKit=require('./agentKit.cjs');const winfit=require('./winfit.cjs');const {Asr}=require('./asr.cjs');const {AsrSetup}=require('./asrSetup.cjs');const {ToolHost}=require('./toolHost.cjs');const {WebTools}=require('./webTools.cjs');const {AiBrowser}=require('./aiBrowser.cjs');const {PageCheck}=require('./pageCheck.cjs');const {Desk}=require('./desk.cjs');
+const {Account,makeCrypt,paymentPage}=require('./account.cjs');const tierKit=require('./tier.cjs');const charge=require('./charge.cjs');const {CodexHome}=require('./codexHome.cjs');const {locate:locateCli}=require('./agents.cjs');const {Showcase}=require('./showcase.cjs');const {DeliverDrag}=require('./deliverDrag.cjs');const {trimWorkspaceHistory}=require('./historyTrim.cjs');
 const ROOT=path.resolve(__dirname,'..');const VERSION=require(path.join(ROOT,'package.json')).version;
 // 默认放在程序所在盘的根目录；内测用户解压到没有写权限的盘（光盘、受限的系统盘）时退回到 %APPDATA%。
 const DATA=(()=>{const want=path.resolve(process.env.CS_DATA_DIR||path.join(path.parse(ROOT).root,'ClassroomStudioData'));if(process.env.CS_DATA_DIR)return want;try{fs.mkdirSync(want,{recursive:true});const probe=path.join(want,'.write-probe');fs.writeFileSync(probe,'');fs.unlinkSync(probe);return want;}catch{return path.join(app.getPath('appData'),'ClassroomStudioData');}})();
@@ -27,12 +27,12 @@ app.on('web-contents-created',(_e,wc)=>{
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
 protocol.registerSchemesAsPrivileged([{scheme:'studio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'lesson',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'plugin',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}},{scheme:'showcase',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true,corsEnabled:true}}]);
 const files=new Files(path.join(DATA,'cache'));
-const windows=new Map(),roles=new Map();let account,tiers,priceConfirm,chargeGate,plugins,showcase,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater,asr,asrSetup,toolHost,codexHome;
+const windows=new Map(),roles=new Map();let account,tiers,priceConfirm,chargeGate,plugins,showcase,deliverDrag,saved={},publicData={},settings,recording,saveTimer,saveQueue=Promise.resolve(),quitting=false,closing=false,blocker=null,ledger,agents,assistant,reminders,study,notifier,manim,reconciler,archive,updater,asr,asrSetup,toolHost,codexHome;
 const send=(win,ch,data)=>{if(win&&!win.isDestroyed()&&!win.webContents.isCrashed())win.webContents.send(ch,data);};
 const notify=(type,value={})=>{if(value.error)log.warn('提示',type,value.message);for(const [role,w]of windows)if(role==='teacher')send(w,'cs:event',{type,...value});};
 const busy=()=>['starting','recording','stopping'].includes(recording?.status.phase);
 function safeRole(e){if(e.senderFrame!==e.sender.mainFrame)throw Error('课件页面没有桌面控制权限');const role=roles.get(e.sender.id);if(!role)throw Error('未知窗口');return role;}
-function saving(){clearTimeout(saveTimer);const exDir=showcase?.dir?.()||'';const keepPath=p=>!(exDir&&within(exDir,path.resolve(p)));const work=saveQueue.catch(()=>{}).then(()=>{const value={...saved,settings,capabilities:[...files.tokens].filter(([,r])=>keepPath(r)),urls:[...files.urls].filter(([p])=>keepPath(p)),allowedRoots:[...files.roots].filter(keepPath)};return atomicWrite(path.join(DATA,'workspace.json'),()=>workspaceJSON(value));});saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
+function saving(){clearTimeout(saveTimer);const exDir=showcase?.dir?.()||'';const keepPath=p=>!(exDir&&within(exDir,path.resolve(p)));const work=saveQueue.catch(()=>{}).then(()=>{const trimmed=trimWorkspaceHistory(saved);if(trimmed.removedKeys||trimmed.trimmedSteps)saved.history=trimmed.history;const value={...saved,settings,capabilities:[...files.tokens].filter(([,r])=>keepPath(r)),urls:[...files.urls].filter(([p])=>keepPath(p)),allowedRoots:[...files.roots].filter(keepPath)};return atomicWrite(path.join(DATA,'workspace.json'),()=>workspaceJSON(value));});saveQueue=work.catch(e=>{notify('notice',{message:'本地保存失败：'+e.message,error:true});throw e;});return saveQueue;}
 function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{void saving().catch(()=>{});},700);}
 // 硬盘快满提醒（E.4）：录像目录和数据目录所在的盘剩不到 5 GB 就在老师顶栏提醒，不挡操作；测试可用 CS_FAKE_FREE_GB 模拟剩余空间
 const diskWatch=require('./diskWatch.cjs');
@@ -115,9 +115,10 @@ async function makeWindow(role){
  const ses=session.fromPartition(role==='student'?'persist:studio-public':role==='recorder'?'studio-recorder':'persist:studio-private');
  if(!ses.csReady){guardSession(ses);ses.csReady=true;}
  const wa=screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
- const options=role==='teacher'?{...winfit.createSize('teacher',wa),title:'最强网课教辅系统 · 教师端'}:role==='student'?{...winfit.createSize('student',wa),title:'课堂展示 · 请共享这个窗口'}: {width:320,height:180,title:'课堂录制组件'};
+ const appIcon=process.platform==='win32'&&fs.existsSync(path.join(ROOT,'build','icon.ico'))?path.join(ROOT,'build','icon.ico'):fs.existsSync(path.join(ROOT,'build','icon-256.png'))?path.join(ROOT,'build','icon-256.png'):undefined;
+ const options=role==='teacher'?{...winfit.createSize('teacher',wa),title:'玲珑课堂 · 教师端'}:role==='student'?{...winfit.createSize('student',wa),title:'课堂展示 · 请共享这个窗口'}: {width:320,height:180,title:'课堂录制组件'};
  // acceptFirstMouse：macOS 上窗口不在前台时，第一下落笔 / 点击也直接生效，而不是只用来激活窗口
- const w=new BrowserWindow({...options,show:false,acceptFirstMouse:true,backgroundColor:'#101217',webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}});
+ const w=new BrowserWindow({...options,...(appIcon?{icon:appIcon}:{}),show:false,acceptFirstMouse:true,backgroundColor:'#101217',webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false,webSecurity:true}});
  const contentId=w.webContents.id;windows.set(role,w);roles.set(contentId,role);
  if(role==='teacher'){w.setContentProtection(!!settings.captureGuard);w.webContents.setAudioMuted(true);}
  w.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -186,25 +187,41 @@ async function changeRecordings(dir){
  notify('notice',{message:`已把 ${moved} 段录像搬到 ${dir}`});notify('recording',{status:recording.status});
 }
 // ── 桌面快捷方式（Windows）/ 移到「应用程序」（macOS） ────────────
-const shortcutPaths=()=>[path.join(app.getPath('desktop'),'最强网课教辅系统.lnk'),path.join(app.getPath('appData'),'Microsoft','Windows','Start Menu','Programs','最强网课教辅系统.lnk')];
+// 1.8.0 品牌升级为「玲珑课堂」：新建「玲珑课堂.lnk」，同时识别并平滑替换指向当前程序的旧版「最强网课教辅系统.lnk」，不留双份重影
+const shortcutPaths=()=>[path.join(app.getPath('desktop'),'玲珑课堂.lnk'),path.join(app.getPath('appData'),'Microsoft','Windows','Start Menu','Programs','玲珑课堂.lnk')];
+const legacyShortcutPaths=()=>[path.join(app.getPath('desktop'),'最强网课教辅系统.lnk'),path.join(app.getPath('appData'),'Microsoft','Windows','Start Menu','Programs','最强网课教辅系统.lnk')];
+const pointsToSelf=p=>{try{return fs.existsSync(p)&&path.resolve(shell.readShortcutLink(p).target)===path.resolve(process.execPath);}catch{return false;}};
 function shortcutState(){
- if(process.platform==='win32'){const [desk]=shortcutPaths();let ok=false;try{ok=fs.existsSync(desk)&&path.resolve(shell.readShortcutLink(desk).target)===path.resolve(process.execPath);}catch{}return {platform:'win32',desktop:ok};}
+ if(process.platform==='win32'){const [desk]=shortcutPaths(),[oldDesk]=legacyShortcutPaths();return {platform:'win32',desktop:pointsToSelf(desk)||pointsToSelf(oldDesk)};}
  if(process.platform==='darwin')return {platform:'darwin',inApplications:app.isInApplicationsFolder()};
  return {platform:process.platform};
 }
 function createShortcuts(manual=false){
  if(process.platform==='darwin'){if(app.isInApplicationsFolder())return {...shortcutState(),message:'已经在「应用程序」里了，可以在启动台找到；想放进程序坞，打开后右键程序坞图标 →「选项」→「在程序坞中保留」。'};if(TEST)return shortcutState();try{app.moveToApplicationsFolder();}catch(e){throw Error('没能移动到「应用程序」：'+e.message+'。可以手动把软件拖进「应用程序」文件夹。');}return shortcutState();}
  if(process.platform!=='win32')throw Error('这个系统请手动创建启动方式');
- const opts={target:process.execPath,cwd:path.dirname(process.execPath),description:'最强网课教辅系统',icon:process.execPath,iconIndex:0};
- let made=0;for(const p of shortcutPaths()){try{fs.mkdirSync(path.dirname(p),{recursive:true});if(shell.writeShortcutLink(p,fs.existsSync(p)?'replace':'create',opts))made++;}catch(e){log.warn('创建快捷方式失败',p,e.message);}}
+ const opts={target:process.execPath,cwd:path.dirname(process.execPath),description:'玲珑课堂',icon:process.execPath,iconIndex:0};
+ const targets=shortcutPaths(),olds=legacyShortcutPaths();
+ let made=0;for(let i=0;i<targets.length;i++){const p=targets[i],old=olds[i];try{fs.mkdirSync(path.dirname(p),{recursive:true});if(shell.writeShortcutLink(p,fs.existsSync(p)?'replace':'create',opts)){made++;if(old&&pointsToSelf(old))try{fs.unlinkSync(old);}catch{}}}catch(e){log.warn('创建快捷方式失败',p,e.message);}}
  if(!made)throw Error('没能创建快捷方式，可能是桌面目录没有写入权限');
  saved.shortcut=true;scheduleSave();log.info('快捷方式',manual?'手动创建':'首次启动创建');
- return {...shortcutState(),message:'已在桌面和开始菜单创建快捷方式'};
+ return {...shortcutState(),message:'已在桌面和开始菜单创建「玲珑课堂」快捷方式'};
 }
-/** 软件被挪了位置：已经建过的快捷方式指向旧位置，悄悄改到新位置 */
+/** 软件被挪了位置，或老版本「最强网课教辅系统.lnk」升级到「玲珑课堂」：原地换成新名新图标并清掉旧快捷方式 */
 function repairShortcuts(){
- if(process.platform!=='win32'||!saved.shortcut||!app.isPackaged)return;
- for(const p of shortcutPaths()){try{if(fs.existsSync(p)&&path.resolve(shell.readShortcutLink(p).target)!==path.resolve(process.execPath))shell.writeShortcutLink(p,'replace',{target:process.execPath,cwd:path.dirname(process.execPath),icon:process.execPath,iconIndex:0,description:'最强网课教辅系统'});}catch{}}
+ if(process.platform!=='win32'||!app.isPackaged)return;
+ const opts={target:process.execPath,cwd:path.dirname(process.execPath),icon:process.execPath,iconIndex:0,description:'玲珑课堂'};
+ const targets=shortcutPaths(),olds=legacyShortcutPaths();
+ for(let i=0;i<targets.length;i++){
+  const p=targets[i],old=olds[i];
+  try{
+   if(old&&(pointsToSelf(old)||(saved.shortcut&&fs.existsSync(old)))){
+    fs.mkdirSync(path.dirname(p),{recursive:true});
+    if(shell.writeShortcutLink(p,fs.existsSync(p)?'replace':'create',opts)){try{fs.unlinkSync(old);}catch{}log.info('快捷方式升级为玲珑课堂',p);}
+   }else if(saved.shortcut&&fs.existsSync(p)&&!pointsToSelf(p)){
+    shell.writeShortcutLink(p,'replace',opts);
+   }
+  }catch{}
+ }
 }
 /** Windows 上找空间最大的本地硬盘（排除系统盘和 U 盘） */
 async function bestDataDrive(){
@@ -220,7 +237,7 @@ async function firstRunPrompts(){
  const t=windows.get('teacher');if(!t||t.isDestroyed())return;
  if(!saved.askedShortcut){
   saved.askedShortcut=true;scheduleSave();
-  if(process.platform==='win32'&&!shortcutState().desktop){const {response}=await dialog.showMessageBox(t,{type:'question',buttons:['创建快捷方式','不用了'],defaultId:0,cancelId:1,message:'要在桌面创建「最强网课教辅系统」的快捷方式吗？',detail:'以后双击桌面图标就能打开。也可以随时在「设置 → 窗口、录课与回放」里添加。'});if(response===0)try{createShortcuts();}catch(e){notify('notice',{message:e.message,error:true});}}
+  if(process.platform==='win32'&&!shortcutState().desktop){const {response}=await dialog.showMessageBox(t,{type:'question',buttons:['创建快捷方式','不用了'],defaultId:0,cancelId:1,message:'要在桌面创建「玲珑课堂」的快捷方式吗？',detail:'以后双击桌面图标就能打开。也可以随时在「设置 → 窗口、录课与回放」里添加。'});if(response===0)try{createShortcuts();}catch(e){notify('notice',{message:e.message,error:true});}}
   else if(process.platform==='darwin'&&!app.isInApplicationsFolder()){const {response}=await dialog.showMessageBox(t,{type:'question',buttons:['移到「应用程序」','以后再说'],defaultId:0,cancelId:1,message:'要把软件移到「应用程序」文件夹吗？',detail:'移过去以后可以在启动台里打开，也能放进程序坞。软件会自动重新打开。'});if(response===0)try{createShortcuts();}catch(e){notify('notice',{message:e.message,error:true});}}
  }
  if(!saved.askedRecordings&&onSystemDrive(settings.recordings)){
@@ -248,7 +265,7 @@ async function screenSnip(){
   const disp=screen.getDisplayNearestPoint(screen.getCursorScreenPoint()),sf=disp.scaleFactor||1;
   const sources=await desktopCapturer.getSources({types:['screen'],thumbnailSize:{width:Math.round(disp.size.width*sf),height:Math.round(disp.size.height*sf)}});
   const src=sources.find(s=>String(s.display_id)===String(disp.id))??sources[0];
-  if(!src||src.thumbnail.isEmpty())throw Error(process.platform==='darwin'?'没能截到屏幕：请在「系统设置 → 隐私与安全性 → 屏幕录制」里允许「最强网课教辅系统」，然后重新打开软件':'没能截到屏幕');
+  if(!src||src.thumbnail.isEmpty())throw Error(process.platform==='darwin'?'没能截到屏幕：请在「系统设置 → 隐私与安全性 → 屏幕录制」里允许「玲珑课堂」，然后重新打开软件':'没能截到屏幕');
   const full=src.thumbnail;await fs.promises.writeFile(temp,full.toPNG());
   const ses=session.fromPartition('studio-snip');if(!ses.csReady){guardSession(ses);ses.csReady=true;}
   win=new BrowserWindow({...disp.bounds,frame:false,show:false,alwaysOnTop:true,skipTaskbar:true,resizable:false,movable:false,minimizable:false,maximizable:false,fullscreenable:false,enableLargerThanScreen:true,hasShadow:false,backgroundColor:'#000000',webPreferences:{preload:path.join(__dirname,'snip-preload.cjs'),session:ses,contextIsolation:true,nodeIntegration:false,sandbox:true}});
@@ -311,6 +328,8 @@ ipcMain.on('cs:bus',(e,message)=>{try{const role=safeRole(e),m=authorizeMessage(
  applyMessage(publicData,m);if(['shared','stroke','edit','erase'].includes(m.t))rememberPublic();
  for(const[r,w]of windows)if(r!=='recorder'&&!((m.t==='cmd'||m.t==='class')&&r==='student')&&w.webContents.id!==e.sender.id)send(w,'cs:bus',m);
  }catch(err){notify('notice',{message:'同步操作未应用：'+err.message,error:true});}});
+// 1.8.0 原生文件拖出：把课后回放、家长版长图、板书 PDF、作业直接从软件拖进电脑版微信群发送
+ipcMain.on('cs:startDrag',(e,payload)=>{try{const role=safeRole(e);if(role!=='teacher'&&role!=='dock')throw Error('只有教师窗口可以拖出文件');deliverDrag?.startNativeDrag(e.sender,payload);}catch(err){notify('notice',{message:'拖出文件失败：'+err.message,error:true});}});
 ipcMain.handle('cs:call',async(e,{method,value})=>{
  // 窗口关闭或被重建时，渲染进程里还在路上的调用会晚到；窗口已经没了就静默丢弃，不当成错误
  if(!roles.has(e.sender.id)&&e.senderFrame===e.sender.mainFrame){const w=BrowserWindow.fromWebContents(e.sender);if(!w||w.isDestroyed()||!w.isVisible()&&![...windows.values()].includes(w)){log.info('丢弃已关闭窗口的调用',method);return null;}}
@@ -356,6 +375,7 @@ ipcMain.handle('cs:call',async(e,{method,value})=>{
  if(typeof method==='string'&&method.startsWith('update.'))return updateCall(method,value);
  if(typeof method==='string'&&method.startsWith('plugins.'))return pluginCall(method,value,e);
  if(typeof method==='string'&&method.startsWith('showcase.'))return showcase.handle(method,value);
+ if(typeof method==='string'&&method.startsWith('deliver.'))return deliverDrag.handle(method,value);
  if(method==='archive.folder'){if(!TEST)await shell.openPath(archive.dir);return normal(archive.dir);}
  if(typeof method==='string'&&method.startsWith('archive.'))return archive.handle(method,value);
  switch(method){
@@ -699,7 +719,7 @@ function cleanAutoRec(o){
 /** 录像自动开关的系统通知：教师窗口最小化、被会议挡住时也能看到；点一下回到教师窗口 */
 function osNotify({title,body}={}){
  if(TEST||!Notification.isSupported())return false;
- const n=new Notification({title:String(title||'最强网课教辅系统').slice(0,80),body:String(body||'').slice(0,200),silent:true});
+ const n=new Notification({title:String(title||'玲珑课堂').slice(0,80),body:String(body||'').slice(0,200),silent:true});
  shown.add(n);n.on('close',()=>shown.delete(n));setTimeout(()=>shown.delete(n),5*60000);
  n.on('click',()=>{const t=windows.get('teacher');if(t&&!t.isDestroyed()){if(t.isMinimized())t.restore();t.show();t.focus();}});
  n.show();return true;
@@ -717,8 +737,11 @@ function remindLesson(item){
 }
 async function start(){
  await fs.promises.mkdir(files.cache,{recursive:true});cleanTemps(path.join(DATA,'workspace.json'));saved=await readJSON(path.join(DATA,'workspace.json'),{});
+ // 1.8.0：启动时无损清理早已关闭的历史旧课件撤销记录栈，保留全部 shared.ink 笔迹，显著降低大存档内存与写入体积
+ const initTrim=trimWorkspaceHistory(saved);if(initTrim.removedKeys||initTrim.trimmedSteps){saved.history=initTrim.history;log.info('启动瘦身历史撤销栈',{removedKeys:initTrim.removedKeys,trimmedSteps:initTrim.trimmedSteps});}
  settings={recordings:path.join(DATA,'recordings'),microphone:true,systemAudio:true,autoRecord:true,bitrate:3000000,captureGuard:false,remindMinutes:10,autostart:false,autoClear:true,autoMap:true,autoAnalyze:true,analysisCap:2,splitWeChat:false,shortDrop:!TEST||process.env.CS_SHORT_DROP==='1',shortMinutes:1,afterSummary:false,afterBoard:false,afterBoardLong:false,voiceTrack:true,transcribe:true,...saved.settings};
  settings.autoRec=cleanAutoRec(settings.autoRec);
+ deliverDrag=new DeliverDrag({dataDir:DATA,cacheDir:files.cache,appIconPath:path.join(ROOT,'build','icon-256.png'),getRecordingsDir:()=>settings.recordings,files,log,test:TEST});
  // 0.4.0：防截屏改为默认关闭（开启时部分会议软件全屏共享会显示黑块）
  if(!saved.migrated040){saved.migrated040=true;settings.captureGuard=false;}
  ledger=new Ledger(DATA);
@@ -732,6 +755,8 @@ async function start(){
  chargeGate=new charge.ChargeGate({account,confirm:priceConfirm,preauth:charge.taskPreauth({agents:()=>agents,ledger}),log});
  plugins=new Plugins({dir:path.join(DATA,'plugins'),log,emit:m=>notify(m.type,m)});
  showcase=new Showcase({files,plugins,notify,log});
+ // 启动时预先向老师端授权内置只读示例目录（saving() 仍通过 keepPath 不把该路径写入 workspace.json，避免挪动软件目录后残留旧盘路径；学生窗口仍由 canUsePath 隔离保护）
+ try{const ex=showcase.dir();if(ex&&fs.existsSync(ex))files.authorize(ex,true);}catch{}
  if(plugins.safeMode)log.warn('插件：上两次启动没有正常运行，这次不加载插件');
  // 正常跑满 1 分钟算启动成功，清掉「连续启动失败」计数
  setTimeout(()=>plugins.stable(),TEST?3000:60000);
@@ -756,6 +781,8 @@ async function start(){
  for(const root of [...(saved.allowedRoots??[]),...(saved.local?.roots??[]),files.cache])try{files.authorize(root,true);}catch{}
  for(const[token,root]of saved.capabilities??[])if(fs.existsSync(root))files.tokens.set(token,root);
  for(const[p,url]of saved.urls??[])if(fs.existsSync(p))files.urls.set(p,url);
+ // 若上次退出前老师预监（local.pvw）停留着 teacherOnly 的内置示例且文件因搬移目录已失效，启动时自动清空预监，防止阻塞导播台加载
+ if(saved.local?.pvw?.teacherOnly){const p=saved.local.pvw.mat?.src?.path||saved.local.pvw.mat?.path;if(p&&!/^(https?:|lesson:|showcase:|plugin:|data:|blob:)/i.test(p)){try{files.allowed(p);}catch{saved.local={...saved.local,pvw:null};}}}
  if(!saved.shared){saved.shared={pgmMat:{id:'board',kind:'board',title:'课堂黑板',pages:[{w:1600,h:900}],total:1},pgm:{materialId:'board',page:0,slide:0,fit:'page',zoom:1},ink:{},drawAuthor:'teacher',studentTools:'open'};}
  // 0.3.0：学生工具栏默认开放（老版本存档里多半是 locked，升级时迁移一次）
  if(!saved.migrated030){saved.migrated030=true;if(saved.shared.studentTools==='locked')saved.shared.studentTools='open';}
@@ -788,14 +815,14 @@ async function start(){
  updater=new Updater({appRoot:ROOT,version:VERSION,dataDir:DATA,fetch:(u,o)=>net.fetch(u,o),log,emit:s=>notify('update',{update:s}),packaged:app.isPackaged,...(feed&&pub?{feeds:[feed],publicKey:pub}:{})});
  const lastUpdate=updater.takeResult();
  // macOS 没有菜单时输入框里的 ⌘C / ⌘V 都不能用，留一个最小的系统菜单
- Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu',label:'最强网课教辅系统'},{role:'editMenu',label:'编辑'},{role:'windowMenu',label:'窗口'}]):null);await makeWindow('teacher');await makeWindow('student');if(!TEST)await dockManager.ensure();
+ Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([{role:'appMenu',label:'玲珑课堂'},{role:'editMenu',label:'编辑'},{role:'windowMenu',label:'窗口'}]):null);await makeWindow('teacher');await makeWindow('student');if(!TEST)await dockManager.ensure();
  for(const ev of ['display-added','display-removed','display-metrics-changed'])screen.on(ev,refitAll);
  if(lastUpdate)setTimeout(()=>notify('update',{update:{phase:lastUpdate.ok?'done':'failed',result:lastUpdate}}),2500);
  if(!TEST){void checkDisk('startup').catch(()=>{});void recording.resume();setTimeout(()=>void asr.resumeRecent().catch(e=>log.warn('语音转写',e.message)),90000);repairShortcuts();setTimeout(()=>void firstRunPrompts().catch(e=>log.warn('首次启动提示',e.message)),4000);}
  if(!TEST){const auto=()=>{if(settings.updateCheck!==false)void updater.check();};setTimeout(auto,20000);setInterval(auto,12*3600000).unref?.();}
- if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,checkDisk,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get asr(){return asr;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},get showcase(){return showcase;},get account(){return account;},get tiers(){return tiers;},get chargeGate(){return chargeGate;},get priceConfirm(){return priceConfirm;},get toolHost(){return toolHost;},get codexHome(){return codexHome;},checkDeliverables,remindLesson,exportDoc,offerLink:l=>offerLink(l)};
+ if(TEST)globalThis.classroomStudioTest={get updater(){return updater;},windows,roles,files,recording,dock:dockManager,data:DATA,get saved(){return saved;},get publicData(){return publicData;},makeWindow,saving,checkDisk,get agents(){return agents;},get assistant(){return assistant;},get study(){return study;},get notifier(){return notifier;},get manim(){return manim;},get asr(){return asr;},get archive(){return archive;},get ledger(){return ledger;},get reconciler(){return reconciler;},get settings(){return settings;},get plugins(){return plugins;},get showcase(){return showcase;},get deliverDrag(){return deliverDrag;},get account(){return account;},get tiers(){return tiers;},get chargeGate(){return chargeGate;},get priceConfirm(){return priceConfirm;},get toolHost(){return toolHost;},get codexHome(){return codexHome;},checkDeliverables,remindLesson,exportDoc,offerLink:l=>offerLink(l)};
 }
-// 一键导入（yinzi-import/1）：网站打开 classroom-studio:// 链接或双击 .yzimport 文件。没开着就带着参数启动，开着就交给已有的实例
+// 一键导入（yinzi-import/1）：网站打开 classroom-studio://（或 linglong-classroom://）链接或双击 .yzimport 文件。没开着就带着参数启动，开着就交给已有的实例
 let startLink=TEST?'':linkFromArgv(process.argv);
 async function offerLink(link){
  if(!link)return;
@@ -806,8 +833,8 @@ async function offerLink(link){
  try{const s=await ai.offerImport(link,DATA);log.info('一键导入','收到配置',s.site?.host||s.baseUrl);notify('import',{summary:s});}
  catch(err){log.warn('一键导入',err.code||'',err.message);notify('import',{error:true,message:err.message});}
 }
-if(!TEST&&app.isPackaged){try{app.setAsDefaultProtocolClient(SCHEME);}catch(err){log.warn('注册一键导入协议失败',err.message);}}
-if(!TEST&&!app.requestSingleInstanceLock())app.quit();else{app.whenReady().then(start).then(()=>{if(startLink){const l=startLink;startLink='';setTimeout(()=>offerLink(l),1500);}}).catch(err=>{console.error(err);dialog.showErrorBox('最强网课教辅系统启动失败',err.message);app.quit();});app.on('second-instance',(_e,argv)=>{const l=linkFromArgv(argv);if(l)offerLink(l);else windows.get('teacher')?.show();});}
+if(!TEST&&app.isPackaged){try{app.setAsDefaultProtocolClient(SCHEME);if(ALT_SCHEME)app.setAsDefaultProtocolClient(ALT_SCHEME);}catch(err){log.warn('注册一键导入协议失败',err.message);}}
+if(!TEST&&!app.requestSingleInstanceLock())app.quit();else{app.whenReady().then(start).then(()=>{if(startLink){const l=startLink;startLink='';setTimeout(()=>offerLink(l),1500);}}).catch(err=>{console.error(err);dialog.showErrorBox('玲珑课堂启动失败',err.message);app.quit();});app.on('second-instance',(_e,argv)=>{const l=linkFromArgv(argv);if(l)offerLink(l);else windows.get('teacher')?.show();});}
 // macOS 不走启动参数：链接和双击的文件通过事件交过来（可能早于 ready）
 app.on('open-url',(e,url)=>{e.preventDefault();void offerLink(url);});
 app.on('open-file',(e,file)=>{if(/\.yzimport$/i.test(file)){e.preventDefault();void offerLink(file);}});

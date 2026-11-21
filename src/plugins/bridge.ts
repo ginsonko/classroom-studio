@@ -168,7 +168,7 @@ async function handle(c: Ctx, method: string, a: Record<string, unknown>) {
   }
   const feature = `插件·${c.manifest?.name ?? c.id}`.slice(0, 40);
   switch (method) {
-    case 'app.info': return { app: '最强网课教辅系统', protocol: 'cs-plugin/1', where: c.hooks.where, subject: useStore.getState().subject, role: host.role ?? 'teacher' };
+    case 'app.info': return { app: '玲珑课堂', protocol: 'cs-plugin/1', where: c.hooks.where, subject: useStore.getState().subject, role: host.role ?? 'teacher' };
     case 'student.current': {
       const st = useStore.getState(), s = st.students.find((x) => x.id === st.studentId);
       return s ? { id: s.id, name: s.name, grade: s.grade, subject: st.subject } : { id: '', name: '', grade: '', subject: st.subject };

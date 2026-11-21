@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('csHost',{
  electron:true,test:initial.test,role:initial.role,dataDir:initial.dataDir,cacheDir:initial.cacheDir,initial:initial.state,
  scanTree:(root,opts)=>call('scanTree',{root,opts}),listDir:p=>call('listDir',p),exists:p=>call('exists',p),
  pickFolder:()=>call('pickFolder'),pickFiles:()=>call('pickFiles'),fileUrl:p=>sync('fileUrl',p),
+ // 原生文件拖拽：在 onDragStart 中同步发往主进程调用 webContents.startDrag，支持直接拖入电脑版微信发送
+ startDrag:payload=>ipcRenderer.send('cs:startDrag',payload),
  pathForFile:f=>{const p=webUtils.getPathForFile(f);if(p)sync('dropPath',p);return p||null;},
  convert:async(p,progress)=>{const id=crypto.randomUUID(),off=on('cs:event',e=>{if(e.type==='convert'&&e.id===id)progress?.(e.progress);});try{return await call('convert',{path:p,id});}finally{off();}},
  openStudentWindow:()=>void call('student'),displays:()=>call('displays'),placeStudent:(id,fullscreen)=>void call('placeStudent',{id,fullscreen}),

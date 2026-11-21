@@ -18,10 +18,12 @@ function Failure({ message, retry }: { message: string; retry?: () => void }) {
 }
 
 function ImagePage({ src, title }: { src: string; title: string }) {
+  // 对可能传入的本地路径统一安全转换，若未授权或失效则展示友好提示，不赋空 src
+  const resolved = assetUrl(src);
   const [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
   useEffect(() => setError(false), [src]);
-  if (error) return <Failure message="图片读取失败，请确认文件仍然存在。" retry={() => { setError(false); setAttempt((n) => n + 1); }} />;
-  return <img key={`${src}-${attempt}`} className="page-img doc-image" src={src} alt={title} draggable={false} loading="lazy" onError={() => setError(true)} />;
+  if (!resolved || error) return <Failure message="图片读取失败，请确认文件仍然存在。" retry={() => { setError(false); setAttempt((n) => n + 1); }} />;
+  return <img key={`${resolved}-${attempt}`} className="page-img doc-image" src={resolved} alt={title} draggable={false} loading="lazy" onError={() => setError(true)} />;
 }
 
 function PdfPage({ path, index, title }: { path: string; index: number; title: string }) {
@@ -87,10 +89,12 @@ function HtmlPage({ path, title, interactive, audible }: { path: string; title: 
 }
 
 function MediaPage({ path, title, audio, audible }: { path: string; title: string; audio: boolean; audible: boolean }) {
+  // 安全转换本地媒体路径，未授权或文件不存在时展示失败提示而非抛错或赋空 src
+  const resolved = assetUrl(path);
   const [error, setError] = useState(false);
   useEffect(() => setError(false), [path]);
-  if (error) return <Failure message="媒体读取失败或编码不兼容。可先转换为 H.264 MP4、WebM 或 MP3。" />;
-  const media = { src: assetUrl(path), controls: true, muted: !audible, preload: 'metadata' as const, onError: () => setError(true) };
+  if (!resolved || error) return <Failure message="媒体读取失败或编码不兼容。可先转换为 H.264 MP4、WebM 或 MP3。" />;
+  const media = { src: resolved, controls: true, muted: !audible, preload: 'metadata' as const, onError: () => setError(true) };
   return <div className={'doc-media' + (audio ? ' audio' : '')}>
     {audio ? <><b>{title}</b><audio {...media} /></> : <video {...media} playsInline />}
     {!audible && <span className="doc-muted"><VolumeX size={12} />教师预览静音</span>}

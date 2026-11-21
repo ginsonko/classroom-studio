@@ -49,7 +49,7 @@ export function AccountPage() {
           <Topup site={view.site?.name ?? ''} onPaid={load} />
           <section className="acc-sec">
             <h4>连接</h4>
-            <p className="acc-dim">登录时自动建了一把专用 Key（名字叫「最强网课教辅系统」），小羽、AI 工坊、课堂 AI 都用它；Key 本身不显示，也不用你管。AI 用不了时可以点这里重新接一次。</p>
+            <p className="acc-dim">登录时自动建了一把专用 Key（名字叫「玲珑课堂」），小羽、AI 工坊、课堂 AI 都用它；Key 本身不显示，也不用你管。AI 用不了时可以点这里重新接一次。</p>
             <div className="acc-b left"><button disabled={!!busy} onClick={() => void act('re', async () => { await accountApi.connect(); window.dispatchEvent(new Event('cs-ai-config')); toast('已重新连接'); })}>{busy === 're' ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}重新连接</button></div>
           </section>
         </>}

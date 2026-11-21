@@ -1,24 +1,24 @@
-// 1.7.0 体验改进（设计稿 E）：「这次更新了什么」卡、「帮我查查」免费自检面板、硬盘快满提醒条。
+// 1.8.0 体验改进：「这次更新了什么」导览卡、「帮我查查」免费自检面板、硬盘快满提醒条。
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { AlertTriangle, CheckCircle2, HardDrive, Loader2, Search, Sparkles, X, XCircle } from 'lucide-react';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
 import { openAccount, useAccount } from '../account/account';
+import { openDeliverDrawer } from './AfterClassDeliver';
 import '../styles/experience.css';
 
-export const WHATS_NEW_VERSION = '1.7.0';
+export const WHATS_NEW_VERSION = '1.8.0';
 
 type Go = () => void;
 const page = (p: string): Go => () => useStore.getState().set({ page: p } as never);
 export const WHATS_NEW: { title: string; text: string; go: Go }[] = [
-  { title: '学生窗口也能上下课，课表随便几分钟', text: '学生画面上有「上课 / 下课」按钮；课表的课不再限 40、60 分钟，45、50、75 分钟都行。', go: page('schedule') },
-  { title: '家长版长图，六段一目了然', text: '学情页一键出家长版长图：本次内容、表现、错题、进步、作业、下次安排，直接发微信。', go: page('study') },
-  { title: '玲珑账号，登录就能用 AI', text: '不用再找 Key：登录玲珑账号就配好了。还能按用途选「省钱 / 均衡 / 质量优先」三个档位。', go: () => openAccount() },
-  { title: 'AI 工坊会上网找真题，并对照原卷核对', text: '出卷、找题时先联网搜真题，每道题都和原卷逐字核对，标出处，不再凭空编题。', go: page('agents') },
-  { title: '公式课件设计包，离线也能排版', text: '工坊做课件自带离线公式排版（KaTeX）和设计包（.cs-kit），没网也显示得整整齐齐。', go: page('agents') },
-  { title: '内置浏览器，做完自己截图检查', text: '工坊做的网页课件会在内置浏览器里打开、截图自查，排版错了自己改好再交给你。', go: page('agents') },
-  { title: '出错说人话，还能「帮我查查」', text: 'AI 出错时一句话告诉你原因；点「帮我查查」免费检查账号、网络、余额和档位。网络抖动会自动重连。', go: () => openSelfCheck() },
+  { title: '「课后发家长」统一交付袋，整套直接拖进微信群', text: '顶栏新增「发家长」：自动聚齐这堂课的回放（超 1 小时优先勾微信分段）、六宫格家长长图、板书 PDF 和课后作业（答案版自动折叠防误发），按住直接拖进桌面微信群。', go: () => openDeliverDrawer() },
+  { title: '全站文件原地轻预览，再也不跳页、不顶掉预监', text: '在回放、学生页、课后总结、AI 助教里点任何视频、长图、PDF、Word、PPT 都在当前页秒开预览，不影响正在准备的上课预监。', go: page('replay') },
+  { title: '上下课按钮三段式防漏录 + 自由拖动与自动避让', text: '开课前醒目提示（写板书忘开录还会轻提醒），上课中自动半透明退居边角不抢眼，到下课点重新高亮提醒；可自由拖动位置，遇占满课件自动让开右上角按钮。', go: page('console') },
+  { title: '常驻「一键清空上堂课」，清前自动存板书可恢复', text: '顶栏学生名旁和左侧浮层常驻清空按钮，换学生未清时高亮提醒，清前自动把写过的板书存 PDF 归到原学生名下，清完还能一键「恢复课面」。', go: page('console') },
+  { title: '玲珑账号与 AI 工坊真题核对、离线公式课件包', text: '登录玲珑账号即配好 AI，三档线路可切换；工坊做课件带离线 KaTeX 公式与截图自检，出题联网查真题并对照原卷核对。', go: page('agents') },
+  { title: '品牌焕新「玲珑课堂」1.8.0，大存档自动无损瘦身', text: '换上全新玲珑课堂品牌与家族图标，原有数据、录像、课件和账号 100% 原地继承；自动清理旧课件陈年撤销缓存（笔迹一笔不丢），并提供「帮我查查」免费自检。', go: () => openSelfCheck() },
 ];
 
 /* ── 这次更新了什么 ─────────────────────────── */
@@ -50,7 +50,7 @@ export function WhatsNew() {
   const close = () => { useWhatsNew.setState({ open: false }); void host.call('whatsNew.seen', WHATS_NEW_VERSION).catch(() => {}); };
   return <div className="xp-back" role="dialog" aria-label="这次更新了什么" data-qa="whats-new">
     <div className="xp-card">
-      <h3><Sparkles size={17} />1.7.0 这次更新了什么<button className="xp-x" aria-label="关闭" onClick={close}><X size={15} /></button></h3>
+      <h3><Sparkles size={17} />玲珑课堂 1.8.0 · 这次更新了什么<button className="xp-x" aria-label="关闭" onClick={close}><X size={15} /></button></h3>
       <ol>{WHATS_NEW.map((x, i) => <li key={i}><div><b>{x.title}</b><p>{x.text}</p></div><button data-qa={'wn-go-' + i} onClick={() => { close(); x.go(); }}>去看看</button></li>)}</ol>
       <div className="xp-b"><span>以后在「帮助 → 关于与更新」里还能再看</span><button className="pri" data-qa="wn-ok" onClick={close}>知道了</button></div>
     </div>

@@ -16,7 +16,7 @@ createRoot(document.getElementById('root')!).render(
     <div className="hero">
       <Mascot mood="happy" size={230} className={cls} />
       <div>
-        <h1>小羽<small>最强网课教辅系统 · AI 助教</small></h1>
+        <h1>小羽<small>玲珑课堂 · AI 助教</small></h1>
         <p>一只圆滚滚的<em>小羽毛鸟</em>：头顶一根羽毛呆毛（名字「羽」的来历），<br />戴着红色蝴蝶结——结上是软件标志里的<em>播放三角</em>，身体是软件的青蓝主色。</p>
         <p>翅膀里总抱着一支铅笔，随时准备帮老师排课、找题、写反馈。</p>
         <p>右下角常驻，眼睛会跟着鼠标转；思考、说话、干活、提醒时各有动作。</p>

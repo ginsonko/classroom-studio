@@ -58,5 +58,5 @@ export function parentHtml(blocks: Block[], render: (b: Block) => string, textOf
   const date = new Date().toLocaleDateString('zh-CN');
   return `<article class="pr pr-${mode}"><header class="ph">${HERO}<div class="ph-in"><b class="ph-tag">课后反馈</b><h1>${title.replace(/[&<>"]/g, '')}</h1><div class="ph-meta">${chips}</div></div></header>`
     + `<div class="pr-body">${sections.map(sec).join('')}</div>`
-    + `<footer class="pf">${FOOT}<p>每一步都算数，下节课继续加油！</p><small>最强网课教辅系统 · ${date}</small></footer></article>`;
+    + `<footer class="pf">${FOOT}<p>每一步都算数，下节课继续加油！</p><small>玲珑课堂 · ${date}</small></footer></article>`;
 }

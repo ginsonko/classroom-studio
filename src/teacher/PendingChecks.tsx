@@ -24,9 +24,11 @@ export function PendingChecks({ recordId, fallback, onSeek }: { recordId: string
     {live.unsure.map((u) => {
       const q = qs.find((x) => x.id === u.questionId);
       if (!q) return null;
+      // 安全获取题图地址，防止旧题图文件移动或未授权时在渲染期抛错
+      const imgUrl = (() => { try { return q.image ? host.fileUrl(q.image) : ''; } catch { return ''; } })();
       return <div key={u.questionId + u.studentId} className={'sort-uq' + (replay ? ' ai' : '')} data-qa="pending-item">
         <div className="sort-uq-main">
-          {q.image ? <img src={host.fileUrl(q.image)} alt="题图" /> : <span className="sort-uq-stem">{q.stem.slice(0, 80)}</span>}
+          {imgUrl ? <img src={imgUrl} alt="题图" /> : <span className="sort-uq-stem">{q.stem.slice(0, 80)}</span>}
           {u.result && <p className="sort-uq-ai">
             {many && <em>{name(u.studentId)}</em>}
             AI 觉得：<b className={'r-' + u.result}>{RESULT_NAME[u.result]}</b>{typeof u.level === 'number' && <> · {levelText(u.level)}</>}{u.mode && <> · {MODE_NAME[u.mode]}</>}{typeof u.hints === 'number' && u.hints > 0 && <> · 提示了 {u.hints} 次</>}

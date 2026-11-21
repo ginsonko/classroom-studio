@@ -35,6 +35,8 @@ export interface Host {
   pickFiles(): Promise<string[]>;
   /** 渲染进程可直接加载的 URL（图片、PDF、视频） */
   fileUrl(path: string): string;
+  /** 1.8.0 原生文件拖拽（直接拖进桌面微信群发送真实文件） */
+  startDrag?(payload: { items: { path: string; niceName?: string }[]; lessonKey?: string }): void;
   /** 拖入的 File → 绝对路径（Electron webUtils）；浏览器为 null */
   pathForFile(f: File): string | null;
   convert(path: string, onProgress?: (p: ConvertProgress) => void): Promise<ConvertResult>;

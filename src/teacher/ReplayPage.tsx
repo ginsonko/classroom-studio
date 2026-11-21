@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Clapperboard, FolderOpen, HardDrive, Loader2, Play, RotateCcw, Sparkles, Trash2, FolderInput, Undo2, Scissors, MessageSquareText, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clapperboard, FolderOpen, HardDrive, Loader2, PackageCheck, Play, RotateCcw, Sparkles, Trash2, FolderInput, Undo2, Scissors, MessageSquareText, Search, X } from 'lucide-react';
+import { openDeliverDrawer } from './AfterClassDeliver';
+import { openQuickPreview } from '../ui/QuickPreview';
 import { fmtT } from '../lib/timeline';
 import { host } from '../lib/host';
 import { useStore } from '../lib/store';
@@ -149,7 +151,8 @@ export function ReplayPage() {
               {voiceOpen === r.id && r.transcript?.phase === 'done' && <TranscriptView r={r} seek={seek?.id === r.id ? seek : undefined} />}
             </div>
             <div className="rp-acts">
-              {r.phase === 'complete' && <button className="sd-btn" onClick={() => void run(r.id, () => host.call('openRecording', r.id))}><Play size={14} />播放</button>}
+              {r.phase === 'complete' && <button className="btn-cue" data-qa="rp-deliver" onClick={() => openDeliverDrawer({ recordId: r.id, studentId: r.studentId || undefined })} title="打开这堂课的统一交付袋：回放分段、课后总结长图、板书和作业一站式预览并拖进微信群"><PackageCheck size={14} />发家长</button>}
+              {r.phase === 'complete' && <button className="sd-btn" onClick={() => openQuickPreview({ path: r.mp4, title: r.title || '课堂回放' })} title="原地弹窗快看回放（也可点右边文件夹用本地播放器打开）"><Play size={14} />预览</button>}
               {r.phase === 'complete' && !!stu && analyzing[r.id] === undefined && <button className="sd-btn" data-qa="rp-analyze" title="让 AI 看一遍录像：题目进收件箱、批改记作答、学习地图往前推、课堂小结记进档案" disabled={!!busy} onClick={() => void run(r.id, async () => { await analyzeRecording(r.id); await load(); })}><Sparkles size={14} />{r.analysis && !r.analysis.error ? '重新分析' : 'AI 分析'}</button>}
               {r.phase === 'complete' && !r.splitting && !r.parts?.length && (m === null || m > 59) && <button className="sd-btn" data-qa="rp-split" title="微信发不了超过 1 小时的视频：切成长度相等、每段不到 1 小时的几段，原回放保留" disabled={!!busy} onClick={() => void run(r.id, async () => { const p = host.call('splitRecording', r.id); await new Promise((ok) => setTimeout(ok, 300)); await load(); await p; })}><Scissors size={14} />切成微信分段</button>}
               {r.phase === 'complete' && r.transcript?.phase !== 'done' && r.transcript?.phase !== 'running' && asrState?.current?.id !== r.id && !asrState?.queue.includes(r.id) && <button className="sd-btn" data-qa="rp-transcribe" title="在这台电脑上把这节课说的话转成文字（不联网、不花钱），回放时能看字幕、搜原话" disabled={!!busy} onClick={() => void run(r.id, () => transcribe(r.id))}><MessageSquareText size={14} />{r.transcript?.phase === 'error' ? '重新转写' : '转成文字'}</button>}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Download, FolderPlus, ImageDown, ListChecks, Loader2, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { Check, Copy, Download, FolderPlus, ImageDown, ListChecks, Loader2, PackageCheck, Presentation, Send, Settings2, Sparkles, Trash2, Wand } from 'lucide-react';
+import { openDeliverDrawer } from './AfterClassDeliver';
 import { isGroup, membersOf } from '../lib/groups';
 import { PaperComposer } from './PaperComposer';
 import { useStore } from '../lib/store';
@@ -207,7 +208,8 @@ export function LessonTab() {
           <button className="sd-btn" onClick={() => void navigator.clipboard.writeText(note.parent).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })}><Copy size={13} />{copied ? '已复制' : '复制家长反馈'}</button>
           <button className="ags-go" disabled={!!busy} onClick={() => void exportIt(['png'])}>{busy === 'png' ? <Loader2 size={14} className="ags-spin" /> : <ImageDown size={14} />}导出分享长图</button>
           <button className="sd-btn" disabled={!!busy} onClick={() => void exportIt(['docx', 'pdf'])}>{busy === 'docx' ? <Loader2 size={13} className="ags-spin" /> : <Download size={13} />}Word + PDF</button>
-          <button className="ags-go ps-open" disabled={!!busy || !note.parent.trim()} onClick={() => { save(note); setSending(true); }}><Send size={14} />发送给家长</button>
+          <button className="ags-go" disabled={!!busy || !note.parent.trim()} onClick={() => { save(note); setSending(true); }} data-tip="通过企业微信群机器人或发件邮箱一键推送家长反馈与长图"><Send size={14} />发送给家长</button>
+          <button className="ags-go ps-open" disabled={!!busy} onClick={() => { save(note); openDeliverDrawer({ studentId, date }); }} data-tip="打开课后统一交付袋：回放分段、总结长图、板书与作业原地预览并直接拖进微信群"><PackageCheck size={14} />课后交付袋（拖进微信）</button>
           <button className="sd-btn" onClick={() => setContacts(true)}><Settings2 size={13} />家长联系方式</button>
         </div>
         {out && <Outputs r={out} />}

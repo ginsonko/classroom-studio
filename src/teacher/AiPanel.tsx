@@ -581,7 +581,7 @@ function QuickImport() {
   return (
     <div className="ai-imp">
       <b>一键导入</b>
-      <span>在 <a onClick={() => void host.call('ai.openSite')}>银子 API</a> 新建或查看密钥时点「一键导入到软件」，选「最强网课教辅系统」，这里会自动弹出确认。没反应时，在网站上复制导入码或下载导入文件：</span>
+      <span>在 <a onClick={() => void host.call('ai.openSite')}>银子 API</a> 新建或查看密钥时点「一键导入到软件」，选「玲珑课堂」（或「最强网课教辅系统」），这里会自动弹出确认。没反应时，在网站上复制导入码或下载导入文件：</span>
       <div className="ai-imp-row">
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && text.trim()) void go(); }} placeholder="粘贴导入码 YZIMPORT1:… 或 sk-…" spellCheck={false} autoComplete="off" />
         <button disabled={!text.trim()} onClick={() => void go()}>导入</button>

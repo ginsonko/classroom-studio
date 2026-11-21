@@ -22,7 +22,7 @@ export function HelpCenter() {
       <section className="help" role="dialog" aria-label="帮助">
         <header className="help-h">
           <Logo size={26} />
-          <div><b>最强网课教辅系统</b><small>帮助中心</small></div>
+          <div><b>玲珑课堂</b><small>帮助中心</small></div>
           <nav className="help-tabs">
             <button className={open === 'manual' ? 'on' : ''} onClick={() => openHelp('manual')}><BookOpen size={14} />说明书</button>
             <button className={open === 'about' ? 'on' : ''} onClick={() => openHelp('about')}><Info size={14} />关于与更新<UpdateDot /></button>
@@ -91,7 +91,7 @@ function About() {
       <div className="ab-hero">
         <Logo size={56} />
         <div>
-          <h2>最强网课教辅系统</h2>
+          <h2>玲珑课堂</h2>
           <p>给一对一网课老师的上课、录课、备课一体化工具</p>
           <span className="ab-ver">版本 <b className="num">{version || '开发版'}</b>{host.electron ? '' : ' · 浏览器预览'}</span>
         </div>

@@ -207,7 +207,7 @@ function ChatView() {
       {error && (explainAiError(error) ? <AiTrouble raw={error} compact /> : <div className="as-err">{error}<CheckButton small /></div>)}
     </div>
     <div className="as-input">
-      {files.length > 0 && <div className="as-files">{files.map((f) => <span key={f} title={f}>{IMG.test(f) ? <img src={host.fileUrl(f)} alt="" /> : <FileText size={12} />}{fname(f)}<button aria-label="移除" onClick={() => setFiles(files.filter((x) => x !== f))}><X size={11} /></button></span>)}</div>}
+      {files.length > 0 && <div className="as-files">{files.map((f) => { const img = IMG.test(f) ? (() => { try { return host.fileUrl(f); } catch { return ''; } })() : ''; return <span key={f} title={f}>{img ? <img src={img} alt="" /> : <FileText size={12} />}{fname(f)}<button aria-label="移除" onClick={() => setFiles(files.filter((x) => x !== f))}><X size={11} /></button></span>; })}</div>}
       <textarea ref={input} rows={2} value={text} placeholder={running ? '还在做…可以接着补充，它会看到' : '跟助教说要做什么（Enter 发送，Shift+Enter 换行；截图、文件可以直接粘贴或拖进来）'}
         onPaste={(e) => { const got = pastedFiles(e); if (got) { e.preventDefault(); void got.then((p) => p.length && setFiles((f) => [...new Set([...f, ...p])])); } }}
         onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); go(); } }} />

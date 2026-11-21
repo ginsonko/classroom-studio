@@ -92,7 +92,7 @@ test('站点还没开放 v4：登录页写「暂未开放」，玲珑登录和�
   } finally { await s.close(); }
 });
 
-test('玲珑账号：登录 → 安全存储加密 → 自动建「最强网课教辅系统」专用 Key → 页面看不到 Key；每个请求都带 X-Omni-Client', async () => {
+test('玲珑账号：登录 → 安全存储加密 → 自动建「玲珑课堂」专用 Key → 页面看不到 Key；每个请求都带 X-Omni-Client', async () => {
   const s = await site.start();
   try {
     const dir = tmp('ll'), a = new Account({ dir, crypt, client: CLIENT, sites: sitesFor(s.url) });
@@ -106,7 +106,7 @@ test('玲珑账号：登录 → 安全存储加密 → 自动建「最强网课�
     assert.ok(!JSON.stringify(saved).includes('pass-1234'), '不保存密码');
     const k = await a.ensureKey();
     assert.match(k.key, /^sk-fake/); assert.equal(k.baseUrl, s.url + '/v1');
-    assert.equal(s.st.tokens.length, 1); assert.equal(s.st.tokens[0].name, '最强网课教辅系统'); assert.equal(s.st.tokens[0].group, 'auto', '站点有智能路由就开着，档位才起作用');
+    assert.equal(s.st.tokens.length, 1); assert.equal(s.st.tokens[0].name, '玲珑课堂'); assert.equal(s.st.tokens[0].group, 'auto', '站点有智能路由就开着，档位才起作用');
     await a.ensureKey();
     assert.equal(s.st.tokens.length, 1, '再连一次用同一把 Key，不重复建');
     assert.ok(!JSON.stringify(a.view()).includes(k.key), 'view 里没有 Key');

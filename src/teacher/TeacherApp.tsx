@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  Bot, CalendarDays, Circle, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
+  Bot, CalendarDays, Circle, Clock3, Command, LayoutDashboard, MonitorUp, PanelLeftClose, PanelLeftOpen, PanelRightClose,
   PanelRightOpen, Palette, Square, Users, Settings2, PenTool, Sparkles, BellRing, BookOpenCheck, Shapes, Workflow, LifeBuoy,
-  SkipForward, Film, Clapperboard, Puzzle, UsersRound, Eraser, Undo2, Trash2,
+  SkipForward, Film, Clapperboard, Puzzle, UsersRound, Eraser, Undo2, Trash2, X,
 } from 'lucide-react';
-import { canRestoreClass, classHasContent, clearClass, restoreClass, studentName } from '../lib/classReset';
+import { canRestoreClass, classHasContent, clearClass, restoreClass, studentName, useClassReset } from '../lib/classReset';
 import { type FileEntry } from '../lib/library';
 import { STUDENTS } from '../lib/mock';
 import { stepView, useStore } from '../lib/store';
@@ -59,6 +59,9 @@ import { AccountButton, AccountHost } from '../account/AccountHost';
 import { DiskBanner, SelfCheck, WhatsNew } from './Experience170';
 import { AssistantButton, AssistantHost } from '../assistant/AssistantUI';
 import { AiToolsLayer } from './AiToolsLayer';
+import { AfterClassDeliver, DeliverTopButton, openDeliverDrawer } from './AfterClassDeliver';
+import { QuickPreview } from '../ui/QuickPreview';
+import { muteInkUnrecorded } from '../lib/autoRecordRun';
 import { groups, individuals, isGroup, kindName, membersOf } from '../lib/groups';
 
 export function TeacherApp() {
@@ -73,7 +76,7 @@ export function TeacherApp() {
   const skinsOpen = useStore((s) => s.skinsOpen);
   useAnswerMarks();
 
-  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); startAutoRecord(); startAfterClass(); startPrepWarm(); document.title = '最强网课教辅系统 · 教师端'; }, []);
+  useEffect(() => { ensureLibrary(); ensureStudy(); startAutopilot(); startTimeline(); startRecordAnalysis(); startAutoRecord(); startAfterClass(); startPrepWarm(); document.title = '玲珑课堂 · 教师端'; }, []);
   const autoOn = useAuto((s) => s.settings.on);
   const helpOpen = useHelp((s) => !!s.open), updateDot = useHelp((s) => ['available', 'ready'].includes(s.update.phase) && s.update.info?.latest !== s.skip);
   useEffect(() => {
@@ -166,6 +169,8 @@ export function TeacherApp() {
       <AssistantHost />
       <AiToolsLayer />
       <AccountHost />
+      <AfterClassDeliver />
+      <QuickPreview />
       <WhatsNew />
       <SelfCheck />
       <DiskBanner />
@@ -204,11 +209,20 @@ function TopBar() {
   const rec={on:isLive(status.phase), start:status.startedAt??Date.now()};
   const set = useStore((s) => s.set);
   const studentId = useStore((s) => s.studentId);
+  const classOf = useStore((s) => s.classOf);
+  const classBar = useStore((s) => s.classBar);
+  // 订阅 desk/ink/pgmMat 以实时驱动顶栏常驻「一键清空课堂」按钮状态
+  useStore((s) => s.desk);
+  useStore((s) => s.pgmMat);
+  useStore((s) => s.ink);
+  const resetState = useClassReset();
   const students=useStore(s=>s.students);
   const pgmTitle = useStore((s) => s.pgmMat.title);
   const [now, setNow] = useState(Date.now());
   const [pick, setPick] = useState(false);
+  const [sureClear, setSureClear] = useState(false);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (!sureClear) return; const t = setTimeout(() => setSureClear(false), 4000); return () => clearTimeout(t); }, [sureClear]);
   const s = students.find(x=>x.id===studentId)??{id:'free',name:'自由课堂',hue:192,lessons:0};
   const el = rec.on ? Math.floor((now - rec.start) / 1000) : 0;
   const hms = [Math.floor(el / 3600), Math.floor(el / 60) % 60, el % 60].map((v) => String(v).padStart(2, '0')).join(':');
@@ -216,17 +230,45 @@ function TopBar() {
   const finalizing=status.phase==='stopping';
   const job=status.jobs?.[0];
   const chipId=useAfter(s=>s.chip);
+  const overtime = !!(rec.on && classBar?.overtime);
+  const upcoming = !rec.on ? classBar?.upcoming : null;
+  const inkUnrec = !rec.on && status.phase === 'idle' ? classBar?.inkUnrecorded : null;
+  const hasContent = classHasContent();
+  const staleOwner = classOf && classOf !== studentId && hasContent ? studentName(classOf) : '';
 
   return (
     <header className="tb">
-      <button className="tb-brand" onClick={() => openHelp('about')} data-tip="关于、检查更新与说明书"><Logo /><b>最强网课教辅系统</b></button>
-      <button className={'tb-rec' + (rec.on ? ' on' : '')} disabled={!host.electron||finalizing||status.phase==='starting'} onClick={()=>void toggleRecording()}>
-        {rec.on ? <Square size={11} fill="currentColor" /> : <Circle size={11} fill="currentColor" />}
-        <span>{finalizing?'正在保存…':status.phase==='starting'?'正在准备…':rec.on?'下课并保存':'开始上课'}</span>
+      <button className="tb-brand" onClick={() => openHelp('about')} data-tip="关于、检查更新与说明书"><Logo /><b>玲珑课堂</b></button>
+      <button
+        className={'tb-rec' + (rec.on ? ' on' : ' idle-cta') + (overtime ? ' due' : '') + (upcoming?.late ? ' late' : '')}
+        disabled={!host.electron||finalizing||status.phase==='starting'}
+        onClick={()=>void toggleRecording()}
+        data-qa="top-rec-btn"
+        data-tip={!rec.on
+          ? (upcoming ? `即将/正在上「${upcoming.name}」的课 · 点击开始上课并录像` : '点击开始上课并自动录下学生窗口')
+          : (overtime ? '已到达排课下课时间点 · 点击下课并保存录像' : '正在录课中 · 点击下课并保存录像')}
+      >
+        {rec.on ? (overtime ? <Clock3 size={12} /> : <Square size={10} fill="currentColor" />) : <Circle size={10} fill="currentColor" />}
+        <span>
+          {finalizing ? '正在保存…'
+            : status.phase === 'starting' ? '正在准备…'
+            : rec.on ? (overtime ? '到点 · 下课保存' : '下课并保存')
+            : upcoming ? (upcoming.late ? `还没录 · 开始「${upcoming.name}」` : `开始上课 · ${upcoming.name}`)
+            : '开始上课'}
+        </span>
         {rec.on && <b className="num">{hms}</b>}
       </button>
+      {inkUnrec && (
+        <span className="tb-unrec" data-qa="top-unrecorded">
+          <button className="tb-unrec-go" onClick={() => void toggleRecording()} data-tip="检测到正在黑板上写字但还没开始录像，点一下立刻开录">
+            已在写板书 · 点此开录
+          </button>
+          <button className="tb-unrec-x" onClick={() => muteInkUnrecorded()} data-tip="这节课不录，不再提醒" aria-label="关闭未录像提醒"><X size={11} /></button>
+        </span>
+      )}
       {status.phase==='recording' && <button className="tb-next" onClick={()=>void nextLesson()} data-tip="连堂课：这一节保存，马上开始录下一节（学生窗口和会议共享不用动）"><SkipForward size={13}/><span>下一节</span></button>}
       <AfterClassChip />
+      <DeliverTopButton />
       {status.discarded&&now<status.discarded.until&&<button className="tb-job tb-drop" data-qa="short-drop" onClick={()=>void keepShort(status.discarded!.id)} data-tip={`不到 ${status.discarded.limit>=300?5:1} 分钟的录像不算上课：不生成回放、不算课次、不做 AI 分析，到时间只删这一段。设置在齿轮「窗口、录课与回放」里`}><Trash2 size={13}/><span>已丢弃短录像 · {Math.max(0,Math.ceil((status.discarded.until-now)/1000))} 秒内可</span><b>撤销</b></button>}
       {job && job.id!==chipId && <button className="tb-job" onClick={()=>set({page:'replay'})} data-tip={`「${job.title||'课堂回放'}」正在后台生成 MP4，不影响上课${(status.jobs?.length??0)>1?`；后面还有 ${status.jobs!.length-1} 段排队`:''}`}><Film size={13}/><span>回放生成中</span><b className="num">{Math.round((job.progress??0)*100)}%</b></button>}
       {rec.on && (
@@ -252,13 +294,42 @@ function TopBar() {
               </button>
             ))}
             <div className="stu-pop-foot">
-              <button data-qa="clear-class" onClick={() => { setPick(false); void clearMine(); }} data-tip="关掉所有课件和多开的黑板，黑板擦干净；写过的板书先存成 PDF 放到这位学生名下。15 秒内可以撤销"><Eraser size={13} /><b>清空课堂</b></button>
+              <button data-qa="clear-class" onClick={() => { setPick(false); void clearMine(); }} data-tip="关掉所有课件和多开的黑板，黑板擦干净；写过的板书先存成 PDF 放到这位学生名下。清完可恢复"><Eraser size={13} /><b>清空课堂</b></button>
               {canRestoreClass() && <button onClick={() => { setPick(false); restoreClass(); }} data-tip="放回最近一次清空前的课件和板书"><Undo2 size={13} /><b>恢复清空前</b></button>}
             </div>
           </div>
           </>
         )}
       </div>
+      {/* 1.8.0 顶栏常驻「一键清空上堂课课件和板书 / 恢复刚才课面」按钮，错过换课弹窗也能随时一键清台 */}
+      {hasContent ? (
+        <button
+          className={'tb-clear' + (staleOwner ? ' stale' : '') + (sureClear ? ' sure' : '')}
+          data-qa="top-clear-class"
+          disabled={resetState.busy}
+          onClick={() => {
+            if (rec.on && !staleOwner && !sureClear) { setSureClear(true); return; }
+            setSureClear(false);
+            void clearMine();
+          }}
+          data-tip={staleOwner
+            ? `学生画面上还留着「${staleOwner}」的课件和板书 · 点击先自动把板书存成 PDF 归到「${staleOwner}」名下，再一键清空课堂`
+            : '一键关掉全部课件并擦净黑板（写过的板书先自动存成 PDF 归档，清完支持一键恢复）'}
+        >
+          <Eraser size={13} />
+          <span>{sureClear ? '再点确认清空' : staleOwner ? `清空「${staleOwner}」课面` : '清空课面'}</span>
+        </button>
+      ) : resetState.canRestore ? (
+        <button
+          className="tb-clear restore"
+          data-qa="top-restore-class"
+          onClick={() => restoreClass()}
+          data-tip="放回刚才清空前的全部课件与黑板笔迹"
+        >
+          <Undo2 size={13} />
+          <span>恢复课面</span>
+        </button>
+      ) : null}
       <SubjectPicker className="tb-subj" />
       <div className="tb-now"><span className="tally-dot" /><span className="tb-now-t">学生画面</span><b title={pgmTitle}>{pgmTitle}</b></div>
       <span className="flex" />
@@ -301,6 +372,7 @@ function SavedNotice() {
       <span>{student ? <>已归到「{student.name}」的档案。左侧「回放」页和「学生」页都能找到。</> : <>这节课没有绑定学生，录像在左侧「回放」页。</>}</span>
       <code title={st.path}>{st.path}</code>
       <div className="saved-acts">
+        <button className="btn-cue" onClick={() => { openDeliverDrawer({ recordId: st.id, studentId: st.studentId || undefined }); close(); }}>课后发家长</button>
         <button onClick={() => void host.call('openRecording', st.id)}>播放</button>
         <button onClick={() => host.revealInFolder(st.path!)}>打开文件夹</button>
         <button onClick={() => { set({ page: 'replay' }); close(); }}>全部回放</button>

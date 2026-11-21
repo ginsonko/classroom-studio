@@ -1,12 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b2633"/><stop offset="1" stop-color="#0b1118"/></linearGradient>
-    <linearGradient id="live" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5a52"/><stop offset="1" stop-color="#e5322b"/></linearGradient>
-    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity=".45"/></filter>
+    <!-- 砚台墨玉深色护眼底板 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#162638"/>
+      <stop offset="52%" stop-color="#0f1b29"/>
+      <stop offset="100%" stop-color="#080f18"/>
+    </linearGradient>
+    <!-- 顶部琉璃柔光反射 -->
+    <radialGradient id="topGlow" cx="28%" cy="16%" r="68%">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity=".22"/>
+      <stop offset="55%" stop-color="#38bdf8" stop-opacity=".06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 后窗：琉璃青翠导播预监窗 -->
+    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3ce8d0"/>
+      <stop offset="100%" stop-color="#149cb8"/>
+    </linearGradient>
+    <!-- 前窗：暖玉课堂主屏 -->
+    <linearGradient id="board" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f3447"/>
+      <stop offset="100%" stop-color="#132231"/>
+    </linearGradient>
+    <!-- 暖珀金边与板书轨迹线 -->
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffe08a"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <!-- 朱砂点睛录课徽章 -->
+    <linearGradient id="cinnabar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff6b57"/>
+      <stop offset="100%" stop-color="#e03a2d"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="145%" height="145%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#02060c" flood-opacity=".62"/>
+    </filter>
   </defs>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
-  <rect x="64.5" y="64.5" width="895" height="895" rx="199.5" fill="none" stroke="#ffffff" stroke-opacity=".08" stroke-width="3"/>
-  <rect x="170" y="250" width="440" height="360" rx="70" fill="none" stroke="#3ddbd9" stroke-width="58" stroke-dasharray="96 70" stroke-linecap="round"/>
-  <g filter="url(#sh)"><rect x="410" y="410" width="460" height="370" rx="80" fill="url(#live)"/></g>
-  <path d="M590 520 L590 670 L715 595 Z" fill="#fff" stroke="#fff" stroke-width="24" stroke-linejoin="round"/>
+
+  <!-- 圆角方章主体 -->
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#topGlow)"/>
+  <rect x="67" y="67" width="890" height="890" rx="205" fill="none" stroke="#7dd3fc" stroke-opacity=".16" stroke-width="6"/>
+
+  <!-- 后层：琉璃青翠预监窗（老师导播与 AI 智慧备课） -->
+  <g filter="url(#cardShadow)">
+    <rect x="166" y="206" width="468" height="364" rx="76" fill="url(#jade)" fill-opacity=".2" stroke="url(#jade)" stroke-width="44"/>
+    <!-- 玲珑四芒星徽 -->
+    <path d="M312 290 L328 334 L372 350 L328 366 L312 410 L296 366 L252 350 L296 334 Z" fill="#67f3e0"/>
+  </g>
+
+  <!-- 前层：课堂展示黑板主屏 -->
+  <g filter="url(#cardShadow)">
+    <rect x="358" y="380" width="504" height="416" rx="84" fill="url(#board)" stroke="url(#gold)" stroke-width="38"/>
+    <!-- 课堂物理波峰/抛物线金弧板书轨迹 -->
+    <path d="M438 648 C 498 512, 568 512, 620 604 S 724 680, 782 544" fill="none" stroke="url(#gold)" stroke-width="42" stroke-linecap="round"/>
+    <!-- 右上温润朱砂点睛圆点（象征课堂开讲与准时录课护航） -->
+    <circle cx="766" cy="476" r="38" fill="url(#cinnabar)"/>
+    <circle cx="766" cy="476" r="16" fill="#fff5f2"/>
+  </g>
 </svg>

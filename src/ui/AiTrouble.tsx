@@ -21,7 +21,7 @@ export function runFix(a: FixAction, retry?: () => void) {
   // 一键导入 / 充值都在站点上：打开站点，同时把 AI 设置打开（导入码、导入文件也能从那里贴）
   void host.call('ai.openSite');
   openAiSettings();
-  toast(a === 'import' ? '已打开银子 API：在「令牌 / 密钥」里点「一键导入到软件」→「最强网课教辅系统」，软件里会自动弹出确认' : '已打开银子 API，充值后回来点「继续」即可', { ms: 15000 });
+  toast(a === 'import' ? '已打开银子 API：在「令牌 / 密钥」里点「一键导入到软件」→「玲珑课堂」（或「最强网课教辅系统」），软件里会自动弹出确认' : '已打开银子 API，充值后回来点「继续」即可', { ms: 15000 });
 }
 
 export function AiTrouble({ raw, onRetry, compact }: { raw: string; onRetry?: () => void; compact?: boolean }) {

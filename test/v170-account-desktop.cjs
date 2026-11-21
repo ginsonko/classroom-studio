@@ -116,7 +116,7 @@ const ok = (name) => { results.push(name); console.log('ok - ' + name); };
     assert.equal(cfg.hasKey, true); assert.equal(cfg.account.kind, 'linglong'); assert.equal(cfg.keyHint, '', '页面看不到 Key 尾号');
     assert.equal(cfg.baseUrl, s.url + '/v1');
     assert.equal(cfg.model, 'gpt-6-astra', '按推荐挑了模型');
-    assert.equal(s.st.tokens.length, 1); assert.equal(s.st.tokens[0].name, '最强网课教辅系统');
+    assert.equal(s.st.tokens.length, 1); assert.equal(s.st.tokens[0].name, '玲珑课堂');
     assert.ok(s.st.log.filter((l) => l.path.startsWith('/api/')).every((l) => l.client === 'classroom/' + require('../package.json').version), '账号接口都带 X-Omni-Client');
     const accFile = fs.readFileSync(path.join(DATA, 'account.json'), 'utf8');
     assert.ok(!accFile.includes('session=') && !accFile.includes('pass-1234'), '登录状态加密、不存密码');

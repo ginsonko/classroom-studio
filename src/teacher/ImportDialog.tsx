@@ -1,4 +1,4 @@
-// 一键导入（yinzi-import/1）：网站密钥窗口点「一键导入到软件 → 最强网课教辅系统」后，主进程收到链接并校验、暂存，这里请老师确认。
+// 一键导入（yinzi-import/1）：网站密钥窗口点「一键导入到软件 → 玲珑课堂」后，主进程收到链接并校验、暂存，这里请老师确认。
 // Key 只留在主进程，页面上只显示尾号。
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, KeyRound, Loader2, XCircle } from 'lucide-react';

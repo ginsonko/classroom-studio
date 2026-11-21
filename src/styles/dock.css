@@ -46,6 +46,62 @@ html, body, #root { background: transparent !important; overflow: hidden; }
   min-width: 0; overflow: hidden;
 }
 
+/* 1.8.0 动笔未录即时提醒 + 浮层常驻清空课面入口 */
+.tdock-unrec {
+  display: grid;
+  grid-template-columns: 1fr 18px;
+  gap: 2px;
+  align-items: center;
+}
+.tdock-unrec-go {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  height: 26px; padding: 0 4px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ff7a45, #e84735);
+  color: #fff;
+  font-size: 10px; font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px -3px rgba(232, 71, 53, .65);
+  animation: tdock-pulse 1.6s ease-in-out infinite;
+}
+.tdock-unrec-go svg { color: #ffe580; flex: none; }
+.tdock-unrec-x {
+  display: grid; place-items: center;
+  width: 18px; height: 24px;
+  border-radius: 6px;
+  color: var(--fg-2);
+  background: rgba(255, 255, 255, .06);
+}
+.tdock-unrec-x:hover { color: #fff; background: rgba(255, 255, 255, .14); }
+@keyframes tdock-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); filter: brightness(1.08); }
+}
+
+.tdock-clear-row { display: flex; }
+.tdock-clear {
+  width: 100%; height: 25px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 600;
+  color: var(--fg-1);
+  background: rgba(255, 255, 255, .06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  white-space: nowrap;
+}
+.tdock-clear:hover { background: var(--bg-3); color: #fff; }
+.tdock-clear.owner {
+  color: #ffd584;
+  background: rgba(255, 181, 71, .15);
+  box-shadow: inset 0 0 0 1px rgba(255, 181, 71, .45);
+}
+.tdock-clear.sure { background: #d9434a; color: #fff; }
+.tdock-clear.restore {
+  color: #7ee8fa;
+  background: rgba(61, 217, 235, .14);
+  box-shadow: inset 0 0 0 1px rgba(61, 217, 235, .4);
+}
+
 .tdock-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; justify-items: center; padding-top: 5px; border-top: 1px solid var(--line); }
 .tdock-row .tp-b { width: 100%; height: 30px; }
 .tdock-pager { grid-template-columns: 20px minmax(0, 1fr) 20px; gap: 1px; align-items: center; }

@@ -1,13 +1,14 @@
 'use strict';
 // 账号：玲珑账号（银子 API 商业版，只能在软件里注册 / 登录）和合作站账号（银子 API、长风、扶摇、青云的老账号，只登录）。
 // 照搬玲珑工坊 0.7.0 的 yinzi-account.cjs：一切都在主进程里做，登录状态（站点会话 cookie）用系统安全存储加密，
-// 不保存密码；登录后自动建一把名叫「最强网课教辅系统」的专用 Key 写进 AI 设置，页面只看得到账号名和余额，看不到 Key。
+// 登录后自动建一把名叫「玲珑课堂」的专用 Key（兼容找回旧名「最强网课教辅系统」）写进 AI 设置，页面只看得到账号名和余额，看不到 Key。
 // 所有请求都带 X-Omni-Client: classroom/<版本>（站点用它统计来源、认注册来源；只是标识，不是凭证）。
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const KEY_NAME = '最强网课教辅系统';
+const KEY_NAME = '玲珑课堂';
+const LEGACY_KEY_NAMES = ['最强网课教辅系统'];
 const TIMEOUT_MS = 20000;
 const PAGE = 100;
 const LINGLONG = { id: 'linglong', name: '玲珑账号', origin: 'https://yinziapi.top', api: 'https://api.yinziapi.top', app: true };
@@ -28,8 +29,8 @@ const REASONS = [
   [/commercial_app_only/i, '这是玲珑账号，只能在软件里用「玲珑账号」登录', 'commercial_app_only'],
   [/commercial_disabled/i, '玲珑账号注册暂未开放，请稍后再试', 'commercial_disabled'],
   [/commercial_paused/i, '玲珑账号的收费功能临时维护，这次没有扣费，请稍后再试', 'commercial_paused'],
-  // 站点还没把「最强网课教辅系统」加进认的客户端名单（register_source 只认 万能创作终端 / 玲珑工坊 / 货舟）
-  [/x-omni-client|register_source|unknown client|未知(的)?客户端|客户端.{0,8}(不支持|未授权|不在)|来源.{0,6}(不支持|未知|不在)/i, '站点还没开通「最强网课教辅系统」这个客户端（需要站长把它加进站点白名单），玲珑账号暂时用不了。可以先用合作站账号登录，或跳过后用一键导入', 'client_unknown'],
+  // 站点还没把「玲珑课堂」加进认的客户端名单（register_source 只认 万能创作终端 / 玲珑工坊 / 货舟 / 玲珑课堂）
+  [/x-omni-client|register_source|unknown client|未知(的)?客户端|客户端.{0,8}(不支持|未授权|不在)|来源.{0,6}(不支持|未知|不在)/i, '站点还没开通「玲珑课堂」这个客户端（需要站长把它加进站点白名单），玲珑账号暂时用不了。可以先用合作站账号登录，或跳过后用一键导入', 'client_unknown'],
 ];
 function reason(text) {
   for (const [re, msg, code] of REASONS) if (re.test(String(text || ''))) return new AccountError(msg, code);
@@ -274,7 +275,9 @@ class Account {
    */
   async ensureKey() {
     const list = await this.rawKeys();
-    let k = list.find((t) => t.name === this.keyName && Number(t.status) === 1) || list.find((t) => t.name === this.keyName);
+    // 优先匹配当前配置的 keyName，同时兼容线上老用户已有的历史专用 Key 名，避免升级后多建一把重复 Key
+    const matchNames = this.keyName === KEY_NAME ? [this.keyName, ...LEGACY_KEY_NAMES] : [this.keyName];
+    let k = list.find((t) => matchNames.includes(t.name) && Number(t.status) === 1) || list.find((t) => matchNames.includes(t.name));
     if (!k) {
       let policy = '';
       try { const { json } = await this.req('GET', '/api/smart-router/options'); if (json.data?.enabled) policy = JSON.stringify(json.data.default_policy || {}); } catch { policy = ''; }

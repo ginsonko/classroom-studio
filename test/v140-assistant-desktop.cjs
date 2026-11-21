@@ -199,7 +199,8 @@ const logLines = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim()
   assert.match(await call(`[...document.querySelectorAll('.as-msg.ai')].at(-1).querySelector('[data-qa="as-file"]').innerText`), /浮力教案\.md/);
   await shot('as-11-file-chip.png');
   await call(`[...document.querySelectorAll('.as-msg.ai')].at(-1).querySelector('.as-fchip-main').click();true`);
-  await until(() => call(`(()=>{const s=__studioQA.useStore.getState();return s.page==='console'&&(s.pvwMat?.title||s.reader?.mat?.title||'').includes('浮力教案')})()`), 10000, '点文件卡片在导播台预览');
+  await until(() => call(`(()=>{const qp=document.querySelector('[data-qa="quick-preview"]');return !!qp&&qp.innerText.includes('浮力教案')})()`), 10000, '点文件卡片原地弹出预览（不跳回上课预监）');
+  await call(`document.querySelector('[data-qa="qp-close"]')?.click();true`);
   await call(`__studioQA.assistant.openAssistant('chat');true`);
   await until(() => call(`!!document.querySelector('.as-input textarea')`), 5000, 'input back');
   await call(`(()=>{const c=document.createElement('canvas');c.width=200;c.height=120;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,200,120);g.fillStyle='#c00';g.fillText('截图',20,60);

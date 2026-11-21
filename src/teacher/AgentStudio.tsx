@@ -561,9 +561,12 @@ const FILE_KIND: [RegExp, string][] = [[/\.docx?$/i, 'Word'], [/\.pdf$/i, 'PDF']
 const fileKind = (name: string) => FILE_KIND.find(([r]) => r.test(name))?.[1] ?? '文件';
 const RANK: Record<string, number> = { Word: 0, PDF: 1, PPT: 2, 网页: 3, 视频: 4, 图片: 5, 音频: 6, 文稿: 7, 文件: 8 };
 
-/** 任务文件夹授权过 host.fileUrl，图片直接预览、视频给缩略画面 */
+/** 任务文件夹授权过 host.fileUrl，图片直接预览、视频给缩略画面；若文件被移动或暂未授权则安全跳过不崩界面 */
 function Media({ file }: { file: OutFile }) {
-  const kind = fileKind(file.name), url = host.fileUrl(file.path);
+  const kind = fileKind(file.name);
+  let url = '';
+  try { url = host.fileUrl(file.path); } catch { return null; }
+  if (!url) return null;
   if (kind === '图片') return <img className="ags-thumb" src={url} alt={file.name} loading="lazy" />;
   if (kind === '视频') return <video className="ags-thumb" src={url} muted preload="metadata" />;
   if (kind === '音频') return <audio className="ags-audio" src={url} controls preload="none" />;

@@ -1,13 +1,18 @@
 // 录像自动开关：每秒按课表、录像状态、最近的声音和操作跑一次 autoRecord 的逻辑，把结果变成卡片、提示和真正的开始 / 下课。
-// 只在教师窗口里跑。1.7.0 起默认到点只提醒：教师窗口弹卡片，学生窗口角落也弹一个小的「要开始上课吗？」（只有老师会去点），
-// 学生窗口角落还常驻一个小小的「开始上课 / 下课」按钮和课堂计时（classBar，设置里可关）。
+// 只在教师窗口里跑。1.7.0 起默认到点只提醒；1.8.0 起新增三段式显隐感知（未开课醒目防忘录 → 课中靠边隐身 → 到下课点醒目提醒）、
+// 动笔未录即时轻提醒（在排课前后黑板动笔却未开录时提醒老师），以及向浮层同步一键清空/恢复课面状态。
 import { create } from 'zustand';
 import { host } from './host';
 import { useStore } from './store';
 import { toast } from './toast';
 import { isLive, nextLesson, startRecording, stopRecording, useRecording } from './recording';
 import { quietRecords } from './recordAnalysis';
-import { DEFAULT_AUTO_RECORD, SOUND_LEVEL, cleanAutoRecord, dismissAdhoc, extendStop, initialAutoRecord, lessonsAround, skipLesson, snoozeCard, stepAutoRecord, type AutoAction, type AutoCard, type AutoRecordSettings, type AutoRecordState, type Lesson } from './autoRecord';
+import {
+  DEFAULT_AUTO_RECORD, SOUND_LEVEL, cleanAutoRecord, dismissAdhoc, extendStop, initialAutoRecord,
+  lessonOf, lessonsAround, skipLesson, snoozeCard, stepAutoRecord,
+  type AutoAction, type AutoCard, type AutoRecordSettings, type AutoRecordState, type Lesson,
+} from './autoRecord';
+import { classHasContent, clearClass, restoreClass, studentName, useClassReset } from './classReset';
 import { bus } from './bus';
 import type { ClassBar } from './store';
 
@@ -15,14 +20,46 @@ import type { ClassBar } from './store';
 let clock = () => Date.now();
 export function setClock(fn: () => number) { clock = fn; }
 
-export const useAutoRecord = create<{ settings: AutoRecordSettings; card: AutoCard | null; state: AutoRecordState; now: number }>()(() => ({ settings: DEFAULT_AUTO_RECORD, card: null, state: initialAutoRecord(), now: clock() }));
+export const useAutoRecord = create<{ settings: AutoRecordSettings; card: AutoCard | null; state: AutoRecordState; now: number }>()(() => ({
+  settings: DEFAULT_AUTO_RECORD,
+  card: null,
+  state: initialAutoRecord(),
+  now: clock(),
+}));
 
 let lastSound = 0, lastActivity = 0, activeSince = 0, timer: ReturnType<typeof setInterval> | null = null;
+/** 1.8.0 未开课期间的动笔/翻页计数与静默控制（防止老师投入讲题忘点开始录像） */
+let unrecordedInkOps = 0, unrecordedPageOps = 0, lastInkOpAt = 0, inkMutedUntil = 0;
+const inkMutedLessons = new Set<string>();
+
 /** 学生画面上有操作（写字、换课件、翻页）；中间停了 1 分钟以上算新的一阵 */
-export function noteActivity(now = clock()) { if (now - lastActivity > 60000) activeSince = now; lastActivity = now; }
+export function noteActivity(now = clock(), kind: 'ink' | 'page' = 'page') {
+  if (now - lastActivity > 60000) {
+    activeSince = now;
+    // 间隔超过 3 分钟重新起算未录操作计数
+    if (now - lastInkOpAt > 180_000) { unrecordedInkOps = 0; unrecordedPageOps = 0; }
+  }
+  lastActivity = now;
+  if (!isLive(useRecording.getState().status.phase)) {
+    lastInkOpAt = now;
+    if (kind === 'ink') unrecordedInkOps++;
+    else unrecordedPageOps++;
+  }
+}
 
 /** 有人在说话（录像电平超过阈值）；桌面测试里也直接调 */
 export function noteSound(now = clock()) { lastSound = now; }
+
+/** 静默本节课的「动笔未录」轻提醒（老师明确点了这节不录时不再反复打扰） */
+export function muteInkUnrecorded(now = clock()) {
+  inkMutedUntil = now + 35 * 60_000;
+  unrecordedInkOps = 0;
+  unrecordedPageOps = 0;
+  const st = useStore.getState();
+  const near = findUpcomingLesson(now, lessonsAround(now, st.slots, st.students), useAutoRecord.getState().state.skipped);
+  if (near) inkMutedLessons.add(near.key);
+  publishClassBar(now);
+}
 
 /** 设置面板改了以后同步过来 */
 export function setAutoRecordSettings(v: unknown) { useAutoRecord.setState({ settings: cleanAutoRecord(v) }); tick(); }
@@ -38,7 +75,7 @@ function beep() {
 function notice(text: string, os?: boolean) {
   toast(text, { ms: 8000 });
   // 教师窗口被会议挡住或最小化时，再弹一条系统通知
-  if (os && (document.hidden || !document.hasFocus())) void host.call('osNotify', { title: '自动录课', body: text }).catch(() => {});
+  if (os && (document.hidden || !document.hasFocus())) void host.call('osNotify', { title: '课堂录课提醒', body: text }).catch(() => {});
   if (os && useAutoRecord.getState().settings.sound) beep();
 }
 
@@ -70,17 +107,28 @@ async function run(a: AutoAction) {
   }
 }
 
+/** 查找未开课时当前临近（课前 20 分钟内）或正在排课时段内的课次 */
+function findUpcomingLesson(now: number, lessons: Lesson[], skipped: string[]): Lesson | undefined {
+  return lessons.find((l) => !skipped.includes(l.key) && now >= l.start - 20 * 60_000 && now < l.end - 5 * 60_000);
+}
+
 export function tick(now = clock()) {
   const { settings, state } = useAutoRecord.getState(), st = useStore.getState(), status = useRecording.getState().status;
+  const live = isLive(status.phase);
+  if (live) {
+    unrecordedInkOps = 0;
+    unrecordedPageOps = 0;
+  }
   const r = stepAutoRecord(state, {
     now, settings, lessons: lessonsAround(now, st.slots, st.students),
-    live: isLive(status.phase), busy: status.phase === 'starting' || status.phase === 'stopping',
+    live, busy: status.phase === 'starting' || status.phase === 'stopping',
     recStudentId: status.studentId, recStartedAt: status.startedAt ?? null,
     hasAudio: status.audio ? status.audio.microphone || status.audio.system : true,
     lastSound, lastActivity, activeSince,
   });
   const prev = useAutoRecord.getState().card;
   useAutoRecord.setState({ state: r.state, now, ...(JSON.stringify(prev) === JSON.stringify(r.card) ? {} : { card: r.card }) });
+  publishClassBar(now);
   for (const a of r.actions) void run(a).catch((e) => toast('自动录课出错：' + (e as Error).message));
 }
 
@@ -94,6 +142,7 @@ export function cardStartNow() {
 export function cardSkip() {
   const c = useAutoRecord.getState().card;
   if (c?.kind !== 'start' && c?.kind !== 'next') return;
+  inkMutedLessons.add(c.lesson.key);
   useAutoRecord.setState((s) => ({ card: null, state: skipLesson(s.state, c.lesson.key) }));
   toast(c.kind === 'next' ? `「${c.lesson.name}」这节不自动录，「${c.from?.name ?? '这一节'}」接着录` : `「${c.lesson.name}」这节不自动录了，需要时点顶部「开始上课」`);
 }
@@ -124,27 +173,95 @@ export function cardSnooze() {
   toast('好的，5 分钟后再提醒你');
 }
 
-/** 学生窗口角落的按钮（只有老师会去点）：按教师窗口自己的状态来做 */
-export function classButton(act: 'start' | 'stop' | 'later' | 'skip') {
+export type ClassAct = 'start' | 'stop' | 'later' | 'skip' | 'mute_ink' | 'clear' | 'restore';
+
+/** 学生窗口角落与教师浮层的快捷按钮：统一由教师窗口按当前状态安全执行 */
+export function classButton(act: ClassAct) {
   const c = useAutoRecord.getState().card, phase = useRecording.getState().status.phase;
+  if (act === 'mute_ink') return muteInkUnrecorded();
+  if (act === 'clear') {
+    const st = useStore.getState();
+    void clearClass({ archiveTo: st.classOf || st.studentId }).then(() => publishClassBar());
+    return;
+  }
+  if (act === 'restore') {
+    restoreClass();
+    publishClassBar();
+    return;
+  }
   if (act === 'later') return cardSnooze();
   if (act === 'skip') return cardSkip();
   if (act === 'stop') { if (phase === 'recording') { if (c?.kind === 'stop') cardStopNow(); else void stopRecording(); } return; }
   if (c?.kind === 'start' || c?.kind === 'next') return cardStartNow();
-  if (!isLive(phase)) void startRecording();
+  // 若当前没有弹窗但有临近排课，点开始上课自动切到排课学生并开始录课
+  const now = clock(), st = useStore.getState();
+  const near = findUpcomingLesson(now, lessonsAround(now, st.slots, st.students), useAutoRecord.getState().state.skipped);
+  if (!isLive(phase)) {
+    if (near && st.studentId === 'free') st.set({ studentId: near.studentId });
+    void startRecording(near && (st.studentId === near.studentId || st.studentId === 'free') ? near.topic || undefined : undefined);
+  }
 }
 
 let lastBar = '';
-/** 把上课状态发布给学生窗口和浮层（只在变化时发，计时由各窗口自己按 since 走） */
-export function publishClassBar() {
-  const { settings, card } = useAutoRecord.getState(), status = useRecording.getState().status;
-  const ask = card && (card.kind === 'start' || card.kind === 'next') && !card.deadline ? { name: card.lesson.name, late: card.kind === 'start' && card.late, next: card.kind === 'next' } : null;
-  const bar: ClassBar = { show: settings.stageButton, phase: status.phase, since: isLive(status.phase) ? status.startedAt ?? 0 : 0, ask };
+/** 把上课状态、排课到点提醒、动笔未录与清台状态发布给学生窗口和浮层（只在变化时发） */
+export function publishClassBar(now = clock()) {
+  const { settings, card, state } = useAutoRecord.getState(), status = useRecording.getState().status;
+  const st = useStore.getState();
+  const live = isLive(status.phase);
+  const lessons = lessonsAround(now, st.slots, st.students);
+
+  const ask = card && (card.kind === 'start' || card.kind === 'next') && !card.deadline
+    ? { name: card.lesson.name, late: card.kind === 'start' && card.late, next: card.kind === 'next' }
+    : null;
+
+  // 1. 未开课时：是否有临近或已到点的排课
+  const near = !live ? findUpcomingLesson(now, lessons, state.skipped) : undefined;
+  const upcoming = near ? { name: near.name, startAt: near.start, endAt: near.end, late: now >= near.start } : null;
+
+  // 2. 上课中：是否已经到达或超过下课时间点（有排课看排课下课点，无排课录满 60 分钟温和变醒目；点过延长则按 extendTo）
+  let overtime: ClassBar['overtime'] = null;
+  if (live && status.phase === 'recording') {
+    const cur = lessons.find((l) => l.key === state.current) ?? lessonOf(lessons, status.studentId, status.startedAt);
+    const dueEnd = state.extendTo ?? (cur ? cur.end : (status.startedAt ? status.startedAt + 60 * 60_000 : Infinity));
+    if (now >= dueEnd) {
+      overtime = { name: cur?.name, endAt: dueEnd };
+    }
+  }
+
+  // 3. 动笔未录轻提醒：未开课时，在排课前后（课前 12 分钟～课中）写了 >=2 笔或翻了 >=2 次课件，或平时连写 >=4 笔
+  let inkUnrecorded: ClassBar['inkUnrecorded'] = null;
+  if (!live && status.phase === 'idle' && now > inkMutedUntil && now - lastInkOpAt < 50_000) {
+    const inNearWindow = !!near && now >= near.start - 12 * 60_000 && !inkMutedLessons.has(near.key);
+    const hit = inNearWindow ? (unrecordedInkOps >= 2 || unrecordedPageOps >= 3) : (unrecordedInkOps >= 4);
+    if (hit) {
+      const stuName = near?.name || st.students.find((x) => x.id === st.studentId)?.name || '';
+      inkUnrecorded = { name: stuName || undefined };
+    }
+  }
+
+  // 4. 清空课堂与恢复状态同步给教师浮层
+  const hasContent = classHasContent();
+  const canRestore = useClassReset.getState().canRestore;
+  const clearOwner = st.classOf && st.classOf !== st.studentId && hasContent ? studentName(st.classOf) : '';
+
+  const bar: ClassBar = {
+    show: settings.stageButton,
+    phase: status.phase,
+    since: live ? status.startedAt ?? 0 : 0,
+    ask,
+    upcoming,
+    overtime,
+    inkUnrecorded,
+    canClear: hasContent,
+    canRestore,
+    clearOwner,
+  };
   const json = JSON.stringify(bar);
   if (json === lastBar) return;
   lastBar = json;
-  useStore.getState().setShared({ classBar: bar });
+  st.setShared({ classBar: bar });
 }
+
 export function cardAdhoc(start: boolean) {
   useAutoRecord.setState((s) => ({ card: null, state: dismissAdhoc(s.state, clock()) }));
   if (start) void startRecording();
@@ -154,10 +271,21 @@ export function cardAdhoc(start: boolean) {
 export function startAutoRecord() {
   if (timer || !host.electron || host.role !== 'teacher') return;
   host.call<{ autoRec?: unknown }>('settings').then((s) => setAutoRecordSettings(s.autoRec)).catch(() => {});
-  useStore.subscribe((s, p) => { if (s.ink !== p.ink || s.pgmMat !== p.pgmMat || s.pgm !== p.pgm) noteActivity(); });
-  useRecording.subscribe((s) => { if (Math.max(s.status.micLevel ?? 0, s.status.systemLevel ?? 0) >= SOUND_LEVEL) noteSound(); publishClassBar(); });
+  useStore.subscribe((s, p) => {
+    if (s.ink !== p.ink) noteActivity(clock(), 'ink');
+    else if (s.pgmMat !== p.pgmMat || s.pgm !== p.pgm) noteActivity(clock(), 'page');
+    if (s.desk !== p.desk || s.pgmMat !== p.pgmMat || s.studentId !== p.studentId || s.classOf !== p.classOf) {
+      // 用微任务延后发布状态条，避免在外层 setShared 的 set() 同步通知栈中途重入打乱消息顺序
+      queueMicrotask(() => publishClassBar());
+    }
+  });
+  useClassReset.subscribe(() => publishClassBar());
+  useRecording.subscribe((s) => {
+    if (Math.max(s.status.micLevel ?? 0, s.status.systemLevel ?? 0) >= SOUND_LEVEL) noteSound();
+    publishClassBar();
+  });
   useAutoRecord.subscribe(() => publishClassBar());
-  bus.on((m) => { if (m.t === 'class') classButton(m.act); });
+  bus.on((m) => { if (m.t === 'class') classButton(m.act as ClassAct); });
   publishClassBar();
   timer = setInterval(() => tick(), 1000);
 }

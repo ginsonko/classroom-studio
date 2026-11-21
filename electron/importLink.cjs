@@ -1,31 +1,33 @@
 'use strict';
 // 一键导入接收端（yinzi-import/1，和银子 API 站点 mod/import.js、万能创作终端 electron/import.cjs 同一份约定）。
-// 站点令牌页「一键导入到软件 → 最强网课教辅系统」打开
-//   classroom-studio://v1/import?data=<base64url JSON>      （或 ?ticket=…&site=… 一次性领取）
+// 站点令牌页「一键导入到软件 → 玲珑课堂（或最强网课教辅系统）」打开
+//   classroom-studio://v1/import?data=<base64url JSON>      （或 linglong-classroom://v1/import?...）
 // 打不开时给「导入码」YZIMPORT1:<base64url JSON> 或 .yzimport 文件（内容同导入码）。
 // 这里只解析和校验，不写任何设置；完整 Key 只留在主进程。
 // 另外兼容老办法：粘贴单独的 sk- Key，或 CC Switch / Cherry Studio 等客户端的导入链接。
 const TARGET = 'classroom-studio';
+const ALT_TARGET = 'linglong-classroom';
 const SCHEME = 'classroom-studio';
+const ALT_SCHEME = 'linglong-classroom';
 const CODE_PREFIX = 'YZIMPORT1:';
 const MAX_BYTES = 8 * 1024;
 const MAX_LIFETIME_S = 600;
 const CLOCK_SKEW_S = 120;
 const OFFICIAL_DOMAINS = ['yinziapi.top', 'changfengapi.cn', 'fuyaoapi.cn', 'qingyunapi.cn'];
-const TARGET_NAMES = { 'omni-creator': '万能创作终端', 'classroom-studio': '最强网课教辅系统' };
+const TARGET_NAMES = { 'omni-creator': '万能创作终端', 'classroom-studio': '玲珑课堂', 'linglong-classroom': '玲珑课堂' };
 
 const MESSAGES = {
   bad_format: '导入内容不完整或已损坏，请回到网站重新点「一键导入」。',
   no_code: '没有找到导入内容。请在网站令牌页点「一键导入到软件」→「复制导入码」，再粘贴到这里。',
   expired: '导入链接已过期（10 分钟有效），请回到网站重新生成。',
   replayed: '这个导入链接已经用过了，请回到网站重新生成。',
-  wrong_target: '这个导入是给「{target}」用的，请在网站上把「导入到」选成「最强网课教辅系统」后重新导入。',
+  wrong_target: '这个导入是给「{target}」用的，请在网站上把「导入到」选成「玲珑课堂」（或「最强网课教辅系统」）后重新导入。',
   origin_mismatch: '导入内容里的接口地址和来源网站不一致，已拒绝。',
   missing_key: '这个导入只包含模型设置，但本机还没有 Key。请在网站勾选「同时导入密钥」后重新导入。',
   ticket_failed: '无法从网站领取导入内容（可能已被使用或过期），请重新生成。',
   too_large: '导入内容超过 8 KB，已拒绝。',
   insecure: '只接受 https:// 站点的导入。',
-  upgrade_needed: '这个导入需要更新版本的最强网课教辅系统，请先升级软件。',
+  upgrade_needed: '这个导入需要更新版本的玲珑课堂，请先升级软件。',
   no_slots: '这个导入里没有可用的文本模型或看图模型，请在网站勾选后重新导入。',
 };
 
@@ -60,7 +62,7 @@ function parseInput(input) {
   if (s.length > MAX_BYTES * 2) throw new ImportError('too_large');
   const code = s.match(/YZIMPORT1:([A-Za-z0-9_-]+={0,2})/);
   if (code) return { data: code[1] };
-  const m = s.match(/classroom-studio:\/\/[^\s"'<>]+/i) || s.match(/omni-creator:\/\/[^\s"'<>]+/i);
+  const m = s.match(/(?:classroom-studio|linglong-classroom):\/\/[^\s"'<>]+/i) || s.match(/omni-creator:\/\/[^\s"'<>]+/i);
   if (!m) return null;
   let url;
   try { url = new URL(m[0]); } catch { throw new ImportError('bad_format'); }
@@ -107,7 +109,7 @@ function validatePayload(raw, ctx = {}) {
   const sm = /^yinzi-import\/(\d+)$/.exec(String(raw.schema || ''));
   if (!sm) throw new ImportError('bad_format');
   if (sm[1] !== '1') throw new ImportError('upgrade_needed');
-  if (raw.target !== TARGET) {
+  if (raw.target !== TARGET && raw.target !== ALT_TARGET) {
     if (typeof raw.target === 'string' && raw.target) throw new ImportError('wrong_target', { target: TARGET_NAMES[raw.target] || raw.target.slice(0, 40) });
     throw new ImportError('bad_format');
   }
@@ -203,9 +205,9 @@ async function receive(input, ctx = {}) {
 
 /** Windows 把链接（或双击的 .yzimport 文件）作为启动参数交过来 */
 function linkFromArgv(argv) {
-  return (argv || []).find((a) => typeof a === 'string' && (a.toLowerCase().startsWith(SCHEME + ':') || /\.yzimport$/i.test(a))) || '';
+  return (argv || []).find((a) => typeof a === 'string' && (a.toLowerCase().startsWith(SCHEME + ':') || a.toLowerCase().startsWith(ALT_SCHEME + ':') || /\.yzimport$/i.test(a))) || '';
 }
 
 const encodeCode = (payload) => CODE_PREFIX + Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 
-module.exports = { TARGET, SCHEME, CODE_PREFIX, ImportError, parseInput, decodeData, validatePayload, redeemTicket, receive, linkFromArgv, encodeCode, isOfficial };
+module.exports = { TARGET, ALT_TARGET, SCHEME, ALT_SCHEME, CODE_PREFIX, ImportError, parseInput, decodeData, validatePayload, redeemTicket, receive, linkFromArgv, encodeCode, isOfficial };

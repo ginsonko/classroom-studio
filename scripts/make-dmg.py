@@ -15,15 +15,15 @@ import pycdlib
 
 SECTOR = 512
 CHUNK = 0x800  # 每块 2048 个扇区（1 MiB）未压缩数据
-README = """最强网课教辅系统 {version} · macOS 版（未经实机测试，遇到问题请到 QQ 群 1035471769 反馈）
+README = """玲珑课堂 {version} · macOS 版（未经实机测试，遇到问题请到 QQ 群 1035471769 反馈）
 
 安装（不用解压）：
-  1. 把左边的「最强网课教辅系统」拖到右边的「Applications（应用程序）」文件夹上；
+  1. 把左边的「玲珑课堂」拖到右边的「Applications（应用程序）」文件夹上；
   2. 在「安装并打开.command」上点右键 → 打开 → 再点「打开」（只需要第一次），
      它会去掉系统的隔离标记并打开软件；以后从「启动台」或「应用程序」里直接打开。
   3. 如果第 2 步没反应：打开「终端」，输入下面两行（每行回车）：
-       xattr -cr "/Applications/最强网课教辅系统.app"
-       codesign --force --deep --sign - "/Applications/最强网课教辅系统.app"
+       xattr -cr "/Applications/玲珑课堂.app"
+       codesign --force --deep --sign - "/Applications/玲珑课堂.app"
   装好以后可以在访达左边栏「推出」这个磁盘映像。
 
 macOS 版和 Windows 版的差别：

@@ -118,7 +118,7 @@ const timer = setTimeout(() => { console.error('v100 desktop timed out'); app.ex
   assert.match(free.text, /没有绑定学生/);
   assert.match(free.text, /「回放」页/);
   assert.equal(free.path, api.recording.status.path);
-  assert.deepEqual(free.buttons, ['播放', '打开文件夹', '全部回放', '关闭']);
+  assert.deepEqual(free.buttons, ['课后发家长', '播放', '打开文件夹', '全部回放', '关闭']);
   await shot(teacher, 'v100-4-saved-free.png');
   await T(`[...document.querySelectorAll('.saved-notice button')].find(b=>b.innerText==='全部回放').click();return true`);
   const rows = await until(() => T(`const r=[...document.querySelectorAll('.rp-row')];return r.length?r.map(x=>x.innerText.replace(/\\s+/g,' ')):null`), 5000, 'replay page');
@@ -129,7 +129,7 @@ const timer = setTimeout(() => { console.error('v100 desktop timed out'); app.ex
 
   const bound = await lesson('stu-w', '小林 · 受力分析');
   assert.match(bound.text, /已归到「小林」的档案/);
-  assert.deepEqual(bound.buttons, ['播放', '打开文件夹', '全部回放', '去学生页', '关闭']);
+  assert.deepEqual(bound.buttons, ['课后发家长', '播放', '打开文件夹', '全部回放', '去学生页', '关闭']);
   await T(`[...document.querySelectorAll('.saved-notice button')].find(b=>b.innerText==='去学生页').click();return true`);
   await until(() => T(`return s.page==='students'&&Q.useStore.getState().studentId==='stu-w'`), 3000, 'student page');
   await until(() => T(`return [...document.querySelectorAll('.rec')].some(r=>r.innerText.includes('受力分析'))`), 5000, 'recording on student page');

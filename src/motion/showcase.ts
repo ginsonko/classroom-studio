@@ -139,7 +139,7 @@ export const SHOWCASE: FilmSpec = {
         { type: 'atom', dur: 3.6, pos: [0, 0.8, 0], scale: 1.1 },
         { type: 'rings', at: 0.2, pos: [0, 0.8, -3], color: '#7aa2ff' },
         { type: 'particleText', at: 2.6, text: '一句话，做出一节课的动画', width: 12.5, pos: [0, 1.4, 0], from: '#4cc9ff', to: '#ff7ab6', t0: 0.1, t1: 1.8 },
-        { type: 'endcard', at: 4.6, brand: '最强网课教辅系统', line: '课堂动画引擎 · 八大学科 · 实时预览 · 一键导出 MP4', url: 'classroom.yinziapi.top' },
+        { type: 'endcard', at: 4.6, brand: '玲珑课堂', line: '课堂动画引擎 · 八大学科 · 实时预览 · 一键导出 MP4', url: 'classroom.yinziapi.top' },
       ]),
     },
   ],

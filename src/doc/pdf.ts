@@ -13,7 +13,18 @@ const rasterPending = new Map<string, Promise<Blob>>();
 let rasterBytes = 0, active = 0;
 const waiters: (() => void)[] = [];
 
-export function assetUrl(path: string) { return /^(blob:|data:|https?:|cs-file:|classroom-file:|lesson:|plugin:)/i.test(path) ? path : host.fileUrl(path); }
+/**
+ * 将课件或媒体路径转换为浏览器可安全加载的协议地址：
+ * 1. 已是内置安全协议（含 1.7.0 新增的 showcase:）直接原样返回；
+ * 2. 本地磁盘路径走 host.fileUrl 换取受控 lesson:// 地址；若文件已被移动、删除或暂未授权，捕获异常返回空串，由上层组件展示友好提示，绝不在 React 渲染期抛未捕获异常导致整窗黑屏。
+ */
+export function assetUrl(path: string) {
+  if (!path) return '';
+  if (/^(blob:|data:|https?:|cs-file:|classroom-file:|lesson:|plugin:|showcase:)/i.test(path)) return path;
+  // 内置相对资源路径（如上课彩排与内置样稿 mock/pages/...）原样返回，仅本机绝对路径或 file: 走受控协议
+  if (!/^([a-z]:[\\/]|\/|\\\\|file:)/i.test(path)) return path;
+  try { return host.fileUrl(path); } catch { return ''; }
+}
 
 async function withDocument<T>(path: string, fn: (doc: PDFDocumentProxy) => Promise<T>): Promise<T> {
   let slot = documents.get(path);

@@ -193,7 +193,7 @@ const api = {
     if (isParent(md)) { document.body.className = 'doc parent'; root.innerHTML = parentHtml(p.blocks, (b) => block(b, 'doc'), (b) => ('runs' in b ? plain(b.runs) : ''), 'doc'); }
     else {
     document.body.className = 'doc';
-    root.innerHTML = `<article>${docHtml(p.blocks)}<div class="foot">最强网课教辅系统 · ${new Date().toLocaleDateString('zh-CN')}</div></article>`;
+    root.innerHTML = `<article>${docHtml(p.blocks)}<div class="foot">玲珑课堂 · ${new Date().toLocaleDateString('zh-CN')}</div></article>`;
     }
     await settle();
     return p;
@@ -222,7 +222,7 @@ const api = {
     if (isParent(md)) { document.body.className = 'card parent'; root.innerHTML = parentHtml(p.blocks, (b) => block(b, 'card'), (b) => ('runs' in b ? plain(b.runs) : ''), 'card'); }
     else {
     document.body.className = 'card';
-    root.innerHTML = `<article>${p.blocks.map((b) => block(b, 'card')).join('')}<footer>最强网课教辅系统 · ${new Date().toLocaleDateString('zh-CN')}</footer></article>`;
+    root.innerHTML = `<article>${p.blocks.map((b) => block(b, 'card')).join('')}<footer>玲珑课堂 · ${new Date().toLocaleDateString('zh-CN')}</footer></article>`;
     }
     await settle();
     await Promise.all([...root.querySelectorAll('img')].map((im) => (im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }))));

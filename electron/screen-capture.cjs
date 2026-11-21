@@ -71,7 +71,7 @@ async function captureDisplays(electron, which, { maxWidth = MAX_WIDTH, quality 
     const size = img.getSize();
     shots.push({ data: img.toJPEG(quality), width: size.width, height: size.height, display: { index: d.index, label: d.label, title: d.title } });
   });
-  if (!shots.length) throw new Error(process.platform === 'darwin' ? '没能截图：请在「系统设置 → 隐私与安全性 → 屏幕录制」里允许最强网课教辅系统' : '没能截图，这个屏幕现在不能捕获');
+  if (!shots.length) throw new Error(process.platform === 'darwin' ? '没能截图：请在「系统设置 → 隐私与安全性 → 屏幕录制」里允许玲珑课堂' : '没能截图，这个屏幕现在不能捕获');
   return { shots, displays: list, all: picked.length > 1, missing };
 }
 

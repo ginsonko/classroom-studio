@@ -38,11 +38,13 @@ export const IMarker = ({ size, ...p }: P) => (
   <svg {...base(size)} {...p}><path d="M15 4l5 5-9 9H6v-5z" /><path d="M4 21h8" strokeWidth={3} /></svg>
 );
 
-/** 产品标志：预监（虚框）推到主监（实框） */
+/** 玲珑课堂产品标志：后层琉璃青预监星芒窗 + 前层暖金板书课堂主屏 + 朱砂录课点睛 */
 export const Logo = ({ size = 22 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <rect x="1.5" y="5" width="11" height="9" rx="2" stroke="var(--cue)" strokeWidth="1.8" strokeDasharray="2.4 2" />
-    <rect x="9.5" y="9" width="13" height="10" rx="2.2" fill="var(--live)" />
-    <path d="M14.5 12.2v3.6l3-1.8z" fill="#fff" />
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="2" y="3.5" width="11.5" height="9.2" rx="2.4" fill="var(--cue)" fillOpacity=".14" stroke="var(--cue)" strokeWidth="1.75" />
+    <path d="M5.8 6.1l.55 1.35 1.35.55-1.35.55-.55 1.35-.55-1.35-1.35-.55 1.35-.55z" fill="var(--cue)" />
+    <rect x="8.8" y="8.8" width="13.2" height="11.2" rx="2.6" fill="var(--bg-2, #152231)" stroke="var(--warn, #f5a623)" strokeWidth="1.75" />
+    <path d="M11.4 16.2c1.4-3.1 2.9-3.1 4.1-.8s2.4 1.9 3.8-1.5" stroke="var(--warn, #ffc457)" strokeWidth="1.75" strokeLinecap="round" />
+    <circle cx="19.2" cy="11.6" r="1.35" fill="var(--live)" />
   </svg>
 );

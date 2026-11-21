@@ -1,4 +1,5 @@
 // 换学生上课时清空课堂：先把写过的黑板存成 PDF 放到上一位学生名下，再关课件、擦黑板。可以撤销。
+import { create } from 'zustand';
 import { host } from './host';
 import { defaultView, useStore, type DeskSnap } from './store';
 import { BASE, matOfKey, syncDesk } from './desk';
@@ -78,6 +79,12 @@ export async function boardsAfterClass(studentId: string, long: boolean): Promis
 }
 
 let last: DeskSnap | null = null;
+/** 1.8.0 响应式清空/恢复状态：让顶栏和左侧教师浮层的常驻清台按钮实时联动 */
+export const useClassReset = create<{ canRestore: boolean; busy: boolean; lastOwner: string }>(() => ({
+  canRestore: false,
+  busy: false,
+  lastOwner: '',
+}));
 export const canRestoreClass = () => !!last;
 
 /**
@@ -86,21 +93,29 @@ export const canRestoreClass = () => !!last;
  */
 export async function clearClass(o: { archiveTo?: string; why?: string } = {}): Promise<boolean> {
   if (!classHasContent()) { toast('学生画面已经是空的'); return false; }
+  if (useClassReset.getState().busy) return false;
+  useClassReset.setState({ busy: true });
   let files: StudentFile[] = [];
-  if (o.archiveTo) {
-    try { files = await archiveBoards(o.archiveTo); }
-    catch (e) { toast('板书没能存档，课堂没有清空：' + (e as Error).message, { ms: 8000 }); return false; }
+  try {
+    if (o.archiveTo) {
+      try { files = await archiveBoards(o.archiveTo); }
+      catch (e) { toast('板书没能存档，课堂没有清空：' + (e as Error).message, { ms: 8000 }); return false; }
+    }
+    last = useStore.getState().clearDesk();
+    useClassReset.setState({ canRestore: true, lastOwner: o.archiveTo || last.classOf || '' });
+    const pdfs = files.filter((f) => /\.pdf$/i.test(f.path)).length;
+    const saved = pdfs ? `，${pdfs} 块板书已存到「${studentName(o.archiveTo!)}」名下` : '';
+    toast(`${o.why ?? ''}课堂已清空${saved}`, { ms: 15000, action: { label: '撤销', run: restoreClass } });
+    return true;
+  } finally {
+    useClassReset.setState({ busy: false });
   }
-  last = useStore.getState().clearDesk();
-  const pdfs = files.filter((f) => /\.pdf$/i.test(f.path)).length;
-  const saved = pdfs ? `，${pdfs} 块板书已存到「${studentName(o.archiveTo!)}」名下` : '';
-  toast(`${o.why ?? ''}课堂已清空${saved}`, { ms: 15000, action: { label: '撤销', run: restoreClass } });
-  return true;
 }
 
 export function restoreClass() {
   if (!last) return;
   useStore.getState().restoreDesk(last); last = null;
+  useClassReset.setState({ canRestore: false, lastOwner: '' });
   toast('已恢复清空前的课件和板书');
 }
 

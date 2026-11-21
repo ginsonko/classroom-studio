@@ -34,10 +34,12 @@ function create(path: string, title: string): WebFrame {
   el.setAttribute('sandbox', local ? HTML_SANDBOX : 'allow-scripts allow-forms');
   el.setAttribute('allow', HTML_ALLOW);
   el.referrerPolicy = 'no-referrer';
-  const f: WebFrame = { el, path, local, busy: false, loaded: false, failed: false, used: Date.now(), warm: false, subs: new Set() };
+  const url = assetUrl(path);
+  // 若本地网页课件未授权或文件已不存在（url 为空），直接标记为失败并由上层展示重试提示，避免抛同步异常或把空 src 解析成主页面自身
+  const f: WebFrame = { el, path, local, busy: false, loaded: false, failed: !url, used: Date.now(), warm: false, subs: new Set() };
   el.addEventListener('load', () => { f.loaded = true; f.subs.forEach((s) => s()); });
   el.addEventListener('error', () => { f.failed = true; f.subs.forEach((s) => s()); });
-  el.src = assetUrl(path);
+  if (url) el.src = url;
   return f;
 }
 

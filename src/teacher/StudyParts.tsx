@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Check, FolderOpen, Loader2, ScanText, Search, Trash2, X } from 'lucide-react';
+import { Check, ExternalLink, FolderOpen, GripHorizontal, Loader2, ScanText, Search, Trash2, X } from 'lucide-react';
 import { host } from '../lib/host';
+import { openQuickPreview } from '../ui/QuickPreview';
 import { DIFF_NAME, POINTS, findDuplicate, pointLabel, pointsOf, questionSubject, qtypesOf, type Question } from '../lib/studyLogic';
 import type { SubjectId } from '../lib/subjects';
 import { TexText, clipTex } from './TexText';
@@ -8,12 +9,25 @@ import { patchQuestion, removeQuestion, useStudy } from '../lib/studyStore';
 import { aiConfig, readInBackground, useReading } from '../lib/studyActions';
 import { readPending } from '../lib/importQuestions';
 
-/** 导出结果：每个文件一个打开按钮 + 打开文件夹 */
+/** 导出结果：点击原地弹窗预览核对，也可直接按住拖进微信或用默认程序打开 */
 export function Outputs({ r }: { r: { out: string[]; errors: string[] } }) {
   const [err, setErr] = useState('');
   return <div className="sd-out">
-    {r.out.map((f) => <button key={f} className="sd-file" onClick={() => void host.call('study.open', f).catch((e) => setErr(e.message))}><span className="ext">{f.split('.').pop()?.toUpperCase()}</span><span>{f.split('/').pop()}</span></button>)}
-    {r.out[0] && <button className="sd-btn" onClick={() => void host.call('study.reveal', r.out[0]).catch((e) => setErr(e.message))}><FolderOpen size={13} />打开所在文件夹</button>}
+    {r.out.map((f) => <span key={f} className="sd-file-wrap" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <button
+        type="button"
+        className="sd-file"
+        draggable={host.electron}
+        onDragStart={(e) => { if (host.electron && host.startDrag) { e.preventDefault(); host.startDrag({ items: [{ path: f }] }); } }}
+        onClick={() => openQuickPreview({ path: f, title: f.split(/[\\/]/).pop() })}
+        data-tip="点击原地预览核对内容；按住也可直接拖进微信发送"
+      >
+        <span className="ext">{f.split('.').pop()?.toUpperCase()}</span><span>{f.split(/[\\/]/).pop()}</span>
+      </button>
+      {host.electron && <button type="button" className="sd-btn" style={{ padding: '0 6px' }} draggable onDragStart={(e) => { if (host.startDrag) { e.preventDefault(); host.startDrag({ items: [{ path: f }] }); } }} data-tip="按住拖进微信发送" aria-label="拖进微信"><GripHorizontal size={12} /></button>}
+      <button type="button" className="sd-btn" style={{ padding: '0 6px' }} onClick={() => void host.call('study.open', f).catch((e) => setErr(e.message))} data-tip="用默认程序打开" aria-label="默认程序打开"><ExternalLink size={12} /></button>
+    </span>)}
+    {r.out[0] && <button type="button" className="sd-btn" onClick={() => void host.call('study.reveal', r.out[0]).catch((e) => setErr(e.message))}><FolderOpen size={13} />打开所在文件夹</button>}
     {[...r.errors, err].filter(Boolean).map((e) => <p key={e} className="sd-err">{e}</p>)}
   </div>;
 }

@@ -22,7 +22,7 @@ const { version } = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'
 // 写进 ClassroomStudio.exe 和 Info.plist 的版本号。如果用软件版本号，runtime 分块每次发版都会变，老师每次更新都要重下 150 MB；
 // 只在换 Electron 版本时改它。软件自己显示和比较的版本来自 resources/app/package.json，不看这里。
 const RUNTIME_VERSION = '1.0.1';
-const NAME = '最强网课教辅系统';
+const NAME = '玲珑课堂';
 const CODEX_VER = fs.readFileSync(path.join(appRoot, 'bin/codex/VERSION'), 'utf8').trim();
 const CACHE = process.env.CS_RELEASE_CACHE || path.join(os.tmpdir(), 'cs-release-cache');
 const STAGE = process.env.CS_RELEASE_STAGE || path.join(CACHE, 'stage-' + version);
@@ -31,6 +31,12 @@ const MIRROR = `https://classroom.yinziapi.top/update/${version}/`;
 const GITHUB = `https://github.com/ginsonko/classroom-studio/releases/download/v${version}/`;
 const KEY_FILE = path.join(os.homedir(), '.classroom-studio-release', 'update-ed25519-private.pem');
 const tar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+// 可选传入上一版暂存目录 CS_PREV_STAGE：当某分块组件的内容哈希与上一版完全相同时，
+// 直接复用上一版已签名校验的原装 zip 包与 GitHub Release 下载链接，避免重复压缩与上传约 1GB 未变组件
+const PREV_STAGE = process.env.CS_PREV_STAGE ? path.resolve(process.env.CS_PREV_STAGE) : '';
+const PREV_MANIFEST = (PREV_STAGE && fs.existsSync(path.join(PREV_STAGE, 'latest.json')))
+  ? openManifest(fs.readFileSync(path.join(PREV_STAGE, 'latest.json'), 'utf8'))
+  : null;
 
 const args = process.argv.slice(2);
 const arg = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
@@ -126,14 +132,14 @@ async function buildWin() {
     'version-string': { ProductName: NAME, FileDescription: NAME + '：一对一网课上课、录课、备课一体化', CompanyName: 'yinziapi.top', LegalCopyright: '开放源代码；个人老师免费，单位使用需授权' },
   });
   const appDir = path.join(root, 'resources/app');
-  // 开发机的 bin/ 里可能有手动放的 asr 目录：不用它，统一按清单重新组装
-  for (const n of ['dist', 'electron', 'bin']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: (src) => keep(src) && !/[\\/]bin[\\/]asr([\\/]|$)/.test(src) });
+  // 开发机的 bin/ 里可能有手动放的 asr 目录：不用它，统一按清单重新组装；build/ 带上应用图标供窗口和原生文件拖拽使用
+  for (const n of ['dist', 'electron', 'bin', 'build']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: (src) => keep(src) && !/[\\/]bin[\\/]asr([\\/]|$)/.test(src) });
   await stageAsr('win32-x64', path.join(appDir, 'bin/asr'));
   writeAppMeta(appDir);
   log('win32-x64 组装完成');
   const topLevel = fs.readdirSync(root).filter((n) => n !== 'resources');
   const defs = [
-    { name: 'app', paths: ['resources/app/dist', 'resources/app/electron', 'resources/app/package.json', 'resources/app/LICENSE.txt', 'resources/app/build.json'], hashOver: ['resources/app/dist', 'resources/app/electron', 'resources/app/package.json', 'resources/app/LICENSE.txt'] },
+    { name: 'app', paths: ['resources/app/dist', 'resources/app/electron', 'resources/app/build', 'resources/app/package.json', 'resources/app/LICENSE.txt', 'resources/app/build.json'], hashOver: ['resources/app/dist', 'resources/app/electron', 'resources/app/build', 'resources/app/package.json', 'resources/app/LICENSE.txt'] },
     { name: 'codex', paths: ['resources/app/bin/codex'] },
     { name: 'ffmpeg', paths: ['resources/app/bin/ffmpeg.exe', 'resources/app/bin/FFmpeg-README.txt'] },
     { name: 'asr', paths: ['resources/app/bin/asr'] },
@@ -172,7 +178,7 @@ async function buildMac(arch) {
   patchPlist(path.join(app, 'Contents/Info.plist'));
   fs.copyFileSync(path.join(appRoot, 'build/icon.icns'), path.join(app, 'Contents/Resources/icon.icns'));
   const appDir = path.join(app, 'Contents/Resources/app');
-  for (const n of ['dist', 'electron']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: keep });
+  for (const n of ['dist', 'electron', 'build']) fs.cpSync(path.join(appRoot, n), path.join(appDir, n), { recursive: true, filter: keep });
   fs.mkdirSync(path.join(appDir, 'bin'), { recursive: true });
   const codexOut = path.join(CACHE, 'codex-' + key);
   // 缓存在系统临时目录，可能被清理工具清掉：没有本地包就让 stageCodex 自己下载
@@ -187,7 +193,7 @@ async function buildMac(arch) {
   const origKey = (rel) => 'Electron.app/' + rel.replace(/^Contents\/MacOS\/ClassroomStudio$/, 'Contents/MacOS/Electron');
   const execNew = (rel) => /^Contents\/Resources\/app\/bin\/(codex\/(bin\/[^.]+|codex-path\/[^.]+)|ffmpeg|asr\/node_modules\/[^/]+\/[^/]+\.(node|dylib))$/.test(rel);
   const defs = [
-    { name: 'app', paths: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt', 'Contents/Resources/app/build.json'], hashOver: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt'] },
+    { name: 'app', paths: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/build', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt', 'Contents/Resources/app/build.json'], hashOver: ['Contents/Resources/app/dist', 'Contents/Resources/app/electron', 'Contents/Resources/app/build', 'Contents/Resources/app/package.json', 'Contents/Resources/app/LICENSE.txt'] },
     { name: 'codex', paths: ['Contents/Resources/app/bin/codex'] },
     { name: 'ffmpeg', paths: ['Contents/Resources/app/bin/ffmpeg', 'Contents/Resources/app/bin/FFmpeg-README.txt'] },
     { name: 'asr', paths: ['Contents/Resources/app/bin/asr'] },
@@ -253,7 +259,7 @@ function patchPlist(file) {
   p = p.replace('</dict>\n</plist>', `  <key>NSAppleEventsUsageDescription</key>
   <string>打开 PPT / Word 课件时，请 Keynote、Pages、PowerPoint 或 Word 帮忙导出成 PDF。</string>
   <key>CFBundleURLTypes</key>
-  <array><dict><key>CFBundleURLName</key><string>一键导入</string><key>CFBundleURLSchemes</key><array><string>classroom-studio</string></array></dict></array>
+  <array><dict><key>CFBundleURLName</key><string>一键导入</string><key>CFBundleURLSchemes</key><array><string>classroom-studio</string><string>linglong-classroom</string></array></dict></array>
   <key>CFBundleDocumentTypes</key>
   <array><dict><key>CFBundleTypeName</key><string>一键导入配置</string><key>CFBundleTypeExtensions</key><array><string>yzimport</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
 </dict>
@@ -285,16 +291,41 @@ async function finishPlatform(key, root, defs, { zipRoot, mode, links = [], extr
     JSON.stringify({ version, components: Object.fromEntries(Object.entries(hashes).map(([n, hash]) => [n, { hash }])) }, null, 2));
   const components = {};
   for (const d of defs) {
+    const zipName = `${key}-${d.name}.zip`;
+    const zipFile = path.join(updateDir, zipName);
+    const prevComp = PREV_MANIFEST?.platforms?.[key]?.components?.[d.name];
+    const prevZip = PREV_STAGE ? path.join(PREV_STAGE, zipName) : '';
+    if (
+      prevComp &&
+      prevComp.hash === hashes[d.name] &&
+      prevZip &&
+      fs.existsSync(prevZip) &&
+      fs.statSync(prevZip).size === prevComp.size &&
+      shaFile(prevZip) === prevComp.sha256
+    ) {
+      fs.copyFileSync(prevZip, zipFile);
+      const prevGhUrl = prevComp.urls?.find((u) => /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//.test(u))
+        || `https://github.com/ginsonko/classroom-studio/releases/download/v${PREV_MANIFEST.version}/${zipName}`;
+      log(key, d.name, `内容未变，复用 v${PREV_MANIFEST.version} 组件包（${Math.round(prevComp.size / 1048576)} MB）`);
+      components[d.name] = {
+        hash: hashes[d.name],
+        size: prevComp.size,
+        sha256: prevComp.sha256,
+        chunks: prevComp.chunks || chunkSums(zipFile),
+        urls: [PROXIES[0] + prevGhUrl, prevGhUrl, MIRROR + zipName],
+        paths: d.paths,
+      };
+      continue;
+    }
     const items = [...(await collect(root, d.paths, links)), ...under(d.paths)];
-    const zipFile = path.join(updateDir, `${key}-${d.name}.zip`);
     log(key, d.name, `打包 ${items.length} 个文件…`);
     let last = 0;
     await writeZip(zipFile, items.map(toEntry), {
       onBytes: (n) => { if (n - last > 200 * 1048576) { last = n; log(key, d.name, Math.round(n / 1048576) + ' MB'); } },
     });
-    const gh = GITHUB + `${key}-${d.name}.zip`;
+    const gh = GITHUB + zipName;
     // 第一个地址给 1.1.x 及更早的软件用（它们按顺序试，国内多数连不上 GitHub 原站）；1.2.0 起会自动展开成全部加速线路并行下
-    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), chunks: chunkSums(zipFile), urls: [PROXIES[0] + gh, gh, MIRROR + `${key}-${d.name}.zip`], paths: d.paths };
+    components[d.name] = { hash: hashes[d.name], size: fs.statSync(zipFile).size, sha256: shaFile(zipFile), chunks: chunkSums(zipFile), urls: [PROXIES[0] + gh, gh, MIRROR + zipName], paths: d.paths };
   }
   const full = path.join(OUT, `${NAME}-${version}-${key === 'win32-x64' ? 'win-x64' : 'mac-' + key.split('-')[1]}.zip`);
   log(key, '整包…');
@@ -344,13 +375,12 @@ async function main() {
 }
 
 const NOTES = [
-  '玲珑账号与三档线路切换（新）：打开软件登录玲珑账号（或银子系合作站账号）就能直接用 AI，不用手抄 Key，软件内可看余额、充值、查实扣账单；小羽、AI 工坊、AI 设置随时切换「省钱优先 / 均衡 / 质量优先」三档，工坊默认走质量优先与强模型 gpt-6-astra',
-  'AI 工坊九种炫技示例卡片（新）：选互动课件、讲课 PPT、练习题、分层作业、测验卷、课堂讲义、教案、做插件、自定义时，右侧直接播放动态预览或轮播图，可点「看完整示例」在老师预监试玩（不上学生屏），或点「照这个风格做」带入高标准样板',
-  'AI 工坊联网查真题与原卷核对（新）：工坊和小羽自带联网搜索、网页抓取与内置 AI 浏览器，搜到的网页原文归档备查；出真题时自动对照下载原卷核对出处，对不上的绝不冒充真题，自编题一律标「原创」',
-  '离线公式课件包与离屏截图自检（新）：互动课件自带本地 KaTeX 公式字体与仿真交互组件，打包成单文件断网也能看；AI 做完课件、插件、文档后自动在后台打开截图点按自检，有问题自动打回修好再交付',
-  '学生窗口上下课、任意分钟课表与短录像保护：课堂展示窗口右上角移过去可点上下课并看计时；到点先温和提醒「要开始上课吗？」不再直接开录；课表支持 19:40 等任意分钟；不足 1 分钟的误录默认自动丢弃（10 秒内可撤销）',
-  '课后总结看全整节与六块家长版长图：下课分析覆盖每一页写过字的高清板书与翻过的课件；家长版反馈重排成六块清爽配色插画长图，去掉「证据不足」等生硬字眼；小羽归档教案讲义时自动记入备课',
-  '省心体验升级：升级后弹「这次更新了什么」导览卡；报错说人话并新增零消耗「帮我查查」免费自检；临时断网最多自动递增重连 5 次并接回原对话续做；录像盘剩不到 5 GB 提前温和提醒',
+  '品牌全面焕新为「玲珑课堂」1.8.0（新）：换上全新家族图标与视觉细节，原有 ClassroomStudioData 学生档案、题库、录像、玲珑账号与在线更新 100% 原地无缝继承，桌面快捷方式自动平滑升级',
+  '「课后发家长」统一交付袋与原生拖进微信群（新）：顶栏新增常驻「发家长」（带待发提醒），按每堂课自动聚齐回放视频（超 1 小时优先选微信分段，支持一键秒切）、六宫格家长长图、当堂板书 PDF 与课后作业（答案版/解析版自动折叠防误发），按住直接拖进电脑版微信群或一键复制文件列表，同盘 0 毫秒硬链接生成干净中文文件名',
+  '全站文件原地轻预览，不打断上课预监（新）：在课后交付袋、回放页、学生档案、课后总结、AI 工坊与小羽对话里点击任何视频、图片、PDF、Word、PPT、Markdown 都在当前窗口秒开独立预览，绝不跳回上课页、绝不顶掉正在准备的右侧预监',
+  '上下课按钮三段式智能防漏录 + 自由拖动与自动避让（新）：未开课时醒目呼吸提醒（临近排课显示学生姓名，未开录先写板书会在教师浮层与顶栏轻声提醒）；开录后自动半透明退居边角不抢视线（双击可折成小圆点）；到下课点重新高亮提醒下课；支持按住自由拖动位置并记忆，遇全屏课件自动左移让开右上角按钮',
+  '常驻「一键清空上堂课课件和板书」（新）：教师端顶栏学生名右侧与左侧教师浮层顶部常驻清空入口，留有上一位学生课面时醒目高亮，清前自动将写过的板书存成 PDF 归入原学生名下，清完原位可一键「恢复课面」',
+  '大存档无损瘦身与稳定性加固：自动清理早已关闭的历史旧课件陈年撤销缓存（全部课堂笔迹 100% 原样保留），数十 MB 真实老存档显著瘦身，启动与存盘更轻快，彻底消除跨版本恢复异常',
 ];
 
 main().catch((e) => { console.error('打包失败：', e.stack || e); process.exit(1); });

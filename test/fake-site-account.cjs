@@ -72,7 +72,7 @@ function start(opts = {}) {
       if (p === '/api/user/amount') { if (needLogin()) return; return ok(String(Number(b.amount) * 1)); }
       if (p === '/api/user/pay') { if (needLogin()) return; return j(200, { message: 'success', url: 'https://pay.example.test/submit', data: { out_trade_no: 'T1', money: String(b.amount) } }); }
       if (p === '/api/user/topup') { if (needLogin()) return; if (b.key !== 'GIFT-10') return fail('兑换码无效'); me[1].quota += 10 * 500000; return ok(10 * 500000); }
-      if (p === '/api/log/self') { if (needLogin()) return; return ok({ items: [{ created_at: Math.floor(Date.now() / 1000) - 60, model_name: 'gpt-6-astra', token_name: '最强网课教辅系统', quota: 0.31 * 500000, prompt_tokens: 1200, completion_tokens: 300, use_time: 4, group: 'vip', other: '{"ratio":1.5}' }], total: 1 }); }
+      if (p === '/api/log/self') { if (needLogin()) return; return ok({ items: [{ created_at: Math.floor(Date.now() / 1000) - 60, model_name: 'gpt-6-astra', token_name: '玲珑课堂', quota: 0.31 * 500000, prompt_tokens: 1200, completion_tokens: 300, use_time: 4, group: 'vip', other: '{"ratio":1.5}' }], total: 1 }); }
       if (p === '/api/log/self/stat') { if (needLogin()) return; return ok({ quota: 0.31 * 500000 }); }
       if (p === '/api/app/v1/price-board') {
         if (needLogin()) return;

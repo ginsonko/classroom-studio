@@ -14,8 +14,8 @@ export type BusMsg =
   | { t: 'laser'; key: string; pts: number[]; from: string }
   /** 教师窗口和浮层之间的小指令（打开绘图库、新手引导进度等），学生窗口不处理 */
   | { t: 'cmd'; name: string; arg?: unknown }
-  /** 1.7.0 学生窗口角落的上课按钮：请教师窗口开始上课 / 下课 / 稍后提醒 / 这节不上 */
-  | { t: 'class'; act: 'start' | 'stop' | 'later' | 'skip' };
+  /** 1.7.0 / 1.8.0 学生窗口角落与教师浮层的课堂快捷指令：开始上课 / 下课 / 稍后提醒 / 这节不上 / 动笔未录静默 / 清空课面 / 恢复课面 */
+  | { t: 'class'; act: 'start' | 'stop' | 'later' | 'skip' | 'mute_ink' | 'clear' | 'restore' };
 
 type Fn = (m: BusMsg) => void;
 const ch = !host.electron && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('classroom-studio-preview-v2') : null;

@@ -22,8 +22,12 @@ function authorizeMessage(role,m,state){
  if(!m||typeof m!=='object'||JSON.stringify(m).length>20*1024*1024)return null;
  const trusted=role==='teacher'||role==='dock',current=`${state.pgm?.materialId}#${state.pgm?.page}`;
  if(m.t==='hello')return {t:'hello',from:String(m.from).slice(0,120)};
- // 1.7.0 学生窗口角落的「开始上课 / 下课 / 稍后提醒」：只是请教师窗口去做（教师窗口按自己的状态判断），学生窗口不能借它改别的
- if(m.t==='class')return ['start','stop','later','skip'].includes(m.act)?{t:'class',act:m.act}:null;
+ // 1.7.0/1.8.0 学生窗口与教师浮层的课堂快捷指令：学生窗只能发开/下课/延后/静默请求，清空与恢复课面仅限教师端与浮层（trusted）
+ if(m.t==='class'){
+  if(['start','stop','later','skip','mute_ink'].includes(m.act))return {t:'class',act:m.act};
+  if(trusted&&['clear','restore'].includes(m.act))return {t:'class',act:m.act};
+  return null;
+ }
  if(m.t==='cmd')return trusted&&typeof m.name==='string'&&/^[a-z][\w.]{0,40}$/i.test(m.name)&&JSON.stringify(m.arg??null).length<20000?{t:'cmd',name:m.name,arg:m.arg??null}:null;
  if(m.t==='snapshot')return role==='teacher'?{t:'snapshot',to:String(m.to),shared:projection(m.shared)}:null;
  if(m.t==='shared'){

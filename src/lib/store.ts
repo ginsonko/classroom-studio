@@ -45,6 +45,16 @@ export interface ClassBar {
   since: number;
   /** 到点了「要开始上课吗？」：给谁上；学生窗口那份只给老师点 */
   ask: { name: string; late: boolean; next: boolean } | null;
+  /** 1.8.0 未开课时，临近或已到上课时间的排课信息（让开始上课按钮显眼标出课次防忘录） */
+  upcoming?: { name: string; startAt: number; endAt: number; late: boolean } | null;
+  /** 1.8.0 上课中已到达或超过下课时间点（让靠边低调的下课按钮重新变显眼提醒下课） */
+  overtime?: { name?: string; endAt: number } | null;
+  /** 1.8.0 未开课时检测到已在黑板上动笔或翻课件（供教师浮层与顶栏弹轻提醒） */
+  inkUnrecorded?: { name?: string } | null;
+  /** 1.8.0 同步给教师浮层的一键清空/恢复课面状态 */
+  canClear?: boolean;
+  canRestore?: boolean;
+  clearOwner?: string;
 }
 interface Local {
   students:Student[]; slots:LessonSlot[]; learning:Record<string,ChapterState[][]>;
@@ -133,9 +143,10 @@ function simFor(m:Material,cur:SimSync|null,saved?:unknown):SimSync|null{
  return {matId:m.id,playing:false,startedAt:0,offset:0,rate:1,rev,params:m.scene?.params??{}};
 }
 export const useStore=create<State>()((set,get)=>{
- // 打开的课件变了（换项、开新窗口）才重发笔迹；拖窗口、翻页不重发
- let inkIds='';
- const push=(p:Partial<Shared>)=>{const clean=Object.fromEntries(Object.entries(p).filter(([k])=>SHARED_KEYS.includes(k as keyof Shared)));const ids=[...deskIds(get().pgmMat.id,get().desk)].sort().join('|');if('ink'in clean||(('pgmMat'in clean||'desk'in clean)&&ids!==inkIds))clean.ink=publicState(get()).ink;inkIds=ids;bus.post({t:'shared',patch:clean});};
+ // 打开的课件集合变了（换项、开新窗口）就必须同步公开笔迹；仅在真正发出 clean.ink 时更新 sentInkIds，
+ // 防止 useStore.subscribe 回调里嵌套调用 setShared（如发布 classBar）提前改写标记、吞掉外层上屏的笔迹同步
+ let sentInkIds='';
+ const push=(p:Partial<Shared>)=>{const clean=Object.fromEntries(Object.entries(p).filter(([k])=>SHARED_KEYS.includes(k as keyof Shared)));const ids=[...deskIds(get().pgmMat.id,get().desk)].sort().join('|');if('ink'in clean||ids!==sentInkIds){clean.ink=publicState(get()).ink;sentInkIds=ids;}bus.post({t:'shared',patch:clean});};
  const edit=(key:string,c:InkChange,actor:Author='teacher',broadcast=true,track=true)=>{
   let prev=get().ink[key]??[];
   if(ROLE==='student'&&get().drawAuthor==='student'){
@@ -152,7 +163,7 @@ export const useStore=create<State>()((set,get)=>{
   if(c.order){const rank=new Map(c.order.map((id,i)=>[id,i]));next.sort((a,b)=>(rank.get(a.id)??1e9)-(rank.get(b.id)??1e9));}
   const after=next.filter(x=>touched.has(x.id));
   if(JSON.stringify(before)===JSON.stringify(after))return;
-  if(ROLE==='teacher'&&track){const h=history[key+'|'+actor]??={undo:[],redo:[]};h.undo.push({before,after,beforeOrder:prev.map(x=>x.id),afterOrder:next.map(x=>x.id)});if(h.undo.length>120)h.undo.shift();h.redo=[];}
+  if(ROLE==='teacher'&&track){const h=history[key+'|'+actor]??={undo:[],redo:[]};h.undo.push({before,after,beforeOrder:prev.map(x=>x.id),afterOrder:next.map(x=>x.id)});if(h.undo.length>60)h.undo.shift();h.redo=[];}
   set({ink:{...get().ink,[key]:next}});
   if(broadcast){const pc=publicChanges(key,c,prev,get());if(pc&&((pc.remove?.length??0)||(pc.upsert?.length??0)))bus.post({t:'edit',key,...pc,actor});}
  };
@@ -230,8 +241,35 @@ type Hist=Histories[string];
 const histMark=(h:Hist)=>[h,h.undo,h.undo.length,h.undo[0],h.undo.at(-1),h.redo,h.redo.length,h.redo.at(-1)];
 const sameMark=(a:unknown[]|undefined,b:unknown[])=>!!a&&a.length===b.length&&a.every((x,i)=>x===b[i]);
 if(host.electron&&ROLE==='teacher'){for(const[k,v]of Object.entries(useStore.getState().ink))sentInk.set(k,v);for(const[k,h]of Object.entries(history))sentHist.set(k,histMark(h));}
+/** 1.8.0 清理早已关闭的陈年旧课件与无笔迹孤儿撤销栈（保留全部真实笔迹 shared.ink 及最近 8 页有笔迹非活跃页的近期撤销栈） */
+function pruneInactiveHistory(s: State) {
+ const active=new Set<string>([BASE,s.pgmMat.id,...s.desk.map(w=>w.id),s.reader?.mat?.id??'',s.reader?.split?.id??'',s.pvw?.mat?.id??'']);
+ const inactiveKeys:string[]=[];
+ for(const k of Object.keys(history)){
+  const h=history[k];
+  if(!h||(!h.undo.length&&!h.redo.length)){delete history[k];continue;}
+  const pipe=k.lastIndexOf('|'),inkK=pipe>=0?k.slice(0,pipe):k,matId=matOfKey(inkK);
+  if(active.has(matId)){
+   if(h.undo.length>60)h.undo=h.undo.slice(-60);
+   if(h.redo.length>30)h.redo=h.redo.slice(-30);
+   continue;
+  }
+  // 非活跃页面且页面上已无任何笔迹：孤儿僵尸栈直接清理
+  if(!(s.ink[inkK]?.length)){delete history[k];continue;}
+  inactiveKeys.push(k);
+ }
+ // 仅保留最近最多 8 个有笔迹的非活跃页面（每页最多保留最近 10 步撤销），淘汰超出水位的陈年历史撤销栈
+ const dropCount=Math.max(0,inactiveKeys.length-8);
+ for(let i=0;i<dropCount;i++)delete history[inactiveKeys[i]];
+ for(const k of inactiveKeys.slice(dropCount)){
+  const h=history[k];
+  if(h.undo.length>10)h.undo=h.undo.slice(-10);
+  if(h.redo.length>5)h.redo=h.redo.slice(-5);
+ }
+}
 export function flushStore(){
  if(ROLE!=='teacher')return Promise.resolve();clearTimeout(saveTimer);const s=useStore.getState();
+ pruneInactiveHistory(s);
  const value={shared:Object.fromEntries(SHARED_KEYS.map(k=>[k,s[k]])),local:Object.fromEntries(LOCAL_KEYS.map(k=>[k,s[k]])),history};
  if(host.electron){
   const inkNow=Object.entries(s.ink),histNow=Object.entries(history).map(([k,h])=>[k,h,histMark(h)] as const);

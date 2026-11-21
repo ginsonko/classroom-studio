@@ -494,7 +494,7 @@ class Agents {
         // 用导播台的中转站：单独的 provider，Key 只通过环境变量传给 Codex；我们站点走本机转发层自动兜底 400「没有可用分组」
         const cred = this.credentials();
         const baseUrl = this.siteBaseUrl(t, cred.baseUrl);
-        c.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('最强网课教辅系统')}`, '-c', `model_providers.classroom.base_url=${toml(baseUrl)}`,
+        c.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('玲珑课堂')}`, '-c', `model_providers.classroom.base_url=${toml(baseUrl)}`,
           '-c', `model_providers.classroom.env_key=${toml(KEY_ENV)}`, '-c', 'model_providers.classroom.wire_api="responses"');
         // 档位：只有银子 API 系站点认，每轮都是新进程，所以改了下一轮就生效
         c.push(...tier.codexArgs(cred.baseUrl, t.tier));

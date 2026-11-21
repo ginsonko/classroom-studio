@@ -128,16 +128,16 @@ const ok = (name) => { results.push(name); console.log('ok - ' + name); };
     await until(() => has('[data-qa="whats-new"]'), 5000, '关闭登录页后自动弹出更新卡');
     const wnItems = await T(`return [...document.querySelectorAll('[data-qa="whats-new"] ol li')].length`);
     assert.ok(wnItems >= 6 && wnItems <= 7, '列出 6～7 条核心亮点，实际 ' + wnItems);
-    assert.match(await text('[data-qa="whats-new"]'), /学生窗口[\s\S]*家长版长图[\s\S]*玲珑账号[\s\S]*真题[\s\S]*KaTeX[\s\S]*内置浏览器[\s\S]*帮我查查/);
+    assert.match(await text('[data-qa="whats-new"]'), /课后发家长[\s\S]*轻预览[\s\S]*三段式[\s\S]*清空上堂课[\s\S]*玲珑账号[\s\S]*玲珑课堂/);
     // 收起底层 AI 抽屉让背景导播台干净整洁，截第 1 张交付图
     await T(`Q.useStore.getState().set({aiOpen:false});return true`);
     await shot('01-这次更新了什么卡片');
 
-    await click('[data-qa="wn-go-3"]');
+    await click('[data-qa="wn-go-4"]');
     await until(async () => !(await has('[data-qa="whats-new"]')), 3000, '点击去看看关闭卡片');
     assert.equal(await T(`return Q.useStore.getState().page`), 'agents', '跳转到 AI 工坊');
     const wnState = await call('whatsNew.state');
-    assert.equal(wnState.seen, '1.7.0', '已记录 seenWhatsNewVersion');
+    assert.equal(wnState.seen, '1.8.0', '已记录 seenWhatsNewVersion');
     assert.equal(await T(`return await Q.experience.checkWhatsNew(true)`), false, '已读后不再重复自动弹出');
     ok('「这次更新了什么」排在 AccountGate 之后弹出一次，「去看看」关闭并跳转对应页面');
 
@@ -149,9 +149,9 @@ const ok = (name) => { results.push(name); console.log('ok - ' + name); };
     await click('[data-qa="help-whatsnew"]');
     await until(() => has('[data-qa="whats-new"]'), 4000, '帮助里重开更新卡');
     assert.equal(await has('.help'), false, '重开更新卡时自动收起帮助弹窗');
-    await click('[data-qa="wn-go-0"]');
+    await click('[data-qa="wn-go-1"]');
     await until(async () => !(await has('[data-qa="whats-new"]')), 3000);
-    assert.equal(await T(`return Q.useStore.getState().page`), 'schedule', '第 1 条去看看跳转到课表');
+    assert.equal(await T(`return Q.useStore.getState().page`), 'replay', '第 2 条去看看跳转到回放');
     ok('「帮助 → 关于与更新 → 查看本次更新内容」随时可重开更新卡并正常跳转');
 
     // ── 4. 上课彩排第一步「登录或配置 AI」：未配时等待，登录玲珑账号后自动打勾 ──

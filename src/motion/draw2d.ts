@@ -657,7 +657,7 @@ const hud: Make2 = (s, at, dur) => {
 
 /** 片尾 */
 const endcard: Make2 = (s, at, dur) => {
-  const brand = str(s.brand, '最强网课教辅系统'), line = str(s.line), url = str(s.url);
+  const brand = str(s.brand, '玲珑课堂'), line = str(s.line), url = str(s.url);
   return {
     at, dur, z: 9, draw: ({ g }, L) => {
       if (L.a <= 0) return;

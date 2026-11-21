@@ -27,13 +27,13 @@ function ensureCodexConfig(dir, { platform = process.platform, winSandbox = proc
   if (platform === 'win32') {
     const want = `sandbox = ${JSON.stringify(winSandbox)}`;
     if (!/^\s*\[windows\]/m.test(cur)) {
-      const prefix = cur.trim() ? cur.trimEnd() + '\n\n' : '# 最强网课教辅系统独立 Codex 配置（与本机 ~/.codex 隔离）\n';
+      const prefix = cur.trim() ? cur.trimEnd() + '\n\n' : '# 玲珑课堂独立 Codex 配置（与本机 ~/.codex 隔离）\n';
       fs.writeFileSync(file, `${prefix}[windows]\n${want}\n`);
     } else if (!/^\s*sandbox\s*=/m.test(cur)) {
       fs.writeFileSync(file, cur.replace(/^\s*\[windows\]\s*$/m, `[windows]\n${want}`));
     }
   } else if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, '# 最强网课教辅系统独立 Codex 配置（与本机 ~/.codex 隔离）\n');
+    fs.writeFileSync(file, '# 玲珑课堂独立 Codex 配置（与本机 ~/.codex 隔离）\n');
   }
   return dir;
 }

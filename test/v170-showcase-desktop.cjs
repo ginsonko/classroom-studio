@@ -87,7 +87,7 @@ let teacher;
   assert.throws(() => new Showcase({rootDir:sampleRoot}).resolveRel('link/outside.txt'));
   fs.rmSync(jroot,{recursive:true,force:true});
   mark('path boundaries: traversal, absolute paths, junction escape and missing style source rejected');
-  assert.match(fs.readFileSync(path.join(ROOT,'scripts/pack.mjs'),'utf8'), /\['dist','electron','bin'\]/);
+  assert.match(fs.readFileSync(path.join(ROOT,'scripts/pack.mjs'),'utf8'), /\['dist',\s*'electron',\s*'bin'(?:,\s*'build')?\]/);
   mark('packaging copies complete electron tree including examples/_showcase');
 
   for (const [width,height] of [[1440,900],[1920,1080]]) {

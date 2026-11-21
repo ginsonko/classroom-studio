@@ -192,7 +192,7 @@ class Assistant {
         },
       });
       env.OPENAI_BASE_URL = baseUrl; env.OPENAI_API_KEY = p.cred.key; env.CODEX_API_KEY = p.cred.key; env[KEY_ENV] = p.cred.key;
-      args.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('最强网课教辅系统')}`, '-c', `model_providers.classroom.base_url=${toml(baseUrl)}`,
+      args.push('-c', 'model_provider="classroom"', '-c', `model_providers.classroom.name=${toml('玲珑课堂')}`, '-c', `model_providers.classroom.base_url=${toml(baseUrl)}`,
         '-c', `model_providers.classroom.env_key=${toml(KEY_ENV)}`, '-c', 'model_providers.classroom.wire_api="responses"');
       // 档位：常驻进程启动时定下，换档后下一句话重启进程，再用 thread/resume 接回原来的会话
       args.push(...tier.codexArgs(p.cred.baseUrl, p.tier));
@@ -236,7 +236,7 @@ class Assistant {
     };
     child.on('error', (e) => gone('Codex 启动失败：' + e.message));
     child.on('exit', (code) => gone(`AI 助教的内核退出了（${code ?? '已停止'}）${s.errTail && !NOTICE.test(s.errTail) ? '：' + clip(s.errTail.trim().split('\n').pop(), 300) : ''}`));
-    s.ready = this.rpc(s, 'initialize', { clientInfo: { name: 'classroom-studio', title: '最强网课教辅系统', version: '1' }, capabilities: { experimentalApi: true } })
+    s.ready = this.rpc(s, 'initialize', { clientInfo: { name: 'classroom-studio', title: '玲珑课堂', version: '1' }, capabilities: { experimentalApi: true } })
       .then(() => { this.write(s, { jsonrpc: '2.0', method: 'initialized' }); });
     s.ready.catch(() => {});
     await s.ready;

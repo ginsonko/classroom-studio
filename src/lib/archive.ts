@@ -37,8 +37,12 @@ export const archive = {
   folder: () => host.call<string>('archive.folder'),
 };
 
-/** 存档里的图片是本机文件路径，显示前换成可加载的地址 */
-export const mediaUrl = (s?: string) => (!s ? '' : /^(data|https?|lesson|studio):/i.test(s) ? s : host.fileUrl(s));
+/** 存档里的图片是本机文件路径，显示前换成可加载的地址（文件被挪走或未授权时返回空串，绝不在渲染期抛错导致黑屏） */
+export const mediaUrl = (s?: string) => {
+  if (!s) return '';
+  if (/^(data|blob|https?|lesson|studio|showcase|plugin):/i.test(s)) return s;
+  try { return host.fileUrl(s); } catch { return ''; }
+};
 
 /** 存档 → 可以放回面板的结果卡内容 */
 export function revive(e: ArchiveEntry): { out?: AiOut; meta?: RunMeta } {

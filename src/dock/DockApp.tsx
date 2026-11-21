@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PageThumb } from '../ui/PageThumb';
 import {
-  ArrowUpToLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, EyeOff, ImageDown, ScrollText, GripVertical, LayoutGrid, Lock, LockOpen,
+  ArrowUpToLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Eraser, Eye, EyeOff, ImageDown, ScrollText, GripVertical, LayoutGrid, Lock, LockOpen,
   Minimize2, Pause, Play, Plus, Redo2, RotateCcw, Scissors, Trash2, Undo2, X,
 } from 'lucide-react';
 import { snipToBoard } from '../ink/pasteImage';
@@ -29,6 +29,7 @@ import { demoById, pickPatch } from '../demos';
 import { clampDemo } from '../demos/kit';
 import { fmt } from '../physics/sim/text';
 import { ClassCorner } from '../student/ClassCorner';
+import { bus } from '../lib/bus';
 import { DockPlugins } from '../plugins/DockPlugins';
 import { GuideSpot } from '../guide/Spot';
 import { fitZoom } from '../ui/fit';
@@ -187,6 +188,7 @@ export function DockApp() {
         <ClassCorner where="dock" />
         <button onClick={() => setMini(true)} data-tip="收成小圆点"><Minimize2 size={13} /></button>
       </div>
+      <DockQuickGuards />
       {st.drawAuthor === 'student' && (
         <button className="tdock-reclaim" onClick={() => st.setShared({ drawAuthor: 'teacher' })} data-tip="学生正在用学生工具条书写。点这里，或点下面任意工具，笔就回到你手里">
           <span><i />学生在写</span><b>点我收回</b>
@@ -200,6 +202,83 @@ export function DockApp() {
       {/* 浮层可能整体缩放（zoom），高亮框放到 body 上才对得准 */}
       {createPortal(<GuideSpot win="dock" />, document.body)}
     </div>
+  );
+}
+
+/**
+ * 1.8.0 教师浮层专属防漏录与一键换课清台条（仅老师可见，腾讯会议共享学生窗口中不可见）：
+ * 1) 当老师已在黑板动笔或翻课件却忘记点开始录像时，弹出温和醒目的「点我开录」胶囊；
+ * 2) 当画面留着上堂课的课件/板书时，提供一键清空（先自动存板书 PDF 再清）与一键恢复。
+ */
+function DockQuickGuards() {
+  const bar = useStore((s) => s.classBar);
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  if (!bar) return null;
+  const live = bar.phase === 'recording';
+  const unrec = bar.phase === 'idle' && bar.inkUnrecorded;
+  const showClear = !!bar.canClear;
+  const showRestore = !bar.canClear && !!bar.canRestore;
+
+  return (
+    <>
+      {unrec && (
+        <div className="tdock-unrec" data-qa="dock-unrecorded">
+          <button
+            className="tdock-unrec-go"
+            onClick={() => bus.post({ t: 'class', act: 'start' })}
+            data-tip={unrec.name ? `已经在讲「${unrec.name}」但这节还没开始录像，点击立即开录` : '检测到已在黑板书写但还没开录，点击立即开始录像'}
+          >
+            <Circle size={9} fill="currentColor" />
+            <span>没录·点我开录</span>
+          </button>
+          <button
+            className="tdock-unrec-x"
+            onClick={() => bus.post({ t: 'class', act: 'mute_ink' })}
+            data-tip="这节课不录像，不再提示"
+            aria-label="忽略未录像提醒"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
+      {(showClear || showRestore) && (
+        <div className="tdock-clear-row">
+          {showClear ? (
+            <button
+              className={'tdock-clear' + (bar.clearOwner ? ' owner' : '') + (confirmClear ? ' sure' : '')}
+              data-qa="dock-clear-class"
+              onClick={() => {
+                if (live && !confirmClear) { setConfirmClear(true); return; }
+                setConfirmClear(false);
+                bus.post({ t: 'class', act: 'clear' });
+              }}
+              data-tip={bar.clearOwner
+                ? `画面上还是「${bar.clearOwner}」的课件和板书 · 点击先自动存板书 PDF 再一键清空`
+                : '一键清空当前全部课件与黑板笔迹（写过的板书先自动存 PDF，清完可撤销恢复）'}
+            >
+              <Eraser size={12} />
+              <span>{confirmClear ? '再点清空' : bar.clearOwner ? `清「${bar.clearOwner.slice(0, 2)}」课` : '清空课面'}</span>
+            </button>
+          ) : (
+            <button
+              className="tdock-clear restore"
+              data-qa="dock-restore-class"
+              onClick={() => bus.post({ t: 'class', act: 'restore' })}
+              data-tip="恢复刚才清空前的课件和黑板笔迹"
+            >
+              <RotateCcw size={12} />
+              <span>恢复课面</span>
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 

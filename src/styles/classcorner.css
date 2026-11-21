@@ -1,21 +1,199 @@
-/* 1.7.0 学生窗口右上角的上课按钮和计时：小、半透明、鼠标过去才看清，不挡课件 */
-.cc { position: fixed; top: 8px; right: 10px; z-index: 56; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; font-family: var(--font-ui, system-ui); }
+/* 1.8.0 学生窗口角落三段式智能上课胶囊：
+   - 未开课（idle-prominent / idle-late）：醒目暖珀/朱砂呼吸胶囊，一眼看见不漏录；
+   - 课中（live.quiet）：自动靠边低调隐身（低透明度小胶囊），鼠标移近才清晰展开，双击可缩成微标；
+   - 到下课点（live.overtime）：恢复醒目金珀暖光提醒「到点 · 下课」；
+   - 支持自由拖动记忆位置，遇占满课件平滑左移避开 .desk-fullbar。 */
+.cc {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 56;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  font-family: var(--font-ui, system-ui);
+  user-select: none;
+  touch-action: none;
+  transition: right .24s cubic-bezier(.16, 1, .3, 1), left .24s cubic-bezier(.16, 1, .3, 1);
+}
+.cc.dragging { transition: none; cursor: grabbing; }
 .cc > * { pointer-events: auto; }
-.cc-pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 3px 0 6px; border-radius: 12px; background: rgba(18, 20, 26, .38); color: rgba(235, 238, 245, .72); font-size: 11.5px; opacity: .55; transition: opacity .2s, background .2s; backdrop-filter: blur(4px); }
-.cc-pill:hover, .cc-pill.live:hover { opacity: 1; background: rgba(18, 20, 26, .78); }
-.cc-pill.live { opacity: .7; }
+
+.cc-grip {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(255, 255, 255, .42);
+  cursor: grab;
+  margin-left: -1px;
+}
+.cc.dragging .cc-grip { cursor: grabbing; }
+
+.cc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 5px 0 6px;
+  border-radius: 999px;
+  background: rgba(18, 22, 30, .78);
+  color: #eef2f8;
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, .42), inset 0 0 0 1px rgba(255, 255, 255, .12);
+  transition: opacity .22s, background .22s, transform .18s, box-shadow .22s;
+}
+
+/* ── 状态 1：未开课 · 醒目防忘录态 ── */
+.cc-pill.idle-prominent {
+  height: 30px;
+  padding: 0 5px 0 7px;
+  opacity: .95;
+  background: linear-gradient(135deg, rgba(24, 30, 42, .92), rgba(16, 20, 28, .92));
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .5), inset 0 0 0 1.5px rgba(255, 181, 71, .68), 0 0 0 3px rgba(255, 181, 71, .14);
+  animation: cc-breath-warm 2.8s ease-in-out infinite;
+}
+.cc-pill.idle-late {
+  height: 31px;
+  padding: 0 5px 0 7px;
+  opacity: .98;
+  background: linear-gradient(135deg, rgba(44, 20, 22, .94), rgba(26, 14, 18, .94));
+  box-shadow: 0 10px 26px -6px rgba(244, 72, 58, .45), inset 0 0 0 1.5px rgba(255, 110, 92, .88), 0 0 0 4px rgba(255, 90, 74, .2);
+  animation: cc-breath-late 1.9s ease-in-out infinite;
+}
+@keyframes cc-breath-warm {
+  0%, 100% { box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .5), inset 0 0 0 1.5px rgba(255, 181, 71, .62), 0 0 0 2px rgba(255, 181, 71, .1); }
+  50% { box-shadow: 0 8px 26px -4px rgba(255, 170, 50, .35), inset 0 0 0 1.5px rgba(255, 198, 92, .95), 0 0 0 5px rgba(255, 181, 71, .22); }
+}
+@keyframes cc-breath-late {
+  0%, 100% { box-shadow: 0 8px 24px -6px rgba(244, 72, 58, .4), inset 0 0 0 1.5px rgba(255, 110, 92, .75), 0 0 0 2px rgba(255, 90, 74, .14); }
+  50% { box-shadow: 0 10px 28px -4px rgba(244, 72, 58, .6), inset 0 0 0 1.5px #ff8a7a, 0 0 0 6px rgba(255, 90, 74, .28); }
+}
+
+/* ── 状态 2：上课中未到点 · 靠边低调隐身态 ── */
+.cc-pill.live.quiet {
+  height: 24px;
+  padding: 0 4px 0 5px;
+  font-size: 11px;
+  opacity: .32;
+  background: rgba(16, 18, 24, .48);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+.cc-pill.live.quiet .cc-b {
+  opacity: .72;
+  padding: 0 6px;
+  height: 18px;
+  font-size: 10.5px;
+  background: rgba(255, 255, 255, .07);
+}
+.cc-pill.live.quiet:hover,
+.cc-pill:hover {
+  opacity: 1;
+  background: rgba(18, 21, 29, .9);
+  box-shadow: 0 8px 22px -6px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.cc-pill.live.quiet:hover .cc-b { opacity: 1; }
+
+/* ── 状态 3：到达下课时间点后 · 重新变显眼提醒下课 ── */
+.cc-pill.live.overtime {
+  height: 29px;
+  padding: 0 5px 0 7px;
+  opacity: .96;
+  background: linear-gradient(135deg, rgba(38, 29, 14, .92), rgba(22, 18, 12, .92));
+  color: #fff6e5;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .5), inset 0 0 0 1.5px rgba(255, 188, 66, .85), 0 0 0 4px rgba(255, 188, 66, .18);
+  animation: cc-breath-warm 2.4s ease-in-out infinite;
+}
+
+/* 折叠后的极简微标 */
+.cc-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(16, 18, 24, .38);
+  color: rgba(235, 238, 245, .75);
+  font-size: 10.5px;
+  opacity: .3;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: opacity .2s, background .2s;
+}
+.cc-mini:hover { opacity: .95; background: rgba(18, 20, 26, .86); color: #fff; }
+.cc-mini i { width: 5px; height: 5px; border-radius: 50%; background: #ff5a5a; }
+
+.cc-fold {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: rgba(235, 238, 245, .55);
+  cursor: pointer;
+}
+.cc-fold:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+
 .cc-clock { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .cc-clock i, .cc-dock i { width: 6px; height: 6px; border-radius: 50%; background: #ff5a5a; box-shadow: 0 0 6px rgba(255, 90, 90, .7); animation: cc-blink 2s infinite; }
 @keyframes cc-blink { 50% { opacity: .35; } }
-.cc-b { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 8px; border-radius: 9px; background: rgba(255, 255, 255, .1); color: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
-.cc-b:hover { background: rgba(255, 255, 255, .2); color: #fff; }
-.cc-b svg { color: #ff6b6b; }
-.cc-b.sure { background: #d9434a; color: #fff; }
-.cc-busy { padding: 0 6px; font-size: 11px; }
-.cc-ask { display: inline-flex; align-items: center; gap: 7px; max-width: min(460px, 70vw); padding: 6px 6px 6px 10px; border-radius: 10px; background: rgba(18, 20, 26, .86); color: #eef1f6; font-size: 12.5px; box-shadow: 0 6px 18px rgba(0, 0, 0, .28); animation: cc-in .25s ease-out; }
+
+.cc-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+  color: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .16s, color .16s, transform .12s;
+}
+.cc-b:hover { background: rgba(255, 255, 255, .22); color: #fff; }
+.cc-b svg { color: #ff6b6b; flex: none; }
+
+/* 未开课时的醒目主按钮 */
+.cc-b.start {
+  height: 22px;
+  padding: 0 11px;
+  background: linear-gradient(135deg, #ffb547, #f59322);
+  color: #1c1102;
+  font-weight: 700;
+  box-shadow: 0 2px 8px -2px rgba(245, 147, 34, .55);
+}
+.cc-b.start svg { color: #b82518; animation: cc-blink 1.5s infinite; }
+.cc-b.start:hover { filter: brightness(1.06); color: #120a00; }
+
+.cc-b.start.late {
+  background: linear-gradient(135deg, #ff6b57, #e53e30);
+  color: #fff;
+  box-shadow: 0 2px 10px -2px rgba(229, 62, 48, .65);
+}
+.cc-b.start.late svg { color: #ffe580; }
+
+/* 到下课点的醒目下课按钮 */
+.cc-b.due {
+  background: linear-gradient(135deg, #ffc457, #f29d26);
+  color: #1e1200;
+  font-weight: 700;
+}
+.cc-b.due svg { color: #5c3300; }
+.cc-b.sure { background: #d9434a !important; color: #fff !important; }
+
+.cc-busy { padding: 0 8px; font-size: 11.5px; }
+.cc-ask { display: inline-flex; align-items: center; gap: 7px; max-width: min(460px, 70vw); padding: 6px 6px 6px 10px; border-radius: 10px; background: rgba(18, 20, 26, .9); color: #eef1f6; font-size: 12.5px; box-shadow: 0 8px 22px rgba(0, 0, 0, .34), inset 0 0 0 1px rgba(255, 200, 97, .28); animation: cc-in .25s ease-out; }
 .cc-ask svg { flex: none; color: #ffc861; }
 .cc-ask span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-ask button { flex: none; height: 22px; padding: 0 9px; border-radius: 7px; background: rgba(255, 255, 255, .12); color: inherit; font-size: 12px; cursor: pointer; }
 .cc-ask button.go { background: #3dd6e8; color: #04141a; font-weight: 650; }
 @keyframes cc-in { from { opacity: 0; transform: translateY(-4px); } }
+
 .cc-dock { display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; font-size: 11.5px; color: var(--fg-1, #d8dbe2); font-variant-numeric: tabular-nums; }
+.cc-dock.overtime { color: #ffc861; font-weight: 700; }
+.cc-dock.overtime i { background: #ffb547; box-shadow: 0 0 6px rgba(255, 181, 71, .8); }
